@@ -1,0 +1,6 @@
+[env]
+CFLAGS = { value = "", force = true }
+CXXFLAGS = { value = "", force = true }
+CPPFLAGS = { value = "", force = true }
+LDFLAGS = { value = "", force = true }
+

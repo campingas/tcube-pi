@@ -25,17 +25,19 @@ Minimum Rust quality gates for any Rust change:
 
 ```sh
 cargo fmt --all --check
-env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS cargo clippy --workspace --all-targets --all-features -- -D warnings
-env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS cargo test --workspace --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
 ```
+
+The repository pins the stable Rust toolchain in `rust-toolchain.toml` and forces host C/C++ flags empty in `.cargo/config.toml` so native dependencies build consistently across developer machines.
 
 Required pre-merge quality gates:
 
 - Intentional ownership and data-flow review.
 - Explicit and aligned error handling.
 - `cargo fmt --all --check`.
-- `env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS cargo clippy --all-targets --all-features --locked -- -D warnings`.
-- `env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS cargo test --workspace --all-features`.
+- `cargo clippy --all-targets --all-features --locked -- -D warnings`.
+- `cargo test --workspace --all-features`.
 - Measured performance claims before acceptance.
 - Documentation reflects runtime behavior.
 

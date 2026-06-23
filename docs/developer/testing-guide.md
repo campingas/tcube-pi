@@ -24,9 +24,9 @@ just check-admin-ui
 
 Use `pnpm` for every direct admin UI and JavaScript command. Prefer the `just` recipes above for normal workflows.
 
-For Rust changes, follow the [Rust Guide](rust-guide.md), `rustfmt.toml`, and `clippy.toml`. Use `just fmt`, `just fmt-check`, and `just lint` for focused iteration.
+For Rust changes, follow the [Rust Guide](rust-guide.md), `rustfmt.toml`, `clippy.toml`, `.cargo/config.toml`, and `rust-toolchain.toml`. Use `just fmt`, `just fmt-check`, and `just lint` for focused iteration.
 
-Host C/C++ flags are unset by the recipes because they can break native dependencies such as bundled SQLite.
+Host C/C++ flags are forced empty by `.cargo/config.toml` because inherited local flags can break native dependencies such as bundled SQLite.
 
 ## Device Runtime
 

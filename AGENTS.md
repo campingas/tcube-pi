@@ -151,7 +151,7 @@ Prefer small, composable changes over broad rewrites unless explicitly requested
 - Prefer modern language and framework patterns already established in the repo
 - Prefer explicit types at boundaries and inference internally where it improves readability
 - For any Rust change, follow `docs/developer/rust-guide.md`, `rustfmt.toml`, and `clippy.toml`.
-- For any Rust change, run `cargo fmt --all --check`, `env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS cargo test --workspace --all-features` before handoff.
+- For any Rust change, run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace --all-features` before handoff. Repository Cargo config forces inherited host C/C++ flags empty.
 - Treat all rustc and Clippy diagnostics as actionable; Rust code should be warning-clean, formatted, and safe before delivery.
 
 ## Validation & Quality Gates

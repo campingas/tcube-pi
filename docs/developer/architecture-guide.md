@@ -22,6 +22,8 @@ Software:
 
 Do not introduce Make or a `Makefile`. Use a `Justfile` for documented project workflows once commands exist.
 
+Rust uses the stable toolchain declared in `rust-toolchain.toml` with `rustfmt` and `clippy` components. Cargo environment overrides live in `.cargo/config.toml`, including forced-empty host C/C++ flags for native dependency consistency.
+
 The parent/admin dashboard source lives under `admin-ui/` and is built with Svelte + Vite. The static output served by `tcube-pi-admin` lives under `admin-ui/build/`. Use `pnpm` for every admin UI and JavaScript workflow; the Pi deployment consumes only the built static files and does not run Node. The admin UI styling system is Tailwind CSS v4 through Vite plus local CSS layers in `admin-ui/src/styles.css`; reusable dashboard surfaces live as Svelte components under `admin-ui/src/components/`.
 
 All Rust changes must follow the [Rust Guide](rust-guide.md), including module boundaries, async and database rules, hardware isolation, and required quality gates.

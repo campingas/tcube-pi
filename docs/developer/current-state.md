@@ -22,6 +22,7 @@ Last updated: 2026-06-23 (+07)
 - Content sync API/client modules for staged package download, checksums, activation, acknowledgements, and failure reporting.
 - Caddy deployment sketch and one-button Pi Zero bench smoke payload.
 - Rust formatting, linting, and test workflows through `just`.
+- Repository Rust workflow config uses `rust-toolchain.toml` for stable Rust with `rustfmt` and `clippy`, plus `.cargo/config.toml` to force inherited host C/C++ flags empty for native dependency consistency.
 
 ## Not Yet Complete
 
@@ -49,6 +50,7 @@ Last updated: 2026-06-23 (+07)
 - Report setup dashboard URLs as standard HTTPS URLs without an explicit port, matching the Caddy deployment on port 443.
 - Keep Mac-hosted speech and AI workers outside this repository; generated speech is a draft artifact until reviewed and activated locally.
 - Keep `just` as the only documented command runner.
+- Keep Cargo environment normalization in `.cargo/config.toml`; `Justfile` Cargo recipes should call `cargo` directly instead of repeating shell-specific `env -u` wrappers.
 
 ## Validation
 
@@ -70,8 +72,8 @@ Latest local validation on 2026-06-23:
 
 - `just check`
 - `just test`
-- `env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS cargo test --workspace --all-features`
-- `env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `just validate-pi-admin-caddy`
 
 Admin UI validation:
