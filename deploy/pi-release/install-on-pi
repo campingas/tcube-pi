@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${EUID}" -ne 0 ]]; then
+  echo "Run this installer with sudo: sudo ./install.sh" >&2
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+require_path() {
+  local path="$1"
+  if [[ ! -e "${path}" ]]; then
+    echo "Missing required release payload path: ${path}" >&2
+    exit 1
+  fi
+}
+
+require_path "${SCRIPT_DIR}/bin/tcube-pi"
+require_path "${SCRIPT_DIR}/bin/tcube-pi-admin"
+require_path "${SCRIPT_DIR}/bin/tcube-pi-admin-measure"
+require_path "${SCRIPT_DIR}/bin/tcube-pi-device-api"
+require_path "${SCRIPT_DIR}/admin-ui/index.html"
+require_path "${SCRIPT_DIR}/content/content.json"
+require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/Caddyfile"
+require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.env"
+require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.service"
+
+echo "Installing T-Cube Pi release from ${SCRIPT_DIR}"
+
+if ! id -u tcube >/dev/null 2>&1; then
+  useradd --system --home /var/lib/tcube --shell /usr/sbin/nologin tcube
+fi
+
+install -d -o tcube -g tcube -m 0750 /var/lib/tcube /var/lib/tcube/media
+install -d -o root -g root -m 0755 /opt/tcube/bin /opt/tcube/admin-ui /opt/tcube/content /etc/tcube
+
+install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi" /opt/tcube/bin/tcube-pi
+install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi-admin" /opt/tcube/bin/tcube-pi-admin
+install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi-admin-measure" /opt/tcube/bin/tcube-pi-admin-measure
+install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi-device-api" /opt/tcube/bin/tcube-pi-device-api
+
+rm -rf /opt/tcube/admin-ui/.new
+install -d -o root -g root -m 0755 /opt/tcube/admin-ui/.new
+cp -R "${SCRIPT_DIR}/admin-ui/." /opt/tcube/admin-ui/.new/
+rm -rf /opt/tcube/admin-ui/assets /opt/tcube/admin-ui/index.html
+cp -R /opt/tcube/admin-ui/.new/. /opt/tcube/admin-ui/
+rm -rf /opt/tcube/admin-ui/.new
+
+rm -rf /opt/tcube/content/.new
+install -d -o root -g root -m 0755 /opt/tcube/content/.new
+cp -R "${SCRIPT_DIR}/content/." /opt/tcube/content/.new/
+rm -rf /opt/tcube/content/audio /opt/tcube/content/content.json
+cp -R /opt/tcube/content/.new/. /opt/tcube/content/
+rm -rf /opt/tcube/content/.new
+
+install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.env" /etc/tcube/tcube-pi-admin.env
+install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.service" /etc/systemd/system/tcube-pi-admin.service
+install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/Caddyfile" /etc/caddy/Caddyfile
+
+systemctl daemon-reload
+systemctl enable --now tcube-pi-admin.service
+if systemctl is-active --quiet caddy; then
+  systemctl reload caddy
+else
+  systemctl enable --now caddy
+fi
+
+cat <<'MESSAGE'
+T-Cube Pi release installed.
+
+Next checks:
+  systemctl status tcube-pi-admin --no-pager
+  systemctl status caddy --no-pager
+  curl http://127.0.0.1:8080/api/pi/v1/status
+  curl -k https://localhost/api/pi/v1/status
+
+Admin browsers and phones must trust Caddy's internal root CA before using https://tcube.local/.
+MESSAGE
+

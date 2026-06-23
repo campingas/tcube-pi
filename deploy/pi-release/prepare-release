@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "Usage: deploy/pi-release/prepare-release vX.Y.Z[-suffix]" >&2
+  exit 2
+fi
+
+tag="$1"
+if [[ ! "${tag}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?)$ ]]; then
+  echo "Release tag must look like v0.1.0 or v0.1.0-rc.1: ${tag}" >&2
+  exit 2
+fi
+
+version="${tag#v}"
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "cargo is required" >&2
+  exit 1
+fi
+
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pnpm is required for admin-ui release preparation" >&2
+  exit 1
+fi
+
+python3 - "${version}" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+version = sys.argv[1]
+
+cargo_toml = pathlib.Path("Cargo.toml")
+cargo_text = cargo_toml.read_text()
+cargo_text, replacements = re.subn(
+    r'(?m)^(version = )"[^"]+"',
+    rf'\1"{version}"',
+    cargo_text,
+    count=1,
+)
+if replacements != 1:
+    raise SystemExit("failed to update Cargo.toml package version")
+cargo_toml.write_text(cargo_text)
+
+package_json = pathlib.Path("admin-ui/package.json")
+package = json.loads(package_json.read_text())
+package["version"] = version
+package_json.write_text(json.dumps(package, indent=2) + "\n")
+PY
+
+cargo check --offline --all-features >/dev/null
+cargo check --locked --all-features >/dev/null
+pnpm --dir admin-ui install --lockfile-only --frozen-lockfile
+
+echo "Prepared release ${tag}"
+echo "Updated Cargo.toml, Cargo.lock, and admin-ui/package.json."
+echo "Next suggested commands:"
+echo "  git add Cargo.toml Cargo.lock admin-ui/package.json"
+echo "  git commit -m \"chore: prepare release ${tag}\""
+echo "  git tag -a ${tag} -m \"${tag}\""

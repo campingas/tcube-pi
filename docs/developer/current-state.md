@@ -23,6 +23,8 @@ Last updated: 2026-06-23 (+07)
 - Caddy deployment sketch and one-button Pi Zero bench smoke payload.
 - Rust formatting, linting, and test workflows through `just`.
 - GitHub Actions CI under `.github/workflows/ci.yml` runs Rust formatting, check, Clippy, tests, and admin UI pnpm install/check/build gates.
+- GitHub Actions release workflow under `.github/workflows/release.yml` builds Linux arm64 Pi Zero 2 W application bundles with Rust binaries, prebuilt admin UI, content, Caddy/systemd deployment files, installer, and SHA-256 checksums.
+- Release preparation uses `just prepare-release vX.Y.Z` to update `Cargo.toml`, `Cargo.lock`, and `admin-ui/package.json` before committing and tagging. The release workflow verifies the tag version matches both manifests before publishing.
 - Repository Rust workflow config uses `rust-toolchain.toml` for stable Rust with `rustfmt` and `clippy`, plus `.cargo/config.toml` to force inherited host C/C++ flags empty for native dependency consistency.
 
 ## Not Yet Complete
@@ -34,8 +36,7 @@ Last updated: 2026-06-23 (+07)
 - Installed Pi systemd validation for the final runtime.
 - USB OTG recovery and Wi-Fi rollback behavior.
 - Pi resource measurements with `just measure-pi-admin`.
-- GitHub Releases workflow for flashable Pi artifacts.
-- Release packaging in GitHub Actions.
+- Full flashable SD-card image artifacts.
 
 ## Known Issues
 
@@ -52,7 +53,9 @@ Last updated: 2026-06-23 (+07)
 - Report setup dashboard URLs as standard HTTPS URLs without an explicit port, matching the Caddy deployment on port 443.
 - Keep Mac-hosted speech and AI workers outside this repository; generated speech is a draft artifact until reviewed and activated locally.
 - Keep `just` as the only documented command runner.
+- Keep release-bundle helper scripts in `deploy/pi-release/`. Keep runtime Caddy, systemd, and environment files in `deploy/pi-admin-caddy/`.
 - Keep Cargo environment normalization in `.cargo/config.toml`; `Justfile` Cargo recipes should call `cargo` directly instead of repeating shell-specific `env -u` wrappers.
+- Prepare release version bumps before tag creation; release workflows should enforce manifest/tag consistency rather than mutating manifests after a tag is pushed.
 
 ## Validation
 
@@ -104,3 +107,14 @@ Latest CI workflow validation on 2026-06-23:
 - `just test`
 - `just check-admin-ui`
 - `just build-admin-ui`
+
+Latest release workflow validation on 2026-06-23:
+
+- `.github/workflows/release.yml` parses as YAML locally.
+- `bash -n deploy/pi-release/install-on-pi`
+- `bash -n deploy/pi-release/prepare-release`
+- `just check`
+- `just test`
+- `just check-admin-ui`
+- `just build-admin-ui`
+- `cargo build --release --locked --all-features`

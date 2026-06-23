@@ -12,10 +12,11 @@
 - [ ] Define microphone capture, retention, upload, and physical indicator privacy rules.
 - [ ] Define local SQLite schema versioning and migrations.
 - [ ] Add acknowledged upload and retention handling for cube event and microphone data.
-- [ ] Prepare GitHub Releases CI/CD for flashable `tcube-pi` artifacts.
+- [x] Prepare GitHub Releases CI/CD for installable `tcube-pi` Pi Zero 2 W artifacts.
 
 ## Later
 
+- [ ] Prepare full flashable SD-card image artifacts after hardware and systemd validation.
 - [ ] Add content package signing, admin publication controls, retention, and rollback tooling.
 - [ ] Add systemd deployment for the native Pi runtime and synchronization client.
 - [ ] Revisit Docker runtime deployment after native GPIO and audio are validated.

@@ -36,6 +36,7 @@ Use Caddy for HTTPS browser access by following [the Pi admin Caddy guide](deplo
 - [admin-ui/](admin-ui/): Svelte + Vite source for the parent/admin dashboard
 - [admin-ui/build/](admin-ui/build/): checked-in static admin UI build output served by `tcube-pi-admin`
 - [deploy/pi-admin-caddy/](deploy/pi-admin-caddy/): Caddy and systemd deployment files for the Pi admin service
+- [deploy/pi-release/](deploy/pi-release/): release-bundle preparation and Pi installer scripts
 - [deploy/pi-zero-button-smoke/](deploy/pi-zero-button-smoke/): temporary one-button bench smoke payload
 - [docs/developer/](docs/developer/): architecture, testing, Rust, auth, package, and state docs
 - [docs/hardware/inventory.md](docs/hardware/inventory.md): tracked hardware components

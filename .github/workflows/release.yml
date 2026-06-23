@@ -1,0 +1,164 @@
+name: Release Pi Zero 2 W Bundle
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version tag, for example v0.1.0 or v0.1.0-rc.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Build and publish linux-arm64 release
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="${INPUT_VERSION:-${GITHUB_REF_NAME}}"
+          if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release version must look like v0.1.0 or v0.1.0-rc.1: ${version}" >&2
+            exit 1
+          fi
+          archive_name="tcube-pi-${version}-linux-arm64.tar.gz"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "package_version=${version#v}" >> "${GITHUB_OUTPUT}"
+          echo "archive_name=${archive_name}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify manifest versions
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.package_version }}
+        run: |
+          set -euo pipefail
+          cargo_version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          admin_ui_version="$(python3 -c 'import json; print(json.load(open("admin-ui/package.json"))["version"])')"
+          if [[ "${cargo_version}" != "${EXPECTED_VERSION}" ]]; then
+            echo "Cargo.toml version ${cargo_version} does not match release tag version ${EXPECTED_VERSION}" >&2
+            exit 1
+          fi
+          if [[ "${admin_ui_version}" != "${EXPECTED_VERSION}" ]]; then
+            echo "admin-ui/package.json version ${admin_ui_version} does not match release tag version ${EXPECTED_VERSION}" >&2
+            exit 1
+          fi
+
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libasound2-dev
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: admin-ui/package.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: admin-ui/pnpm-lock.yaml
+
+      - name: Install admin UI dependencies
+        run: pnpm --dir admin-ui install --frozen-lockfile
+
+      - name: Check admin UI
+        run: pnpm --dir admin-ui run check
+
+      - name: Build admin UI
+        run: pnpm --dir admin-ui run build
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Check Rust
+        run: cargo check --all-features
+
+      - name: Lint Rust
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test Rust
+        run: cargo test --all-features
+
+      - name: Build release binaries
+        run: cargo build --release --locked --all-features
+
+      - name: Assemble release payload
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCHIVE_NAME: ${{ steps.version.outputs.archive_name }}
+        run: |
+          set -euo pipefail
+          payload_dir="dist/tcube-pi-${VERSION}-linux-arm64"
+          mkdir -p "${payload_dir}/bin" "${payload_dir}/admin-ui" "${payload_dir}/content" "${payload_dir}/deploy/pi-admin-caddy"
+
+          install -m 0755 target/release/tcube-pi "${payload_dir}/bin/tcube-pi"
+          install -m 0755 target/release/tcube-pi-admin "${payload_dir}/bin/tcube-pi-admin"
+          install -m 0755 target/release/tcube-pi-admin-measure "${payload_dir}/bin/tcube-pi-admin-measure"
+          install -m 0755 target/release/tcube-pi-device-api "${payload_dir}/bin/tcube-pi-device-api"
+          install -m 0755 deploy/pi-release/install-on-pi "${payload_dir}/install.sh"
+
+          cp -R admin-ui/build/. "${payload_dir}/admin-ui/"
+          cp -R content/. "${payload_dir}/content/"
+          cp deploy/pi-admin-caddy/Caddyfile "${payload_dir}/deploy/pi-admin-caddy/Caddyfile"
+          cp deploy/pi-admin-caddy/tcube-pi-admin.env "${payload_dir}/deploy/pi-admin-caddy/tcube-pi-admin.env"
+          cp deploy/pi-admin-caddy/tcube-pi-admin.service "${payload_dir}/deploy/pi-admin-caddy/tcube-pi-admin.service"
+
+          tar -C dist -czf "dist/${ARCHIVE_NAME}" "tcube-pi-${VERSION}-linux-arm64"
+
+          (
+            cd dist
+            sha256sum "${ARCHIVE_NAME}" > SHA256SUMS
+            cd "tcube-pi-${VERSION}-linux-arm64"
+            sha256sum \
+              bin/tcube-pi \
+              bin/tcube-pi-admin \
+              bin/tcube-pi-admin-measure \
+              bin/tcube-pi-device-api \
+              install.sh >> ../SHA256SUMS
+          )
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tcube-pi-linux-arm64-release
+          path: |
+            dist/${{ steps.version.outputs.archive_name }}
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCHIVE_NAME: ${{ steps.version.outputs.archive_name }}
+        run: |
+          set -euo pipefail
+          release_flags=(
+            --title "${VERSION}"
+            --notes "T-Cube Pi Raspberry Pi OS Lite 64-bit application bundle for Pi Zero 2 W."
+          )
+          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            release_flags+=(--target "${GITHUB_SHA}")
+          fi
+          if [[ "${VERSION}" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
+          gh release create "${VERSION}" "${release_flags[@]}" "dist/${ARCHIVE_NAME}" "dist/SHA256SUMS"

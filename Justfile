@@ -17,6 +17,9 @@ build:
 build-release:
     cargo build --workspace --all-features --release
 
+prepare-release version:
+    deploy/pi-release/prepare-release {{version}}
+
 fmt:
     cargo fmt --all
 

@@ -15,6 +15,34 @@ sudo apt update
 sudo apt install -y caddy
 ```
 
+## Install From GitHub Release Bundle
+
+Release bundles are named like `tcube-pi-v0.1.0-linux-arm64.tar.gz` and target Raspberry Pi OS Lite 64-bit on Pi Zero 2 W. They include Linux arm64 Rust binaries, prebuilt admin UI assets, default content, Caddy/systemd files, and an installer.
+
+Before pushing a release tag, prepare and commit matching manifest versions:
+
+```sh
+just prepare-release v0.1.0
+git add Cargo.toml Cargo.lock admin-ui/package.json
+git commit -m "chore: prepare release v0.1.0"
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin main
+git push origin v0.1.0
+```
+
+The release workflow fails if the tag version does not match both `Cargo.toml` and `admin-ui/package.json`.
+
+On the Pi:
+
+```sh
+sha256sum -c SHA256SUMS
+tar -xzf tcube-pi-v0.1.0-linux-arm64.tar.gz
+cd tcube-pi-v0.1.0-linux-arm64
+sudo ./install.sh
+```
+
+The installer writes files under `/opt/tcube`, `/etc/tcube`, and `/etc/systemd/system`, then enables `tcube-pi-admin` and Caddy. It does not install Debian packages, so install `caddy` before running it.
+
 ## Install Files
 
 Build or copy the `tcube-pi-admin` binary to:
