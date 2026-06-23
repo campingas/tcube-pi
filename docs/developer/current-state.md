@@ -22,6 +22,7 @@ Last updated: 2026-06-23 (+07)
 - Content sync API/client modules for staged package download, checksums, activation, acknowledgements, and failure reporting.
 - Caddy deployment sketch and one-button Pi Zero bench smoke payload.
 - Rust formatting, linting, and test workflows through `just`.
+- GitHub Actions CI under `.github/workflows/ci.yml` runs Rust formatting, check, Clippy, tests, and admin UI pnpm install/check/build gates.
 - Repository Rust workflow config uses `rust-toolchain.toml` for stable Rust with `rustfmt` and `clippy`, plus `.cargo/config.toml` to force inherited host C/C++ flags empty for native dependency consistency.
 
 ## Not Yet Complete
@@ -34,6 +35,7 @@ Last updated: 2026-06-23 (+07)
 - USB OTG recovery and Wi-Fi rollback behavior.
 - Pi resource measurements with `just measure-pi-admin`.
 - GitHub Releases workflow for flashable Pi artifacts.
+- Release packaging in GitHub Actions.
 
 ## Known Issues
 
@@ -93,3 +95,12 @@ Latest admin UI styling validation on 2026-06-23:
 Content endpoint smoke note:
 
 - Direct unauthenticated active/inactive content requests returned `{"detail":"authentication required"}`, matching the protected API behavior. Browser login/bootstrap surfaces render, but a credentialed content-management browser flow was not performed against the local data store.
+
+Latest CI workflow validation on 2026-06-23:
+
+- `.github/workflows/ci.yml` parses as YAML locally.
+- `env CI=true pnpm --dir admin-ui install --frozen-lockfile`
+- `just check`
+- `just test`
+- `just check-admin-ui`
+- `just build-admin-ui`

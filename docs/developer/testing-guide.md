@@ -28,6 +28,8 @@ For Rust changes, follow the [Rust Guide](rust-guide.md), `rustfmt.toml`, `clipp
 
 Host C/C++ flags are forced empty by `.cargo/config.toml` because inherited local flags can break native dependencies such as bundled SQLite.
 
+GitHub Actions CI runs the Rust formatting, check, Clippy, and test gates plus the admin UI pnpm install, Svelte check, and static build gates. Release packaging is intentionally not part of CI yet.
+
 ## Device Runtime
 
 Run the keyboard simulator without or with local audio:
