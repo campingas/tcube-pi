@@ -1,0 +1,49 @@
+[package]
+name = "tcube-pi"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+rust-version = "1.78"
+
+[workspace]
+
+[dependencies]
+anyhow = "1.0"
+axum = "0.8"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+clap = { version = "4.5", features = ["derive"] }
+crossterm = "0.27"
+getrandom = "0.2"
+hex = "0.4"
+ratatui = "0.26"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+rodio = "0.22"
+rusqlite = { version = "0.31", features = ["bundled"] }
+scrypt = "0.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+thiserror = "1.0"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace"] }
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[[bin]]
+name = "tcube-pi"
+path = "src/main.rs"
+
+[[bin]]
+name = "tcube-pi-admin"
+path = "src/bin/tcube_pi_admin.rs"
+
+[[bin]]
+name = "tcube-pi-admin-measure"
+path = "src/bin/tcube_pi_admin_measure.rs"
+
+[[bin]]
+name = "tcube-pi-device-api"
+path = "src/bin/device_api.rs"

@@ -1,0 +1,200 @@
+{
+  "setup_complete": false,
+  "dashboard_host": "tcube.local",
+  "dashboard_ip": null,
+  "setup_help_text": "Open t cube dot local, or the IP address, to set me up.",
+  "button_mappings": [
+    {
+      "button_id": 1,
+      "behavior": "language",
+      "mode": "language:English"
+    },
+    {
+      "button_id": 2,
+      "behavior": "animals",
+      "mode": "animals"
+    },
+    {
+      "button_id": 3,
+      "behavior": "music",
+      "mode": "music"
+    },
+    {
+      "button_id": 4,
+      "behavior": "setup_help",
+      "mode": null
+    },
+    {
+      "button_id": 5,
+      "behavior": "setup_help",
+      "mode": null
+    }
+  ],
+  "modes": [
+    {
+      "mode": "language:English",
+      "responses": [
+        {
+          "id": "english-default-01",
+          "text": "Hello, little one!",
+          "audio_path": "content/audio/english/hello-litle-one.wav"
+        },
+        {
+          "id": "english-default-02",
+          "text": "Good job!",
+          "audio_path": "content/audio/english/good-job.wav"
+        },
+        {
+          "id": "english-default-03",
+          "text": "Can you clap?",
+          "audio_path": "content/audio/english/can-you-clap.wav"
+        },
+        {
+          "id": "english-default-04",
+          "text": "Where is your nose?",
+          "audio_path": "content/audio/english/where-is-your-nose.wav"
+        },
+        {
+          "id": "english-default-05",
+          "text": "Good morning!",
+          "audio_path": "content/audio/english/good-morning.wav"
+        },
+        {
+          "id": "english-default-06",
+          "text": "Tap the button!",
+          "audio_path": "content/audio/english/tap-the-button.wav"
+        },
+        {
+          "id": "english-default-07",
+          "text": "High five!",
+          "audio_path": "content/audio/english/high-five.wav"
+        },
+        {
+          "id": "english-default-08",
+          "text": "Show me your smile!",
+          "audio_path": "content/audio/english/show-me-your-smile.wav"
+        },
+        {
+          "id": "english-default-09",
+          "text": "Happy play time!",
+          "audio_path": "content/audio/english/happy-play-time.wav"
+        },
+        {
+          "id": "english-default-10",
+          "text": "One more time!",
+          "audio_path": "content/audio/english/one-more-time.wav"
+        }
+      ]
+    },
+    {
+      "mode": "animals",
+      "responses": [
+        {
+          "id": "animal-pig-grunt",
+          "text": "Pig grunt",
+          "audio_path": "content/audio/animals/pig-grunt.wav"
+        },
+        {
+          "id": "animal-cow-moo",
+          "text": "Cow moo",
+          "audio_path": "content/audio/animals/cow-moo.wav"
+        },
+        {
+          "id": "animal-cat-meow",
+          "text": "Cat meow",
+          "audio_path": "content/audio/animals/cat-meow.wav"
+        },
+        {
+          "id": "animal-goat-baa",
+          "text": "Goat baa",
+          "audio_path": "content/audio/animals/goat-baa.wav"
+        },
+        {
+          "id": "animal-hornet-hum",
+          "text": "Hornet hum",
+          "audio_path": "content/audio/animals/hornet-hum.wav"
+        },
+        {
+          "id": "animal-monkey-screech",
+          "text": "Monkey screech",
+          "audio_path": "content/audio/animals/monkey-screech.wav"
+        },
+        {
+          "id": "animal-rooster-crow",
+          "text": "Rooster crow",
+          "audio_path": "content/audio/animals/rooster-crow.wav"
+        },
+        {
+          "id": "animal-horse-neigh",
+          "text": "Horse neigh",
+          "audio_path": "content/audio/animals/horse-neigh.wav"
+        },
+        {
+          "id": "animal-cricket-screech",
+          "text": "Cricket screech",
+          "audio_path": "content/audio/animals/cricket-screech.wav"
+        },
+        {
+          "id": "animal-bird-squeak",
+          "text": "Bird squeak",
+          "audio_path": "content/audio/animals/bird-squeak.wav"
+        }
+      ]
+    },
+    {
+      "mode": "music",
+      "responses": [
+        {
+          "id": "music-default-01",
+          "text": "Ba oi ba",
+          "audio_path": "content/audio/music/ba-oi-ba.mp3"
+        },
+        {
+          "id": "music-default-02",
+          "text": "Elicopter",
+          "audio_path": "content/audio/music/elicopter.mp3"
+        },
+        {
+          "id": "music-default-03",
+          "text": "Giant car",
+          "audio_path": "content/audio/music/giant-car.mp3"
+        },
+        {
+          "id": "music-default-04",
+          "text": "I am an excavator",
+          "audio_path": "content/audio/music/i-am-an-excavator.mp3"
+        },
+        {
+          "id": "music-default-05",
+          "text": "Il etait un petit navire",
+          "audio_path": "content/audio/music/il-etait-un-petit-navire.mp3"
+        },
+        {
+          "id": "music-default-06",
+          "text": "Police car",
+          "audio_path": "content/audio/music/police-car.mp3"
+        },
+        {
+          "id": "music-default-07",
+          "text": "Pomme de reinette",
+          "audio_path": "content/audio/music/pomme-de-reinette.mp3"
+        },
+        {
+          "id": "music-default-08",
+          "text": "Race car",
+          "audio_path": "content/audio/music/race-car.mp3"
+        },
+        {
+          "id": "music-default-09",
+          "text": "Rescue team",
+          "audio_path": "content/audio/music/rescue-team.mp3"
+        },
+        {
+          "id": "music-default-10",
+          "text": "Super truck",
+          "audio_path": "content/audio/music/super-truck.mp3"
+        }
+      ]
+    }
+  ]
+}

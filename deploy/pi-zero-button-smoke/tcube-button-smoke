@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config_file="${TCUBE_BUTTON_SMOKE_CONFIG:-/etc/tcube/tcube-button-smoke.env}"
+if [[ -f "$config_file" ]]; then
+  # shellcheck disable=SC1090
+  source "$config_file"
+fi
+
+: "${GPIO_CHIP:=gpiochip0}"
+: "${BUTTON_GPIO:=5}"
+: "${AUDIO_DIR:=/opt/tcube/content/audio/english}"
+: "${DEBOUNCE_MS:=250}"
+: "${VOLUME_PERCENT:=80}"
+
+if [[ ! -d "$AUDIO_DIR" ]]; then
+  echo "audio directory does not exist: $AUDIO_DIR" >&2
+  exit 1
+fi
+
+if ! command -v gpiomon >/dev/null 2>&1; then
+  echo "missing gpiomon; install package: gpiod" >&2
+  exit 1
+fi
+
+if ! command -v aplay >/dev/null 2>&1; then
+  echo "missing aplay; install package: alsa-utils" >&2
+  exit 1
+fi
+
+if ! command -v mpg123 >/dev/null 2>&1; then
+  echo "missing mpg123; install package: mpg123" >&2
+  exit 1
+fi
+
+mapfile -d '' audio_files < <(
+  find "$AUDIO_DIR" -maxdepth 1 -type f \( -iname '*.wav' -o -iname '*.mp3' \) -print0 | sort -z
+)
+
+if [[ "${#audio_files[@]}" -eq 0 ]]; then
+  echo "no .wav or .mp3 files found in $AUDIO_DIR" >&2
+  exit 1
+fi
+
+amixer -q sset Master "${VOLUME_PERCENT}%" >/dev/null 2>&1 || true
+
+printf -v debounce_sleep '%d.%03d' "$((DEBOUNCE_MS / 1000))" "$((DEBOUNCE_MS % 1000))"
+
+echo "T-Cube button smoke test"
+echo "GPIO line: $GPIO_CHIP $BUTTON_GPIO"
+echo "Audio dir: $AUDIO_DIR"
+echo "Audio files: ${#audio_files[@]}"
+
+index=0
+while true; do
+  echo "waiting for rising edge on BCM GPIO $BUTTON_GPIO"
+  gpiomon -n 1 -r "$GPIO_CHIP" "$BUTTON_GPIO" >/dev/null
+
+  file="${audio_files[$index]}"
+  index=$(( (index + 1) % ${#audio_files[@]} ))
+
+  echo "playing: $file"
+  case "${file,,}" in
+    *.wav)
+      aplay -q "$file"
+      ;;
+    *.mp3)
+      mpg123 -q "$file"
+      ;;
+    *)
+      echo "unsupported audio file: $file" >&2
+      ;;
+  esac
+
+  sleep "$debounce_sleep"
+done
+

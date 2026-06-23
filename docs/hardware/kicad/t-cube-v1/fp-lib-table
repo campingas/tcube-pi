@@ -1,0 +1,4 @@
+(fp_lib_table
+  (lib (name "T_Cube")(type "KiCad")(uri "${KIPRJMOD}/T_Cube.pretty")(options "")(descr "T-Cube project-local connector footprints"))
+)
+

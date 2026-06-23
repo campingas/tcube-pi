@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 600" width="760" height="600" font-family="monospace, sans-serif">
+
+  <!-- Background -->
+  <rect width="760" height="600" fill="#1a1a2e"/>
+
+  <!-- Title -->
+  <text x="380" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="#e0e0e0">MAX98357A (Purple Board) → Pi Zero 2W</text>
+  <text x="380" y="52" text-anchor="middle" font-size="11" fill="#888">Pin order from photo: LRC · BCLK · DIN · GAIN · SD · GND · Vin</text>
+
+  <!-- ═══ PI ZERO 2W BLOCK ═══ -->
+  <rect x="30" y="80" width="200" height="340" rx="10" fill="#2d1b69" stroke="#7c6bdb" stroke-width="1.5"/>
+  <text x="130" y="108" text-anchor="middle" font-size="14" font-weight="bold" fill="#c4b5fd">Pi Zero 2W</text>
+  <text x="130" y="126" text-anchor="middle" font-size="10" fill="#a89fc8">40-pin header</text>
+
+  <!-- Pi pin rows — right side at x=230 -->
+  <!-- 5V p2 -->
+  <text x="218" y="183" text-anchor="end" font-size="11" fill="#fca5a5">5V</text>
+  <text x="222" y="183" font-size="9" fill="#666">p2</text>
+  <circle cx="230" cy="180" r="6" fill="#ef4444" stroke="#dc2626" stroke-width="1"/>
+
+  <!-- GND p6 -->
+  <text x="218" y="223" text-anchor="end" font-size="11" fill="#9ca3af">GND</text>
+  <text x="222" y="223" font-size="9" fill="#666">p6</text>
+  <circle cx="230" cy="220" r="6" fill="#6b7280" stroke="#4b5563" stroke-width="1"/>
+
+  <!-- GPIO18 BCLK p12 -->
+  <text x="218" y="273" text-anchor="end" font-size="11" fill="#c4b5fd">GPIO18</text>
+  <text x="222" y="273" font-size="9" fill="#666">p12</text>
+  <circle cx="230" cy="270" r="6" fill="#8b5cf6" stroke="#7c3aed" stroke-width="1"/>
+
+  <!-- GPIO19 LRC p35 -->
+  <text x="218" y="313" text-anchor="end" font-size="11" fill="#a78bfa">GPIO19</text>
+  <text x="222" y="313" font-size="9" fill="#666">p35</text>
+  <circle cx="230" cy="310" r="6" fill="#7c3aed" stroke="#6d28d9" stroke-width="1"/>
+
+  <!-- GPIO21 DIN p40 -->
+  <text x="218" y="353" text-anchor="end" font-size="11" fill="#818cf8">GPIO21</text>
+  <text x="222" y="353" font-size="9" fill="#666">p40</text>
+  <circle cx="230" cy="350" r="6" fill="#4f46e5" stroke="#4338ca" stroke-width="1"/>
+
+  <!-- ═══ MAX98357A BOARD (purple) ═══ -->
+  <!-- Board body -->
+  <rect x="420" y="150" width="300" height="260" rx="10" fill="#5b21b6" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="570" y="185" text-anchor="middle" font-size="14" font-weight="bold" fill="#ede9fe">MAX98357A</text>
+  <text x="570" y="203" text-anchor="middle" font-size="11" fill="#c4b5fd">I2S Class-D Amp · 3W</text>
+
+  <!-- Green screw terminal block at top -->
+  <rect x="510" y="100" width="120" height="58" rx="5" fill="#059669" stroke="#047857" stroke-width="1.5"/>
+  <text x="570" y="122" text-anchor="middle" font-size="12" font-weight="bold" fill="white">SPEAKER</text>
+  <text x="570" y="138" text-anchor="middle" font-size="10" fill="#d1fae5">screw terminal</text>
+  <!-- Screw holes -->
+  <circle cx="540" cy="128" r="9" fill="#047857" stroke="#065f46" stroke-width="1"/>
+  <line x1="534" y1="122" x2="546" y2="134" stroke="#34d399" stroke-width="1.5"/>
+  <line x1="546" y1="122" x2="534" y2="134" stroke="#34d399" stroke-width="1.5"/>
+  <circle cx="600" cy="128" r="9" fill="#047857" stroke="#065f46" stroke-width="1"/>
+  <line x1="594" y1="122" x2="606" y2="134" stroke="#34d399" stroke-width="1.5"/>
+  <line x1="606" y1="122" x2="594" y2="134" stroke="#34d399" stroke-width="1.5"/>
+
+  <!-- OUT+ OUT- labels below terminal -->
+  <text x="540" y="168" text-anchor="middle" font-size="10" fill="#f97316">OUT+</text>
+  <text x="600" y="168" text-anchor="middle" font-size="10" fill="#9ca3af">OUT−</text>
+  <!-- Wires from board to terminal -->
+  <line x1="540" y1="158" x2="540" y2="150" stroke="#f97316" stroke-width="2"/>
+  <line x1="600" y1="158" x2="600" y2="150" stroke="#9ca3af" stroke-width="2"/>
+
+  <!-- PIN ROW — bottom of board, 7 pins -->
+  <!-- Exact order from photo: LRC  BCLK  DIN  GAIN  SD  GND  Vin -->
+  <!-- x positions: 435 475 515 555 595 635 675, y=410 -->
+
+  <!-- LRC -->
+  <circle cx="435" cy="410" r="7" fill="#7c3aed" stroke="#6d28d9" stroke-width="1"/>
+  <text x="435" y="435" text-anchor="middle" font-size="10" fill="#a78bfa">LRC</text>
+  <line x1="435" y1="403" x2="435" y2="370" stroke="#7c3aed" stroke-width="1.5"/>
+
+  <!-- BCLK -->
+  <circle cx="475" cy="410" r="7" fill="#8b5cf6" stroke="#7c3aed" stroke-width="1"/>
+  <text x="475" y="435" text-anchor="middle" font-size="10" fill="#c4b5fd">BCLK</text>
+  <line x1="475" y1="403" x2="475" y2="370" stroke="#8b5cf6" stroke-width="1.5"/>
+
+  <!-- DIN -->
+  <circle cx="515" cy="410" r="7" fill="#4f46e5" stroke="#4338ca" stroke-width="1"/>
+  <text x="515" y="435" text-anchor="middle" font-size="10" fill="#818cf8">DIN</text>
+  <line x1="515" y1="403" x2="515" y2="370" stroke="#4f46e5" stroke-width="1.5"/>
+
+  <!-- GAIN (tie to GND — strap) -->
+  <circle cx="555" cy="410" r="7" fill="#374151" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="3 2"/>
+  <text x="555" y="435" text-anchor="middle" font-size="10" fill="#9ca3af">GAIN</text>
+  <line x1="555" y1="403" x2="555" y2="370" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="4 2"/>
+
+  <!-- SD (tie high — strap) -->
+  <circle cx="595" cy="410" r="7" fill="#1e40af" stroke="#1d4ed8" stroke-width="1.5" stroke-dasharray="3 2"/>
+  <text x="595" y="435" text-anchor="middle" font-size="10" fill="#93c5fd">SD</text>
+  <line x1="595" y1="403" x2="595" y2="370" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4 2"/>
+
+  <!-- GND -->
+  <circle cx="635" cy="410" r="7" fill="#374151" stroke="#6b7280" stroke-width="1"/>
+  <text x="635" y="435" text-anchor="middle" font-size="10" fill="#9ca3af">GND</text>
+  <line x1="635" y1="403" x2="635" y2="370" stroke="#6b7280" stroke-width="1.5"/>
+
+  <!-- Vin -->
+  <circle cx="675" cy="410" r="7" fill="#991b1b" stroke="#dc2626" stroke-width="1"/>
+  <text x="675" y="435" text-anchor="middle" font-size="10" fill="#fca5a5">Vin</text>
+  <line x1="675" y1="403" x2="675" y2="370" stroke="#ef4444" stroke-width="1.5"/>
+
+  <!-- ═══ INTERNAL BOARD STRAPS ═══ -->
+
+  <!-- GAIN → GND strap (short jumper inside board, dashed) -->
+  <path d="M555 370 L555 340 L635 340 L635 370" stroke="#6b7280" stroke-width="1.5" fill="none" stroke-dasharray="5 3"/>
+  <rect x="576" y="326" width="58" height="18" rx="3" fill="#2d1b69" stroke="none"/>
+  <text x="605" y="337" text-anchor="middle" font-size="9" fill="#9ca3af">GAIN→GND</text>
+  <text x="605" y="348" text-anchor="middle" font-size="9" fill="#6b7280">(15 dB gain)</text>
+
+  <!-- SD → Vin strap (always-on, short jumper) -->
+  <path d="M595 370 L595 320 L675 320 L675 370" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-dasharray="5 3"/>
+  <rect x="612" y="305" width="58" height="18" rx="3" fill="#2d1b69" stroke="none"/>
+  <text x="641" y="316" text-anchor="middle" font-size="9" fill="#93c5fd">SD → Vin</text>
+  <text x="641" y="326" text-anchor="middle" font-size="9" fill="#6b7280">(always ON)</text>
+
+  <!-- ═══ WIRES Pi → Board ═══ -->
+
+  <!-- 5V → Vin (red) -->
+  <path d="M236 180 L675 180 L675 403" stroke="#ef4444" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="380" y="170" width="30" height="16" rx="3" fill="#1a1a2e"/>
+  <text x="395" y="181" text-anchor="middle" font-size="10" fill="#ef4444">5V</text>
+
+  <!-- GND → GND (gray) -->
+  <path d="M236 220 L635 220 L635 403" stroke="#6b7280" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="370" y="210" width="40" height="16" rx="3" fill="#1a1a2e"/>
+  <text x="390" y="221" text-anchor="middle" font-size="10" fill="#9ca3af">GND</text>
+
+  <!-- GPIO18 BCLK → BCLK -->
+  <path d="M236 270 L475 270 L475 403" stroke="#8b5cf6" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="330" y="260" width="40" height="16" rx="3" fill="#1a1a2e"/>
+  <text x="350" y="271" text-anchor="middle" font-size="10" fill="#c4b5fd">BCLK</text>
+
+  <!-- GPIO19 LRC → LRC -->
+  <path d="M236 310 L435 310 L435 403" stroke="#7c3aed" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="320" y="300" width="30" height="16" rx="3" fill="#1a1a2e"/>
+  <text x="335" y="311" text-anchor="middle" font-size="10" fill="#a78bfa">LRC</text>
+
+  <!-- GPIO21 DIN → DIN -->
+  <path d="M236 350 L515 350 L515 403" stroke="#4f46e5" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="348" y="340" width="28" height="16" rx="3" fill="#1a1a2e"/>
+  <text x="362" y="351" text-anchor="middle" font-size="10" fill="#818cf8">DIN</text>
+
+  <!-- ═══ SPEAKER BLOCK ═══ -->
+  <rect x="460" y="30" width="220" height="54" rx="8" fill="#92400e" stroke="#d97706" stroke-width="1.5"/>
+  <text x="570" y="52" text-anchor="middle" font-size="13" font-weight="bold" fill="#fef3c7">3W 8Ω Speaker</text>
+  <text x="570" y="70" text-anchor="middle" font-size="10" fill="#fcd34d">+ enclosure · screw terminals</text>
+  <!-- Speaker wires to terminal -->
+  <line x1="540" y1="84" x2="540" y2="100" stroke="#f97316" stroke-width="2"/>
+  <line x1="600" y1="84" x2="600" y2="100" stroke="#9ca3af" stroke-width="2"/>
+  <text x="528" y="96" text-anchor="end" font-size="9" fill="#f97316">+</text>
+  <text x="612" y="96" font-size="9" fill="#9ca3af">−</text>
+
+  <!-- ═══ WARNING CALLOUT ═══ -->
+  <rect x="30" y="460" width="370" height="54" rx="6" fill="#1f0a00" stroke="#d97706" stroke-width="1"/>
+  <text x="46" y="478" font-size="11" font-weight="bold" fill="#fbbf24">⚠  OUT− is NOT ground</text>
+  <text x="46" y="494" font-size="10" fill="#fcd34d">Both OUT+ and OUT− go directly to speaker.</text>
+  <text x="46" y="508" font-size="10" fill="#9ca3af">Never connect OUT− to GND or the chip will die.</text>
+
+  <!-- ═══ LEGEND ═══ -->
+  <rect x="30" y="528" width="700" height="56" rx="6" fill="#0f0f1a" stroke="#374151" stroke-width="0.8"/>
+  <text x="46" y="546" font-size="10" font-weight="bold" fill="#e0e0e0">Legend:</text>
+
+  <line x1="100" y1="542" x2="128" y2="542" stroke="#ef4444" stroke-width="2"/>
+  <text x="134" y="546" font-size="10" fill="#fca5a5">5V → Vin</text>
+
+  <line x1="200" y1="542" x2="228" y2="542" stroke="#6b7280" stroke-width="2"/>
+  <text x="234" y="546" font-size="10" fill="#9ca3af">GND</text>
+
+  <line x1="280" y1="542" x2="308" y2="542" stroke="#7c3aed" stroke-width="2"/>
+  <text x="314" y="546" font-size="10" fill="#a78bfa">LRC (GPIO19/p35)</text>
+
+  <line x1="430" y1="542" x2="458" y2="542" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="464" y="546" font-size="10" fill="#c4b5fd">BCLK (GPIO18/p12)</text>
+
+  <line x1="580" y1="542" x2="608" y2="542" stroke="#4f46e5" stroke-width="2"/>
+  <text x="614" y="546" font-size="10" fill="#818cf8">DIN (GPIO21/p40)</text>
+
+  <line x1="100" y1="566" x2="128" y2="566" stroke="#6b7280" stroke-width="2" stroke-dasharray="5 3"/>
+  <text x="134" y="570" font-size="10" fill="#9ca3af">GAIN→GND strap (15 dB)</text>
+
+  <line x1="320" y1="566" x2="348" y2="566" stroke="#3b82f6" stroke-width="2" stroke-dasharray="5 3"/>
+  <text x="354" y="570" font-size="10" fill="#93c5fd">SD→Vin strap (always on)</text>
+
+  <line x1="540" y1="566" x2="568" y2="566" stroke="#f97316" stroke-width="2"/>
+  <text x="574" y="570" font-size="10" fill="#fb923c">OUT+ → Speaker+</text>
+</svg>

@@ -1,0 +1,28 @@
+[Unit]
+Description=T-Cube Pi Admin HTTP Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/tcube/tcube-pi-admin.env
+ExecStart=/opt/tcube/bin/tcube-pi-admin \
+  --bind ${TCUBE_PI_ADMIN_BIND} \
+  --database ${TCUBE_PI_ADMIN_DATABASE} \
+  --ui-dist ${TCUBE_PI_ADMIN_UI_DIST} \
+  --media-root ${TCUBE_PI_ADMIN_MEDIA_ROOT} \
+  --content-root ${TCUBE_PI_ADMIN_CONTENT_ROOT} \
+  --hostname ${TCUBE_PI_ADMIN_HOSTNAME} \
+  --usb-address ${TCUBE_PI_ADMIN_USB_ADDRESS}
+Restart=on-failure
+RestartSec=2
+User=tcube
+Group=tcube
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tcube
+
+[Install]
+WantedBy=multi-user.target
