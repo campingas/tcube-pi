@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use axum::body::{to_bytes, Body};
@@ -23,6 +23,11 @@ const SESSION_COOKIE_NAME: &str = "tcube_session";
 const SESSION_MAX_AGE_SECONDS: i64 = 90 * 24 * 60 * 60;
 const MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
 const MAX_REQUEST_BODY_BYTES: usize = 25 * 1024 * 1024;
+const SPEECH_PROVIDER_HEALTH_TTL: Duration = Duration::from_secs(20);
+const SPEECH_PROVIDER_HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
+
+static SPEECH_PROVIDER_HEALTH_CACHE: OnceLock<Mutex<HashMap<String, CachedSpeechProviderHealth>>> =
+    OnceLock::new();
 
 #[derive(Debug, Serialize)]
 pub(crate) struct StatusResponse {
@@ -115,9 +120,65 @@ pub(crate) struct InactiveContentResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub(crate) struct ContentEmptyStateResponse {
+    title: String,
+    detail: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct ContentListResponse<T> {
+    items: Vec<T>,
+    empty_state: Option<ContentEmptyStateResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct ContentInventoryResponse {
+    items: Vec<ContentInventoryItemResponse>,
+    active_count: usize,
+    draft_count: usize,
+    unused_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct ContentInventoryItemResponse {
+    id: String,
+    status: String,
+    button_id: i64,
+    content_type: String,
+    language: Option<String>,
+    title: String,
+    text: Option<String>,
+    source: String,
+    state: String,
+    audio_path: Option<String>,
+    preview_url: Option<String>,
+    reason: String,
+}
+
+#[derive(Debug, Serialize)]
 pub(crate) struct CleanupResponse {
     status: &'static str,
     deleted_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct GeneratedSpeechStatusResponse {
+    online: bool,
+    provider: String,
+    checked_at: String,
+    cached: bool,
+    cache_ttl_seconds: u64,
+    next_check_after_seconds: u64,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct RecentButtonEventResponse {
+    occurred_at: String,
+    button_id: i64,
+    mode: String,
+    response_id: String,
+    response_text: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -236,6 +297,25 @@ pub(crate) struct ContentItemRow {
 }
 
 #[derive(Debug)]
+pub(crate) struct ContentInventoryRow {
+    id: String,
+    content_type: String,
+    title: Option<String>,
+    text: Option<String>,
+    language: Option<String>,
+    source: String,
+    state: String,
+    audio_path: Option<String>,
+    button_id: i64,
+}
+
+#[derive(Clone, Debug)]
+struct CurrentButtonMapping {
+    mode: String,
+    language: Option<String>,
+}
+
+#[derive(Debug)]
 pub(crate) struct MediaInput {
     content_type: String,
     button_id: i64,
@@ -268,6 +348,15 @@ pub(crate) struct GeneratedAudio {
     bytes: Vec<u8>,
     extension: &'static str,
     model: String,
+}
+
+#[derive(Clone, Debug)]
+struct CachedSpeechProviderHealth {
+    online: bool,
+    provider: String,
+    checked_at: String,
+    checked_instant: Instant,
+    message: String,
 }
 
 pub async fn handle_request(
@@ -762,20 +851,6 @@ pub(crate) fn set_button_mode(
     } else {
         None
     };
-    if let Some(language) = &selected_language {
-        let existing = conn
-            .prepare(
-                "select button_id from button_mappings \
-                 where mode = 'language' and language = ?1 and button_id != ?2 limit 1",
-            )?
-            .query_row(params![language, button_id], |row| row.get::<_, i64>(0))
-            .optional()?;
-        if let Some(existing) = existing {
-            anyhow::bail!(
-                "Button {existing} already uses {language}. Choose a new language not already set and active."
-            );
-        }
-    }
     let content_type = match mode {
         "language" | "animals" | "music" => Some(mode),
         _ => None,
@@ -857,25 +932,26 @@ pub(crate) fn save_multipart_media(
         }
         extension
     };
-    let label = if normalized.content_type == "music" || normalized.text.is_empty() {
-        &normalized.title
-    } else {
-        &normalized.text
-    };
     let filename = media_filename(
         source,
         &normalized.content_type,
         &normalized.language,
-        label,
+        if normalized.content_type == "language" {
+            &normalized.text
+        } else {
+            &normalized.title
+        },
         extension,
     );
-    let relative_path = format!(
-        "data/media/{source}/{}/{}",
-        normalized.content_type, filename
-    );
+    let title = if normalized.content_type == "language" {
+        filename.clone()
+    } else {
+        normalized.title.clone()
+    };
+    let relative_path = draft_audio_path(&normalized.content_type, &filename);
     let absolute_path = config
         .media_root
-        .join(source)
+        .join("draft")
         .join(&normalized.content_type)
         .join(&filename);
     if let Some(parent) = absolute_path.parent() {
@@ -896,11 +972,11 @@ pub(crate) fn save_multipart_media(
             normalized.content_type,
             normalized.button_id,
             empty_to_null(&normalized.language),
-            normalized.title,
-            if normalized.content_type == "music" {
-                normalized.title.clone()
-            } else {
+            title,
+            if normalized.content_type == "language" {
                 normalized.text.clone()
+            } else {
+                normalized.title.clone()
             },
             relative_path,
             source,
@@ -945,11 +1021,11 @@ pub(crate) fn save_generated_speech(
         let wav = inspect_wav(&generated.bytes)?;
         validate_wav(&wav, "language")?;
     }
-    let filename = generated_filename(language, &generated.model, text, generated.extension);
-    let relative_path = format!("data/media/generated/language/{filename}");
+    let filename = generated_filename(&generated.model, language, text, generated.extension);
+    let relative_path = draft_audio_path("language", &filename);
     let absolute_path = config
         .media_root
-        .join("generated")
+        .join("draft")
         .join("language")
         .join(&filename);
     if let Some(parent) = absolute_path.parent() {
@@ -965,27 +1041,66 @@ pub(crate) fn save_generated_speech(
         "insert into content_items \
          (id, content_type, button_id, language, title, text, audio_path, source, state, order_index) \
          values (?1, 'language', ?2, ?3, ?4, ?5, ?6, 'generated', 'archived', ?7)",
-        params![item_id, body.button_id, language, text, text, relative_path, order_index],
+        params![
+            item_id,
+            body.button_id,
+            language,
+            filename,
+            text,
+            relative_path,
+            order_index
+        ],
     )?;
     insert_media_artifact_if_present(&conn, &item_id, "generated", &relative_path, Some(text))?;
     inactive_response_for_item(&conn, &item_id)
+}
+
+pub(crate) fn generated_speech_status(
+    config: &AdminConfig,
+    request: &HttpRequest,
+) -> Result<GeneratedSpeechStatusResponse> {
+    let _conn = authenticated_connection(config, request)?;
+    let language = request
+        .query
+        .get("language")
+        .map(String::as_str)
+        .unwrap_or("English")
+        .trim();
+    let provider = request
+        .query
+        .get("provider")
+        .map(String::as_str)
+        .unwrap_or("auto")
+        .trim();
+    let resolved_provider = resolve_speech_provider(provider, language);
+    let base_url = speech_provider_base_url(resolved_provider)?;
+    let cache_key = format!("{resolved_provider}:{base_url}");
+    let cached = cached_speech_provider_health(cache_key, resolved_provider.to_string(), || {
+        probe_speech_provider(&base_url)
+    })?;
+    Ok(speech_provider_status_response(cached))
 }
 
 pub(crate) fn list_active_content(
     config: &AdminConfig,
     request: &HttpRequest,
     path: &str,
-) -> Result<Vec<ActiveContentResponse>> {
+) -> Result<ContentListResponse<ActiveContentResponse>> {
     let conn = authenticated_connection(config, request)?;
     let (button_id, content_type) = parse_content_button_path(path, "active")?;
-    let language = request.query.get("language").map(String::as_str);
-    let mut items = active_content_rows(&conn, button_id, content_type, language)?;
-    if items.is_empty() && content_type == "language" {
-        if let Some(language) = language.map(str::trim).filter(|value| !value.is_empty()) {
-            items = active_language_fallback_rows(&conn, language)?;
-        }
-    }
-    Ok(items
+    let language = request
+        .query
+        .get("language")
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let items = active_content_rows(&conn, button_id, content_type, language)?;
+    let empty_state = if items.is_empty() {
+        content_empty_state(&conn, button_id, content_type, language, "active")?
+    } else {
+        None
+    };
+    let items = items
         .into_iter()
         .map(|item| {
             let title = item.title.unwrap_or_else(|| item.id.clone());
@@ -1001,14 +1116,15 @@ pub(crate) fn list_active_content(
                 audio_path: item.audio_path,
             }
         })
-        .collect())
+        .collect();
+    Ok(ContentListResponse { items, empty_state })
 }
 
 pub(crate) fn list_inactive_content(
     config: &AdminConfig,
     request: &HttpRequest,
     path: &str,
-) -> Result<Vec<InactiveContentResponse>> {
+) -> Result<ContentListResponse<InactiveContentResponse>> {
     let conn = authenticated_connection(config, request)?;
     let (button_id, content_type) = parse_content_button_path(path, "inactive")?;
     let language = if content_type == "language" {
@@ -1022,7 +1138,12 @@ pub(crate) fn list_inactive_content(
         None
     };
     let rows = inactive_content_rows(&conn, button_id, content_type, language)?;
-    Ok(rows
+    let empty_state = if rows.is_empty() {
+        content_empty_state(&conn, button_id, content_type, language, "archived")?
+    } else {
+        None
+    };
+    let items = rows
         .into_iter()
         .map(|item| {
             let title = item.title.unwrap_or_else(|| item.id.clone());
@@ -1042,7 +1163,62 @@ pub(crate) fn list_inactive_content(
                 audio_path: item.audio_path.unwrap_or_default(),
             }
         })
-        .collect())
+        .collect();
+    Ok(ContentListResponse { items, empty_state })
+}
+
+pub(crate) fn content_inventory(
+    config: &AdminConfig,
+    request: &HttpRequest,
+) -> Result<ContentInventoryResponse> {
+    let conn = authenticated_connection(config, request)?;
+    let mappings = current_button_mappings(&conn)?;
+    let mut stmt = conn.prepare(
+        "select id, content_type, title, text, language, source, state, audio_path, button_id \
+         from content_items \
+         where state in ('active', 'archived') and audio_path is not null \
+         order by button_id, content_type, language, state, order_index, id",
+    )?;
+    let rows = stmt
+        .query_map([], inventory_item_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("failed to read content inventory")?;
+    let mut active_count = 0;
+    let mut draft_count = 0;
+    let mut unused_count = 0;
+    let items = rows
+        .into_iter()
+        .map(|item| {
+            let (status, reason) = inventory_status(&item, mappings.get(&item.button_id));
+            match status {
+                "active" => active_count += 1,
+                "draft" => draft_count += 1,
+                "unused" => unused_count += 1,
+                _ => {}
+            }
+            ContentInventoryItemResponse {
+                id: item.id,
+                status: status.to_string(),
+                button_id: item.button_id,
+                content_type: item.content_type,
+                language: item.language,
+                title: item.title.unwrap_or_else(|| "Untitled audio".to_string()),
+                text: item.text,
+                source: item.source,
+                state: item.state,
+                preview_url: item.audio_path.as_deref().map(content_preview_url),
+                audio_path: item.audio_path,
+                reason,
+            }
+        })
+        .collect();
+
+    Ok(ContentInventoryResponse {
+        items,
+        active_count,
+        draft_count,
+        unused_count,
+    })
 }
 
 pub(crate) fn activate_content_item(
@@ -1064,9 +1240,11 @@ pub(crate) fn activate_content_item(
     if item.state != "archived" {
         anyhow::bail!("content is not inactive");
     }
+    let audio_path = item.audio_path.clone().unwrap_or_default();
+    let next_audio_path = activate_audio_file(config, &audio_path)?;
     conn.execute(
-        "update content_items set state = 'active', updated_at = ?1 where id = ?2",
-        params![now(), item.id],
+        "update content_items set state = 'active', audio_path = ?1, updated_at = ?2 where id = ?3",
+        params![next_audio_path, now(), item.id],
     )?;
     Ok(InactiveContentResponse {
         id: item.id,
@@ -1080,8 +1258,8 @@ pub(crate) fn activate_content_item(
         language: item.language,
         state: "active",
         source: item.source,
-        preview_url: content_preview_url(&item.audio_path.clone().unwrap_or_default()),
-        audio_path: item.audio_path.unwrap_or_default(),
+        preview_url: content_preview_url(&next_audio_path),
+        audio_path: next_audio_path,
     })
 }
 
@@ -1094,6 +1272,8 @@ pub(crate) fn trash_content_item(
     let item_id = path
         .trim_start_matches("/api/content/items/")
         .trim_matches('/');
+    let item = content_item_by_id(&conn, item_id)?.context("content item not found")?;
+    delete_draft_audio_file(config, item.audio_path.as_deref())?;
     let changes = conn.execute(
         "update content_items \
          set state = 'trash', trashed_at = ?1, purge_after = ?2, updated_at = ?3 \
@@ -1120,10 +1300,12 @@ pub(crate) fn trash_unused_generated_speech(
     if language.is_empty() {
         anyhow::bail!("language is required");
     }
+    let draft_paths = draft_audio_paths_for_cleanup(&conn, body.button_id, language)?;
+    delete_draft_audio_files(config, &draft_paths)?;
     let deleted_count = conn.execute(
         "update content_items \
          set state = 'trash', trashed_at = ?1, purge_after = ?2, updated_at = ?3 \
-         where source = 'generated' and state = 'archived' and content_type = 'language' \
+         where source in ('recorded', 'uploaded', 'generated') and state = 'archived' and content_type = 'language' \
            and button_id = ?4 and language = ?5",
         params![now(), purge_after(), now(), body.button_id, language],
     )?;
@@ -1147,6 +1329,32 @@ pub(crate) fn logout(config: &AdminConfig, token: Option<&str>) -> Result<()> {
         )?;
     }
     Ok(())
+}
+
+pub(crate) fn recent_button_events(
+    config: &AdminConfig,
+    request: &HttpRequest,
+) -> Result<Vec<RecentButtonEventResponse>> {
+    let conn = authenticated_connection(config, request)?;
+    if !table_exists(&conn, "button_events")? {
+        return Ok(Vec::new());
+    }
+    let mut stmt = conn.prepare(
+        "select occurred_at, button_id, mode, response_id, response_text \
+         from button_events order by id desc limit 20",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(RecentButtonEventResponse {
+            occurred_at: row.get(0)?,
+            button_id: row.get(1)?,
+            mode: row.get(2)?,
+            response_id: row.get(3)?,
+            response_text: row.get(4)?,
+        })
+    })?;
+
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Into::into)
 }
 
 fn authenticated_connection(config: &AdminConfig, request: &HttpRequest) -> Result<Connection> {
@@ -1677,18 +1885,6 @@ fn active_content_rows(
     Ok(rows)
 }
 
-fn active_language_fallback_rows(conn: &Connection, language: &str) -> Result<Vec<ContentItemRow>> {
-    conn.prepare(
-        "select id, content_type, title, text, language, source, state, audio_path \
-         from content_items \
-         where content_type = 'language' and state = 'active' and language = ?1 \
-         order by order_index, id",
-    )?
-    .query_map([language], content_item_from_row)?
-    .collect::<rusqlite::Result<Vec<_>>>()
-    .context("failed to read fallback active language content")
-}
-
 fn inactive_content_rows(
     conn: &Connection,
     button_id: i64,
@@ -1722,6 +1918,251 @@ fn inactive_content_rows(
     Ok(rows)
 }
 
+fn content_empty_state(
+    conn: &Connection,
+    button_id: i64,
+    content_type: &str,
+    language: Option<&str>,
+    state: &str,
+) -> Result<Option<ContentEmptyStateResponse>> {
+    if !table_exists(conn, "content_items")? {
+        return Ok(Some(empty_state_no_content(content_type, language, state)));
+    }
+
+    if content_type == "language" {
+        let same_button_other_languages =
+            content_languages_for_button(conn, button_id, state, language)?;
+        if !same_button_other_languages.is_empty() {
+            return Ok(Some(ContentEmptyStateResponse {
+                title: empty_title(content_type, language, state),
+                detail: format!(
+                    "This button has {} content in {}. Switch language back or add new content for {}.",
+                    state_label(state),
+                    join_labels(&same_button_other_languages),
+                    language.unwrap_or("this language")
+                ),
+            }));
+        }
+
+        if let Some(language) = language {
+            let other_buttons = content_buttons_for_language(conn, button_id, language, state)?;
+            if !other_buttons.is_empty() {
+                return Ok(Some(ContentEmptyStateResponse {
+                    title: empty_title(content_type, Some(language), state),
+                    detail: format!(
+                        "{language} {} content exists on {}. This button starts with its own empty content set.",
+                        state_label(state),
+                        join_button_labels(&other_buttons)
+                    ),
+                }));
+            }
+        }
+    } else {
+        let other_buttons = content_buttons_for_type(conn, button_id, content_type, state)?;
+        if !other_buttons.is_empty() {
+            return Ok(Some(ContentEmptyStateResponse {
+                title: empty_title(content_type, None, state),
+                detail: format!(
+                    "{} {} content exists on {}. This button starts with its own empty content set.",
+                    content_type_label(content_type),
+                    state_label(state),
+                    join_button_labels(&other_buttons)
+                ),
+            }));
+        }
+    }
+
+    let matching_count = count_content_rows(conn, content_type, language, state)?;
+    if matching_count > 0 {
+        return Ok(Some(ContentEmptyStateResponse {
+            title: empty_title(content_type, language, state),
+            detail: format!(
+                "{} content exists elsewhere, but not for this button selection. Add content here to make this button playable.",
+                content_type_label(content_type)
+            ),
+        }));
+    }
+
+    Ok(Some(empty_state_no_content(content_type, language, state)))
+}
+
+fn empty_state_no_content(
+    content_type: &str,
+    language: Option<&str>,
+    state: &str,
+) -> ContentEmptyStateResponse {
+    ContentEmptyStateResponse {
+        title: empty_title(content_type, language, state),
+        detail: format!(
+            "No {} {} content exists yet. Record, upload, or generate content to create the first item.",
+            language.unwrap_or_else(|| content_type_label(content_type)),
+            state_label(state)
+        ),
+    }
+}
+
+fn empty_title(content_type: &str, language: Option<&str>, state: &str) -> String {
+    let scope = language.unwrap_or_else(|| content_type_label(content_type));
+    format!("No {} {} content on this button", state_label(state), scope)
+}
+
+fn state_label(state: &str) -> &'static str {
+    if state == "active" {
+        "active"
+    } else {
+        "draft"
+    }
+}
+
+fn content_type_label(content_type: &str) -> &'static str {
+    match content_type {
+        "language" => "language",
+        "animals" => "animal",
+        "music" => "music",
+        _ => "content",
+    }
+}
+
+fn join_labels(values: &[String]) -> String {
+    values
+        .iter()
+        .take(3)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn join_button_labels(buttons: &[i64]) -> String {
+    buttons
+        .iter()
+        .take(3)
+        .map(|button| format!("Button {button}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn count_content_rows(
+    conn: &Connection,
+    content_type: &str,
+    language: Option<&str>,
+    state: &str,
+) -> Result<i64> {
+    let source_filter = if state == "archived" {
+        " and source in ('recorded', 'uploaded', 'generated')"
+    } else {
+        ""
+    };
+    let sql = if content_type == "language" && language.is_some() {
+        format!(
+            "select count(*) from content_items where content_type = ?1 and state = ?2 and language = ?3{source_filter}"
+        )
+    } else {
+        format!(
+            "select count(*) from content_items where content_type = ?1 and state = ?2{source_filter}"
+        )
+    };
+    if content_type == "language" {
+        if let Some(language) = language {
+            return conn
+                .query_row(&sql, params![content_type, state, language], |row| {
+                    row.get(0)
+                })
+                .context("failed to count scoped content rows");
+        }
+    }
+    conn.query_row(&sql, params![content_type, state], |row| row.get(0))
+        .context("failed to count scoped content rows")
+}
+
+fn content_languages_for_button(
+    conn: &Connection,
+    button_id: i64,
+    state: &str,
+    excluded_language: Option<&str>,
+) -> Result<Vec<String>> {
+    let source_filter = if state == "archived" {
+        " and source in ('recorded', 'uploaded', 'generated')"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "select distinct language from content_items \
+         where button_id = ?1 and content_type = 'language' and state = ?2 \
+           and language is not null{source_filter} \
+         order by language"
+    );
+    let mut values = conn
+        .prepare(&sql)?
+        .query_map(params![button_id, state], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("failed to read content languages for button")?;
+    if let Some(excluded_language) = excluded_language {
+        values.retain(|value| value != excluded_language);
+    }
+    Ok(values)
+}
+
+fn content_buttons_for_language(
+    conn: &Connection,
+    button_id: i64,
+    language: &str,
+    state: &str,
+) -> Result<Vec<i64>> {
+    let source_filter = if state == "archived" {
+        " and source in ('recorded', 'uploaded', 'generated')"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "select distinct button_id from content_items \
+         where button_id != ?1 and content_type = 'language' and state = ?2 and language = ?3{source_filter} \
+         order by button_id"
+    );
+    conn.prepare(&sql)?
+        .query_map(params![button_id, state, language], |row| row.get(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("failed to read content buttons for language")
+}
+
+fn content_buttons_for_type(
+    conn: &Connection,
+    button_id: i64,
+    content_type: &str,
+    state: &str,
+) -> Result<Vec<i64>> {
+    let source_filter = if state == "archived" {
+        " and source in ('recorded', 'uploaded', 'generated')"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "select distinct button_id from content_items \
+         where button_id != ?1 and content_type = ?2 and state = ?3{source_filter} \
+         order by button_id"
+    );
+    conn.prepare(&sql)?
+        .query_map(params![button_id, content_type, state], |row| row.get(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("failed to read content buttons for type")
+}
+
+fn draft_audio_paths_for_cleanup(
+    conn: &Connection,
+    button_id: i64,
+    language: &str,
+) -> Result<Vec<String>> {
+    conn.prepare(
+        "select audio_path \
+         from content_items \
+         where source in ('recorded', 'uploaded', 'generated') and state = 'archived' \
+           and content_type = 'language' and button_id = ?1 and language = ?2 \
+           and audio_path is not null",
+    )?
+    .query_map(params![button_id, language], |row| row.get(0))?
+    .collect::<rusqlite::Result<Vec<_>>>()
+    .context("failed to read draft audio paths for cleanup")
+}
+
 fn content_item_by_id(conn: &Connection, item_id: &str) -> Result<Option<ContentItemRow>> {
     conn.prepare(
         "select id, content_type, title, text, language, source, state, audio_path \
@@ -1743,6 +2184,138 @@ fn content_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContentIte
         state: row.get(6)?,
         audio_path: row.get(7)?,
     })
+}
+
+fn inventory_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContentInventoryRow> {
+    Ok(ContentInventoryRow {
+        id: row.get(0)?,
+        content_type: row.get(1)?,
+        title: row.get(2)?,
+        text: row.get(3)?,
+        language: row.get(4)?,
+        source: row.get(5)?,
+        state: row.get(6)?,
+        audio_path: row.get(7)?,
+        button_id: row.get(8)?,
+    })
+}
+
+fn current_button_mappings(conn: &Connection) -> Result<HashMap<i64, CurrentButtonMapping>> {
+    let mut mappings = default_button_mappings();
+    if !table_exists(conn, "button_mappings")? {
+        return Ok(mappings);
+    }
+
+    let mut stmt = conn.prepare("select button_id, mode, language from button_mappings")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            CurrentButtonMapping {
+                mode: row.get(1)?,
+                language: row.get(2)?,
+            },
+        ))
+    })?;
+    for row in rows {
+        let (button_id, mapping) = row?;
+        mappings.insert(button_id, mapping);
+    }
+    Ok(mappings)
+}
+
+fn default_button_mappings() -> HashMap<i64, CurrentButtonMapping> {
+    HashMap::from([
+        (
+            1,
+            CurrentButtonMapping {
+                mode: "language".to_string(),
+                language: Some("English".to_string()),
+            },
+        ),
+        (
+            2,
+            CurrentButtonMapping {
+                mode: "animals".to_string(),
+                language: None,
+            },
+        ),
+        (
+            3,
+            CurrentButtonMapping {
+                mode: "music".to_string(),
+                language: None,
+            },
+        ),
+        (
+            4,
+            CurrentButtonMapping {
+                mode: "setup_help".to_string(),
+                language: None,
+            },
+        ),
+        (
+            5,
+            CurrentButtonMapping {
+                mode: "setup_help".to_string(),
+                language: None,
+            },
+        ),
+    ])
+}
+
+fn inventory_status(
+    item: &ContentInventoryRow,
+    mapping: Option<&CurrentButtonMapping>,
+) -> (&'static str, String) {
+    if item.state == "archived" {
+        return (
+            "draft",
+            "Draft audio is waiting for review and activation.".to_string(),
+        );
+    }
+
+    let Some(mapping) = mapping else {
+        return (
+            "unused",
+            format!("Button {} has no current mode mapping.", item.button_id),
+        );
+    };
+
+    if mapping.mode != item.content_type {
+        return (
+            "unused",
+            format!(
+                "Button {} is set to {}, not {}.",
+                item.button_id,
+                mode_reason_label(&mapping.mode),
+                content_type_label(&item.content_type)
+            ),
+        );
+    }
+
+    if item.content_type == "language" {
+        let selected = mapping.language.as_deref().unwrap_or("English");
+        let content_language = item.language.as_deref().unwrap_or("unknown");
+        if selected != content_language {
+            return (
+                "unused",
+                format!(
+                    "Button {} is set to {selected}, not {content_language}.",
+                    item.button_id
+                ),
+            );
+        }
+    }
+
+    ("active", "Active in the current button setup.".to_string())
+}
+
+fn mode_reason_label(mode: &str) -> &str {
+    match mode {
+        "setup_help" => "setup help",
+        "disabled" => "disabled",
+        value => value,
+    }
 }
 
 fn inactive_response_for_item(conn: &Connection, item_id: &str) -> Result<InactiveContentResponse> {
@@ -1897,14 +2470,14 @@ fn normalize_media_input(input: &MediaInput, source: &str) -> Result<NormalizedM
     let title = input.title.trim();
     let text = input.text.trim();
     let language = input.language.trim();
-    if title.is_empty() {
-        anyhow::bail!("title is required");
+    if input.content_type == "language" && language.is_empty() {
+        anyhow::bail!("language {source}s require language");
     }
-    if input.content_type == "language" && (text.is_empty() || language.is_empty()) {
-        anyhow::bail!("language {source}s require sentence text and language");
+    if input.content_type == "language" && text.is_empty() {
+        anyhow::bail!("language {source}s require spoken text");
     }
-    if input.content_type == "animals" && language.is_empty() {
-        anyhow::bail!("animal {source}s require a language");
+    if input.content_type != "language" && title.is_empty() {
+        anyhow::bail!("{source} title is required");
     }
     Ok(NormalizedMediaInput {
         content_type: input.content_type.clone(),
@@ -1938,9 +2511,81 @@ fn parse_content_button_path<'a>(path: &'a str, suffix: &str) -> Result<(i64, &'
 
 fn content_preview_url(audio_path: &str) -> String {
     audio_path
-        .strip_prefix("data/media/")
+        .strip_prefix("data/audio/")
         .map(|path| format!("/api/media/{path}"))
+        .or_else(|| {
+            audio_path
+                .strip_prefix("data/media/")
+                .map(|path| format!("/api/media/{path}"))
+        })
         .unwrap_or_else(|| format!("/{audio_path}"))
+}
+
+fn draft_audio_path(content_type: &str, filename: &str) -> String {
+    format!("data/audio/draft/{content_type}/{filename}")
+}
+
+fn active_audio_path_from_draft(audio_path: &str) -> Option<String> {
+    audio_path
+        .strip_prefix("data/audio/draft/")
+        .map(|path| format!("data/audio/active/{path}"))
+}
+
+fn activate_audio_file(config: &AdminConfig, audio_path: &str) -> Result<String> {
+    let Some(active_path) = active_audio_path_from_draft(audio_path) else {
+        return Ok(audio_path.to_string());
+    };
+    let draft_relative = audio_path
+        .strip_prefix("data/audio/")
+        .context("draft audio path must be under data/audio")?;
+    let active_relative = active_path
+        .strip_prefix("data/audio/")
+        .context("active audio path must be under data/audio")?;
+    let draft_absolute = config.media_root.join(draft_relative);
+    let active_absolute = config.media_root.join(active_relative);
+    if let Some(parent) = active_absolute.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create active audio directory {}",
+                parent.display()
+            )
+        })?;
+    }
+    fs::rename(&draft_absolute, &active_absolute).with_context(|| {
+        format!(
+            "failed to move draft audio {} to active audio {}",
+            draft_absolute.display(),
+            active_absolute.display()
+        )
+    })?;
+    Ok(active_path)
+}
+
+fn draft_audio_absolute_path(config: &AdminConfig, audio_path: &str) -> Option<std::path::PathBuf> {
+    let draft_relative = audio_path.strip_prefix("data/audio/draft/")?;
+    Some(config.media_root.join("draft").join(draft_relative))
+}
+
+fn delete_draft_audio_file(config: &AdminConfig, audio_path: Option<&str>) -> Result<()> {
+    let Some(audio_path) = audio_path else {
+        return Ok(());
+    };
+    let Some(path) = draft_audio_absolute_path(config, audio_path) else {
+        return Ok(());
+    };
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error)
+            .with_context(|| format!("failed to delete draft audio file {}", path.display())),
+    }
+}
+
+fn delete_draft_audio_files(config: &AdminConfig, audio_paths: &[String]) -> Result<()> {
+    for audio_path in audio_paths {
+        delete_draft_audio_file(config, Some(audio_path))?;
+    }
+    Ok(())
 }
 
 fn purge_after() -> String {
@@ -2053,31 +2698,40 @@ fn media_filename(
     label: &str,
     extension: &str,
 ) -> String {
-    let prefix = if language.trim().is_empty() {
-        content_type
+    if content_type == "language" {
+        format!(
+            "{source}-{}-{}-{}.{}",
+            slug_part(language),
+            slug_part(label),
+            recording_timestamp(),
+            if source == "recorded" {
+                "wav"
+            } else {
+                extension
+            }
+        )
     } else {
-        language
-    };
-    format!(
-        "{}-{}-{}.{}",
-        slug_part(prefix),
-        slug_part(label),
-        recording_timestamp(),
-        if source == "recorded" {
-            "wav"
-        } else {
-            extension
-        }
-    )
+        format!(
+            "{}-{}-{}.{}",
+            slug_part(source),
+            slug_part(label),
+            recording_timestamp(),
+            if source == "recorded" {
+                "wav"
+            } else {
+                extension
+            }
+        )
+    }
 }
 
-fn generated_filename(language: &str, model: &str, text: &str, extension: &str) -> String {
+fn generated_filename(model: &str, language: &str, text: &str, extension: &str) -> String {
     let text_slug = slug_part(text);
     let truncated = text_slug.chars().take(72).collect::<String>();
     format!(
-        "{}-{}-{}-{}.{}",
-        slug_part(language),
+        "generated-{}-{}-{}-{}.{}",
         slug_part(model),
+        slug_part(language),
         truncated,
         recording_timestamp(),
         extension
@@ -2163,19 +2817,10 @@ fn generate_speech_audio(
     text: &str,
     voice: Option<&str>,
 ) -> Result<GeneratedAudio> {
-    let provider = if provider == "auto" {
-        if language.eq_ignore_ascii_case("vietnamese") {
-            "vietnamese-vits"
-        } else {
-            "voxtral"
-        }
-    } else {
-        provider
-    };
+    let provider = resolve_speech_provider(provider, language);
     match provider {
         "voxtral" => {
-            let base = std::env::var("VOXTRAL_API_BASE")
-                .unwrap_or_else(|_| "https://127.0.0.1:8001/v1".to_string());
+            let base = speech_provider_base_url(provider)?;
             let model = std::env::var("VOXTRAL_MODEL")
                 .unwrap_or_else(|_| "mistralai/Voxtral-4B-TTS-2603".to_string());
             let voice = voice
@@ -2209,8 +2854,7 @@ fn generate_speech_audio(
             })
         }
         "vietnamese-vits" => {
-            let base = std::env::var("VIETNAMESE_VITS_API_BASE")
-                .unwrap_or_else(|_| "https://127.0.0.1:7872".to_string());
+            let base = speech_provider_base_url(provider)?;
             let body = json!({ "input": text, "response_format": "wav" }).to_string();
             let bytes = post_speech_json(
                 &format!("{}/v1/audio/speech", base.trim_end_matches('/')),
@@ -2228,6 +2872,97 @@ fn generate_speech_audio(
         }
         _ => anyhow::bail!("unsupported speech provider"),
     }
+}
+
+fn resolve_speech_provider<'a>(provider: &'a str, language: &str) -> &'a str {
+    if provider == "auto" {
+        if language.eq_ignore_ascii_case("vietnamese") {
+            "vietnamese-vits"
+        } else {
+            "voxtral"
+        }
+    } else {
+        provider
+    }
+}
+
+fn speech_provider_base_url(provider: &str) -> Result<String> {
+    match provider {
+        "voxtral" => Ok(std::env::var("VOXTRAL_API_BASE")
+            .unwrap_or_else(|_| "https://127.0.0.1:8001/v1".to_string())),
+        "vietnamese-vits" => Ok(std::env::var("VIETNAMESE_VITS_API_BASE")
+            .unwrap_or_else(|_| "https://127.0.0.1:7872".to_string())),
+        "mistral" => {
+            anyhow::bail!("hosted Mistral generation is not supported by the Pi Rust spike yet")
+        }
+        _ => anyhow::bail!("unsupported speech provider"),
+    }
+}
+
+fn cached_speech_provider_health(
+    cache_key: String,
+    provider: String,
+    probe: impl FnOnce() -> Result<()>,
+) -> Result<(CachedSpeechProviderHealth, bool)> {
+    let cache = SPEECH_PROVIDER_HEALTH_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(cached) = cache
+        .lock()
+        .expect("speech provider health cache poisoned")
+        .get(&cache_key)
+        .filter(|cached| cached.checked_instant.elapsed() < SPEECH_PROVIDER_HEALTH_TTL)
+        .cloned()
+    {
+        return Ok((cached, true));
+    }
+
+    let checked_at = Utc::now().to_rfc3339();
+    let (online, message) = match probe() {
+        Ok(()) => (
+            true,
+            "TTS provider is online and ready for generated speech.".to_string(),
+        ),
+        Err(error) => (
+            false,
+            format!("TTS provider is offline or unreachable: {error}"),
+        ),
+    };
+    let health = CachedSpeechProviderHealth {
+        online,
+        provider,
+        checked_at,
+        checked_instant: Instant::now(),
+        message,
+    };
+    cache
+        .lock()
+        .expect("speech provider health cache poisoned")
+        .insert(cache_key, health.clone());
+    Ok((health, false))
+}
+
+fn speech_provider_status_response(
+    health: (CachedSpeechProviderHealth, bool),
+) -> GeneratedSpeechStatusResponse {
+    let (health, cached) = health;
+    GeneratedSpeechStatusResponse {
+        online: health.online,
+        provider: health.provider,
+        checked_at: health.checked_at,
+        cached,
+        cache_ttl_seconds: SPEECH_PROVIDER_HEALTH_TTL.as_secs(),
+        next_check_after_seconds: SPEECH_PROVIDER_HEALTH_TTL.as_secs(),
+        message: health.message,
+    }
+}
+
+fn probe_speech_provider(base_url: &str) -> Result<()> {
+    let url = validate_speech_api_url(base_url)?;
+    let client = speech_http_client_with_timeout(SPEECH_PROVIDER_HEALTH_TIMEOUT)?;
+    client
+        .get(url)
+        .send()
+        .with_context(|| format!("failed to connect to speech provider {base_url}"))?;
+    Ok(())
 }
 
 fn post_speech_json(
@@ -2283,6 +3018,33 @@ fn speech_http_client() -> Result<reqwest::blocking::Client> {
             .as_deref()
             .map(Path::new),
     )
+}
+
+fn speech_http_client_with_timeout(timeout: Duration) -> Result<reqwest::blocking::Client> {
+    let mut builder = reqwest::blocking::Client::builder()
+        .timeout(timeout)
+        .connect_timeout(timeout);
+    if let Some(path) = std::env::var_os("TCUBE_SPEECH_API_CA_CERT")
+        .as_deref()
+        .map(Path::new)
+    {
+        let pem = fs::read(path).with_context(|| {
+            format!(
+                "failed to read speech API CA certificate {}",
+                path.display()
+            )
+        })?;
+        let certificate = reqwest::Certificate::from_pem(&pem).with_context(|| {
+            format!(
+                "failed to parse speech API CA certificate {}",
+                path.display()
+            )
+        })?;
+        builder = builder.add_root_certificate(certificate);
+    }
+    builder
+        .build()
+        .context("failed to build speech API HTTP client")
 }
 
 fn speech_http_client_with_ca_cert_path(
@@ -2911,6 +3673,7 @@ fn cookie_value<'a>(header: &'a str, name: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
     use crate::server::routes::route_request;
@@ -3131,6 +3894,72 @@ mod tests {
         assert_eq!(session_response.status, 200);
         assert_eq!(body["authenticated"], true);
         assert_eq!(body["account"]["username"], "admin");
+    }
+
+    #[test]
+    fn versioned_admin_api_aliases_support_session_setup_and_events() {
+        let database = test_database();
+        let config = test_config(database.path());
+        let account_id = seed_auth_database(database.path(), "admin", "secret-password").unwrap();
+        let conn = Connection::open(database.path()).unwrap();
+        let cookie = session_cookie(&create_session(&conn, &account_id).unwrap());
+        conn.execute_batch(
+            "create table button_events (
+                id integer primary key autoincrement,
+                occurred_at text not null,
+                button_id integer not null,
+                mode text not null,
+                response_id text not null,
+                response_text text not null
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "insert into button_events \
+             (occurred_at, button_id, mode, response_id, response_text) \
+             values (?1, 1, 'language', 'hello', 'Hello')",
+            [now()],
+        )
+        .unwrap();
+        drop(conn);
+
+        let session = route_request(
+            &HttpRequest {
+                method: "GET".to_string(),
+                path: "/api/pi/v1/auth/session".to_string(),
+                query: HashMap::new(),
+                headers: HashMap::from([("cookie".to_string(), cookie.clone())]),
+                body: Vec::new(),
+            },
+            &config,
+        );
+        assert_eq!(session.status, 200);
+
+        let mode = route_request(
+            &json_request(
+                "POST",
+                "/api/pi/v1/setup/buttons/1/mode",
+                json!({ "mode": "language", "language": "French" }),
+                Some(cookie.clone()),
+            ),
+            &config,
+        );
+        assert_eq!(mode.status, 200);
+
+        let events = route_request(
+            &HttpRequest {
+                method: "GET".to_string(),
+                path: "/api/pi/v1/events/recent".to_string(),
+                query: HashMap::new(),
+                headers: HashMap::from([("cookie".to_string(), cookie)]),
+                body: Vec::new(),
+            },
+            &config,
+        );
+        assert_eq!(events.status, 200);
+        let body: serde_json::Value = serde_json::from_slice(&events.body).unwrap();
+        assert_eq!(body[0]["button_id"], 1);
+        assert_eq!(body[0]["response_text"], "Hello");
     }
 
     #[test]
@@ -3397,7 +4226,7 @@ mod tests {
     }
 
     #[test]
-    fn button_mode_updates_and_rejects_duplicate_language() {
+    fn button_mode_updates_allow_reused_modes_and_languages() {
         let database = test_database();
         let config = test_config(database.path());
         let account_id = seed_auth_database(database.path(), "admin", "secret-password").unwrap();
@@ -3429,7 +4258,10 @@ mod tests {
             ),
             &config,
         );
-        assert_eq!(duplicate.status, 400);
+        assert_eq!(duplicate.status, 200);
+        let review = setup_review(&config).unwrap();
+        assert_eq!(review.button_modes["1"], "language:Spanish");
+        assert_eq!(review.button_modes["2"], "language:Spanish");
     }
 
     #[test]
@@ -3573,11 +4405,23 @@ mod tests {
             "insert into content_items \
              (id, content_type, button_id, language, title, text, audio_path, source, state, order_index) \
              values \
-             ('generated-draft', 'language', 1, 'English', 'Draft', 'Draft', 'data/media/generated/language/draft.wav', 'generated', 'archived', 10), \
-             ('recorded-draft', 'animals', 2, null, 'Roar', 'Roar', 'data/media/recorded/animals/roar.wav', 'recorded', 'archived', 11)",
+             ('generated-draft', 'language', 1, 'English', 'Draft', 'Draft', 'data/audio/draft/language/generated.wav', 'generated', 'archived', 10), \
+             ('uploaded-language-draft', 'language', 1, 'English', 'Upload', 'Upload', 'data/audio/draft/language/upload.wav', 'uploaded', 'archived', 11), \
+             ('recorded-draft', 'animals', 2, null, 'Roar', 'Roar', 'data/audio/draft/animals/roar.wav', 'recorded', 'archived', 12), \
+             ('rejected-draft', 'animals', 2, null, 'Growl', 'Growl', 'data/audio/draft/animals/growl.wav', 'recorded', 'archived', 13)",
             [],
         )
         .unwrap();
+        let draft_audio = config.media_root.join("draft/animals/roar.wav");
+        fs::create_dir_all(draft_audio.parent().unwrap()).unwrap();
+        fs::write(&draft_audio, test_wav()).unwrap();
+        let rejected_draft_audio = config.media_root.join("draft/animals/growl.wav");
+        fs::write(&rejected_draft_audio, test_wav()).unwrap();
+        let generated_draft_audio = config.media_root.join("draft/language/generated.wav");
+        fs::create_dir_all(generated_draft_audio.parent().unwrap()).unwrap();
+        fs::write(&generated_draft_audio, test_wav()).unwrap();
+        let uploaded_language_draft_audio = config.media_root.join("draft/language/upload.wav");
+        fs::write(&uploaded_language_draft_audio, test_wav()).unwrap();
         drop(conn);
 
         let active = route_request(
@@ -3590,8 +4434,39 @@ mod tests {
         );
         assert_eq!(active.status, 200);
         let active_body: serde_json::Value = serde_json::from_slice(&active.body).unwrap();
-        assert_eq!(active_body.as_array().unwrap().len(), 1);
-        assert_eq!(active_body[0]["preview_url"], serde_json::Value::Null);
+        assert_eq!(active_body["items"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            active_body["items"][0]["preview_url"],
+            serde_json::Value::Null
+        );
+        assert_eq!(active_body["empty_state"], serde_json::Value::Null);
+
+        let active_language_mismatch = route_request(
+            &authed_get(
+                "/api/content/buttons/1/language/active",
+                HashMap::from([("language".to_string(), "French".to_string())]),
+                &cookie,
+            ),
+            &config,
+        );
+        assert_eq!(active_language_mismatch.status, 200);
+        let active_language_mismatch_body: serde_json::Value =
+            serde_json::from_slice(&active_language_mismatch.body).unwrap();
+        assert_eq!(
+            active_language_mismatch_body["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+        assert_eq!(
+            active_language_mismatch_body["empty_state"]["title"],
+            "No active French content on this button"
+        );
+        assert!(active_language_mismatch_body["empty_state"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("This button has active content in English"));
 
         let inactive = route_request(
             &authed_get(
@@ -3603,11 +4478,39 @@ mod tests {
         );
         assert_eq!(inactive.status, 200);
         let inactive_body: serde_json::Value = serde_json::from_slice(&inactive.body).unwrap();
-        assert_eq!(inactive_body[0]["id"], "recorded-draft");
+        assert_eq!(inactive_body["items"][0]["id"], "recorded-draft");
         assert_eq!(
-            inactive_body[0]["preview_url"],
-            "/api/media/recorded/animals/roar.wav"
+            inactive_body["items"][0]["preview_url"],
+            "/api/media/draft/animals/roar.wav"
         );
+        assert_eq!(inactive_body["empty_state"], serde_json::Value::Null);
+
+        let inactive_language_mismatch = route_request(
+            &authed_get(
+                "/api/content/buttons/1/language/inactive",
+                HashMap::from([("language".to_string(), "French".to_string())]),
+                &cookie,
+            ),
+            &config,
+        );
+        assert_eq!(inactive_language_mismatch.status, 200);
+        let inactive_language_mismatch_body: serde_json::Value =
+            serde_json::from_slice(&inactive_language_mismatch.body).unwrap();
+        assert_eq!(
+            inactive_language_mismatch_body["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+        assert_eq!(
+            inactive_language_mismatch_body["empty_state"]["title"],
+            "No draft French content on this button"
+        );
+        assert!(inactive_language_mismatch_body["empty_state"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("This button has draft content in English"));
 
         let activate = route_request(
             &HttpRequest {
@@ -3620,15 +4523,19 @@ mod tests {
             &config,
         );
         assert_eq!(activate.status, 200);
-        let activated_state: String = Connection::open(database.path())
-            .unwrap()
-            .query_row(
-                "select state from content_items where id = 'recorded-draft'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
+        let (activated_state, activated_audio_path): (String, String) =
+            Connection::open(database.path())
+                .unwrap()
+                .query_row(
+                    "select state, audio_path from content_items where id = 'recorded-draft'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
         assert_eq!(activated_state, "active");
+        assert_eq!(activated_audio_path, "data/audio/active/animals/roar.wav");
+        assert!(!draft_audio.exists());
+        assert!(config.media_root.join("active/animals/roar.wav").exists());
 
         let cleanup = route_request(
             &json_request(
@@ -3641,7 +4548,22 @@ mod tests {
         );
         assert_eq!(cleanup.status, 200);
         let cleanup_body: serde_json::Value = serde_json::from_slice(&cleanup.body).unwrap();
-        assert_eq!(cleanup_body["deleted_count"], 1);
+        assert_eq!(cleanup_body["deleted_count"], 2);
+        assert!(!generated_draft_audio.exists());
+        assert!(!uploaded_language_draft_audio.exists());
+
+        let reject = route_request(
+            &HttpRequest {
+                method: "DELETE".to_string(),
+                path: "/api/content/items/rejected-draft".to_string(),
+                query: HashMap::new(),
+                headers: HashMap::from([("cookie".to_string(), cookie.clone())]),
+                body: Vec::new(),
+            },
+            &config,
+        );
+        assert_eq!(reject.status, 200);
+        assert!(!rejected_draft_audio.exists());
 
         let trash = route_request(
             &HttpRequest {
@@ -3666,6 +4588,74 @@ mod tests {
     }
 
     #[test]
+    fn content_inventory_classifies_current_drafts_and_unused_audio() {
+        let database = test_database();
+        let config = test_config(database.path());
+        let account_id = seed_auth_database(database.path(), "admin", "secret-password").unwrap();
+        let cookie = session_cookie(
+            &create_session(&Connection::open(database.path()).unwrap(), &account_id).unwrap(),
+        );
+        let conn = Connection::open(database.path()).unwrap();
+        seed_active_content(&conn).unwrap();
+        conn.execute(
+            "insert into content_items \
+             (id, content_type, button_id, language, title, text, audio_path, source, state, order_index) \
+             values \
+             ('inventory-active-one', 'language', 1, 'English', 'Hello audio', 'Hello audio', 'data/audio/active/language/hello.wav', 'recorded', 'active', 20), \
+             ('inventory-active-two', 'language', 1, 'English', 'Bye audio', 'Bye audio', 'data/audio/active/language/bye.wav', 'recorded', 'active', 21), \
+             ('inventory-draft', 'language', 1, 'French', 'Bonjour', 'Bonjour', 'data/audio/draft/language/bonjour.wav', 'recorded', 'archived', 22)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let mode = route_request(
+            &json_request(
+                "POST",
+                "/api/setup/buttons/1/mode",
+                json!({ "mode": "language", "language": "French" }),
+                Some(cookie.clone()),
+            ),
+            &config,
+        );
+        assert_eq!(mode.status, 200);
+
+        let inventory = route_request(
+            &HttpRequest {
+                method: "GET".to_string(),
+                path: "/api/content/inventory".to_string(),
+                query: HashMap::new(),
+                headers: HashMap::from([("cookie".to_string(), cookie)]),
+                body: Vec::new(),
+            },
+            &config,
+        );
+        assert_eq!(inventory.status, 200);
+        let body: serde_json::Value = serde_json::from_slice(&inventory.body).unwrap();
+        assert_eq!(body["draft_count"], 1);
+        assert_eq!(body["unused_count"], 2);
+        assert_eq!(body["active_count"], 0);
+        let draft = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "inventory-draft")
+            .unwrap();
+        assert_eq!(draft["status"], "draft");
+        let unused = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "inventory-active-one")
+            .unwrap();
+        assert_eq!(unused["status"], "unused");
+        assert!(unused["reason"]
+            .as_str()
+            .unwrap()
+            .contains("Button 1 is set to French"));
+    }
+
+    #[test]
     fn multipart_recording_and_upload_create_inactive_drafts() {
         let database = test_database();
         let config = test_config(database.path());
@@ -3682,7 +4672,7 @@ mod tests {
                 vec![
                     ("content_type", "language"),
                     ("button_id", "1"),
-                    ("title", "Hello baby"),
+                    ("title", ""),
                     ("text", "Hello baby"),
                     ("language", "English"),
                 ],
@@ -3697,10 +4687,76 @@ mod tests {
         let recorded_body: serde_json::Value = serde_json::from_slice(&recorded.body).unwrap();
         assert_eq!(recorded_body["state"], "archived");
         assert_eq!(recorded_body["source"], "recorded");
+        assert_eq!(recorded_body["text"], "Hello baby");
+        assert!(recorded_body["title"]
+            .as_str()
+            .unwrap()
+            .starts_with("recorded-english-hello-baby-"));
         assert!(recorded_body["audio_path"]
             .as_str()
             .unwrap()
-            .starts_with("data/media/recorded/language/"));
+            .starts_with("data/audio/draft/language/recorded-english-hello-baby-"));
+        let recorded_path = recorded_body["audio_path"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("data/audio/")
+            .unwrap();
+        assert!(config.media_root.join(recorded_path).exists());
+
+        let recorded_without_title = route_request(
+            &multipart_request(
+                "/api/content/recordings",
+                &cookie,
+                vec![
+                    ("content_type", "language"),
+                    ("button_id", "4"),
+                    ("title", ""),
+                    ("text", "Bonjour bebe"),
+                    ("language", "French"),
+                ],
+                "audio_file",
+                "french-recording.wav",
+                "audio/wav",
+                wav.clone(),
+            ),
+            &config,
+        );
+        assert_eq!(recorded_without_title.status, 200);
+        let recorded_without_title_body: serde_json::Value =
+            serde_json::from_slice(&recorded_without_title.body).unwrap();
+        assert_eq!(recorded_without_title_body["state"], "archived");
+        assert_eq!(recorded_without_title_body["text"], "Bonjour bebe");
+        assert_eq!(recorded_without_title_body["language"], "French");
+        assert!(recorded_without_title_body["title"]
+            .as_str()
+            .unwrap()
+            .starts_with("recorded-french-bonjour-bebe-"));
+        let french_recorded_path = recorded_without_title_body["audio_path"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("data/audio/")
+            .unwrap();
+        assert!(config.media_root.join(french_recorded_path).exists());
+
+        let recorded_without_spoken_text = route_request(
+            &multipart_request(
+                "/api/content/recordings",
+                &cookie,
+                vec![
+                    ("content_type", "language"),
+                    ("button_id", "4"),
+                    ("title", ""),
+                    ("text", ""),
+                    ("language", "French"),
+                ],
+                "audio_file",
+                "french-recording.wav",
+                "audio/wav",
+                wav.clone(),
+            ),
+            &config,
+        );
+        assert_eq!(recorded_without_spoken_text.status, 400);
 
         let uploaded = route_request(
             &multipart_request(
@@ -3710,8 +4766,8 @@ mod tests {
                     ("content_type", "animals"),
                     ("button_id", "2"),
                     ("title", "Roar"),
-                    ("text", "Roar"),
-                    ("language", "English"),
+                    ("text", ""),
+                    ("language", ""),
                 ],
                 "audio_file",
                 "roar.wav",
@@ -3723,10 +4779,18 @@ mod tests {
         assert_eq!(uploaded.status, 200);
         let uploaded_body: serde_json::Value = serde_json::from_slice(&uploaded.body).unwrap();
         assert_eq!(uploaded_body["source"], "uploaded");
+        assert_eq!(uploaded_body["title"], "Roar");
+        assert_eq!(uploaded_body["text"], "Roar");
         assert!(uploaded_body["preview_url"]
             .as_str()
             .unwrap()
-            .starts_with("/api/media/uploaded/animals/"));
+            .starts_with("/api/media/draft/animals/"));
+        let uploaded_path = uploaded_body["audio_path"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("data/audio/")
+            .unwrap();
+        assert!(config.media_root.join(uploaded_path).exists());
     }
 
     struct TestDatabase {
@@ -3782,6 +4846,46 @@ mod tests {
         assert!(insecure
             .to_string()
             .contains("speech provider URL must use https"));
+    }
+
+    #[test]
+    fn speech_provider_probe_rejects_insecure_urls() {
+        let error = probe_speech_provider("http://localhost:8001/v1").unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("speech provider URL must use https"));
+    }
+
+    #[test]
+    fn speech_provider_health_cache_reuses_recent_result() {
+        let probe_count = AtomicUsize::new(0);
+        let key = format!("test-provider:{}", random_token(8).unwrap());
+
+        let first = cached_speech_provider_health(key.clone(), "voxtral".to_string(), || {
+            probe_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+        .unwrap();
+        let second = cached_speech_provider_health(key, "voxtral".to_string(), || {
+            probe_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+        .unwrap();
+
+        assert!(first.0.online);
+        assert!(!first.1);
+        assert!(second.0.online);
+        assert!(second.1);
+        assert_eq!(probe_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn generated_language_filename_includes_model_language_and_text() {
+        let filename = generated_filename("voxtral", "French", "Bonjour bebe", "wav");
+
+        assert!(filename.starts_with("generated-voxtral-french-bonjour-bebe-"));
+        assert!(filename.ends_with(".wav"));
     }
 
     fn json_request(

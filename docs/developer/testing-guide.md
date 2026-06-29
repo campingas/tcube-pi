@@ -18,9 +18,11 @@ For admin UI source changes, run:
 ```sh
 just build-admin-ui
 just check-admin-ui
+just test-admin-ui-mobile
 ```
 
 `just build-admin-ui` emits static assets into `admin-ui/build/`, which is the directory served by `tcube-pi-admin` and copied into Pi packages. `just check-admin-ui` runs Svelte and TypeScript checks against `admin-ui/`.
+`just test-admin-ui-mobile` runs the Playwright mobile viewport checks against the admin UI with a mobile Chromium project and mocked Pi API responses.
 
 Use `pnpm` for every direct admin UI and JavaScript command. Prefer the `just` recipes above for normal workflows.
 

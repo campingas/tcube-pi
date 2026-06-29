@@ -15,7 +15,7 @@ struct Cli {
     #[arg(long, default_value = "admin-ui")]
     ui_dist: PathBuf,
 
-    #[arg(long, default_value = "data/media")]
+    #[arg(long, default_value = "data/audio")]
     media_root: PathBuf,
 
     #[arg(long, default_value = "content")]

@@ -3,7 +3,7 @@
 /data/*.sqlite3-*
 /data/runtime-content.json
 /data/admin-recovery-code.txt
-/data/media/
+/data/audio/
 /data/content-packages/
 /data/cubes/
 /.playwright-cli

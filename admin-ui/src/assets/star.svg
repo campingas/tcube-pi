@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12" result="blur1" />
+      <feGaussianBlur stdDeviation="25" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur2" />
+        <feMergeNode in="blur1" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <radialGradient id="starGradient" cx="50%" cy="45%" r="55%" fx="45%" fy="35%">
+      <stop offset="0%" stop-color="#FFFDF0" />
+      <stop offset="30%" stop-color="#FFDF6D" />
+      <stop offset="75%" stop-color="#FF9E36" />
+      <stop offset="100%" stop-color="#FF7626" />
+    </radialGradient>
+
+    <linearGradient id="softHighlight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <style>
+    @keyframes pulseGlow {
+      0% {
+        transform: scale(1);
+        filter: url(#glow) drop-shadow(0 0 15px rgba(255, 165, 0, 0.6));
+      }
+      50% {
+        transform: scale(1.02);
+        filter: url(#glow) drop-shadow(0 0 35px rgba(255, 118, 38, 0.9));
+      }
+      100% {
+        transform: scale(1);
+        filter: url(#glow) drop-shadow(0 0 15px rgba(255, 165, 0, 0.6));
+      }
+    }
+
+    .star-body {
+      transform-origin: 250px 250px;
+      animation: pulseGlow 4s ease-in-out infinite;
+    }
+
+    .eye {
+      fill: #2C1607;
+    }
+
+    .mouth {
+      stroke: #2C1607;
+      stroke-width: 7;
+      stroke-linecap: round;
+      fill: none;
+    }
+
+    .blush {
+      fill: #FF5E7E;
+      opacity: 0.5;
+      filter: blur(4px);
+    }
+  </style>
+
+  <rect width="100%" height="100%" fill="#4A2E80" opacity="0.1" rx="15"/>
+
+  <g class="star-body">
+    <path d="M 250 40 
+             C 280 40, 310 130, 340 145 
+             C 370 160, 460 150, 465 185 
+             C 470 220, 400 280, 405 315 
+             C 410 350, 450 430, 420 455 
+             C 390 480, 315 425, 250 425 
+             C 185 425, 110 480, 80 455 
+             C 50 430, 90 350, 95 315 
+             C 100 280, 30 220, 35 185 
+             C 40 150, 130 160, 160 145 
+             C 190 130, 220 40, 250 40 Z" 
+          fill="url(#starGradient)" />
+
+    <path d="M 250 55 
+             C 273 55, 295 133, 325 152 
+             C 345 165, 400 160, 435 185
+             C 370 170, 310 180, 250 180
+             C 190 180, 130 170, 65 185
+             C 100 160, 155 165, 175 152
+             C 205 133, 227 55, 250 55 Z" 
+          fill="url(#softHighlight)" />
+
+    <circle cx="170" cy="275" r="22" class="blush" />
+    <circle cx="330" cy="275" r="22" class="blush" />
+
+    <circle cx="190" cy="250" r="14" class="eye" />
+    <circle cx="310" cy="250" r="14" class="eye" />
+    
+    <circle cx="186" cy="244" r="5" fill="#FFFFFF" />
+    <circle cx="306" cy="244" r="5" fill="#FFFFFF" />
+
+    <path d="M 225 265 Q 250 295, 275 265" class="mouth" />
+  </g>
+</svg>

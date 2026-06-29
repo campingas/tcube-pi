@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <filter id="orangeGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="15" result="blur1" />
+      <feGaussianBlur stdDeviation="30" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur2" />
+        <feMergeNode in="blur1" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <radialGradient id="octagonGradient" cx="45%" cy="40%" r="60%" fx="35%" fy="30%">
+      <stop offset="0%" stop-color="#FFF3CC" /> <stop offset="25%" stop-color="#FFB300" /> <stop offset="70%" stop-color="#FF5722" /> <stop offset="100%" stop-color="#BF360C" /> </radialGradient>
+
+    <linearGradient id="innerGelGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#FF5722" stop-opacity="0" />
+    </linearGradient>
+
+    <linearGradient id="glossHighlight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <style>
+    @keyframes pulseGlow {
+      0% {
+        transform: scale(1);
+        filter: url(#orangeGlow) drop-shadow(0 0 20px rgba(255, 179, 0, 0.6));
+      }
+      50% {
+        transform: scale(1.02);
+        filter: url(#orangeGlow) drop-shadow(0 0 40px rgba(255, 87, 34, 0.9));
+      }
+      100% {
+        transform: scale(1);
+        filter: url(#orangeGlow) drop-shadow(0 0 20px rgba(255, 179, 0, 0.6));
+      }
+    }
+
+    .octagon-body {
+      transform-origin: 250px 250px;
+      animation: pulseGlow 4s ease-in-out infinite;
+    }
+
+    .eye {
+      fill: #2E0B00; /* Very deep orange-black */
+    }
+
+    .mouth {
+      stroke: #2E0B00;
+      stroke-width: 7;
+      stroke-linecap: round;
+      fill: none;
+    }
+
+    .blush {
+      fill: #FF2E93; /* Hot pink blush for contrast against the orange */
+      opacity: 0.4;
+      filter: blur(5px);
+    }
+  </style>
+
+  <rect width="100%" height="100%" fill="#1F0700" opacity="0.1" rx="15"/>
+
+  <g class="octagon-body">
+    
+    <path d="M 175 60 
+             C 195 60, 305 60, 325 60
+             C 355 60, 410 115, 440 145
+             C 440 165, 440 275, 440 295
+             C 440 325, 385 380, 355 410
+             C 335 440, 225 440, 205 440
+             C 175 440, 120 385, 90 355
+             C 60 335, 60 225, 60 205
+             C 60 175, 115 120, 145 90 Z" 
+          fill="url(#octagonGradient)" />
+
+    <path d="M 190 100 
+             C 210 95, 290 95, 310 100
+             C 335 105, 375 145, 400 170
+             C 405 190, 405 260, 400 280
+             C 395 305, 355 345, 330 370
+             C 310 395, 210 395, 190 370
+             C 165 365, 125 325, 100 300
+             C 95 280, 95 210, 100 190
+             C 105 165, 145 125, 170 100 Z" 
+          fill="url(#innerGelGrad)" 
+          opacity="0.35" />
+
+    <path d="M 160 100 
+             C 200 80, 300 80, 340 100
+             L 375 145
+             C 315 125, 185 125, 125 145 Z" 
+          fill="url(#glossHighlight)" />
+
+    <circle cx="160" cy="275" r="24" class="blush" />
+    <circle cx="340" cy="275" r="24" class="blush" />
+
+    <circle cx="185" cy="245" r="15" class="eye" />
+    <circle cx="315" cy="245" r="15" class="eye" />
+    
+    <circle cx="181" cy="239" r="5" fill="#FFFFFF" />
+    <circle cx="311" cy="239" r="5" fill="#FFFFFF" />
+    <circle cx="189" cy="249" r="2" fill="#FFFFFF" />
+    <circle cx="319" cy="249" r="2" fill="#FFFFFF" />
+
+    <path d="M 225 265 Q 250 295, 275 265" class="mouth" />
+  </g>
+</svg>

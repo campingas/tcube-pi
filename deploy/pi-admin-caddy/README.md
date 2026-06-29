@@ -113,7 +113,9 @@ Use the `-k` command only for a quick Pi-local smoke test. Real admin browsers s
 ## Browser Test Checklist
 
 - Run `just run-pi-admin` and leave it open.
-- Run `caddy run --config deploy/pi-admin-caddy/Caddyfile` and leave it open.
+- For phone testing, run `just run-pi-admin-caddy` in a second terminal and leave it open; it adds the detected LAN IP to a temporary Caddy config.
+- From a phone on the same Wi-Fi/network, open `https://tcube.local/` or the printed `https://<lan-ip>/` URL; do not use `https://localhost/` from the phone because that points at the phone itself.
+- If you use the static deployment config instead, run `caddy run --config deploy/pi-admin-caddy/Caddyfile` and make sure `tcube.local` resolves to the machine running Caddy.
 - Direct backend smoke: open or curl `http://127.0.0.1:8080/api/pi/v1/status`.
 - Caddy HTTPS smoke: open `https://localhost/` for local Mac browser testing.
 - Confirm login, navigation, recording, upload, and generated-speech screens load through HTTPS.

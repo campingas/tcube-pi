@@ -9,7 +9,9 @@ pub mod provider;
 pub mod setup;
 
 pub(crate) fn route_request(request: &HttpRequest, config: &AdminConfig) -> HttpResponse {
-    match (request.method.as_str(), request.path.as_str()) {
+    let path = canonical_admin_api_path(&request.path);
+
+    match (request.method.as_str(), path.as_str()) {
         ("GET", "/api/pi/v1/status") => json_response(200, auth::pi_status(config)),
         ("GET", "/api/auth/session") => {
             match auth::auth_session(config, request.session_cookie()) {
@@ -109,6 +111,16 @@ pub(crate) fn route_request(request: &HttpRequest, config: &AdminConfig) -> Http
                 Err(error) => error_response(400, error.to_string()),
             }
         }
+        ("GET", "/api/content/generated-speech/status") => {
+            match provider::generated_speech_status(config, request) {
+                Ok(body) => json_response(200, body),
+                Err(error) => error_response(400, error.to_string()),
+            }
+        }
+        ("GET", "/api/content/inventory") => match content::content_inventory(config, request) {
+            Ok(body) => json_response(200, body),
+            Err(error) => error_response(400, error.to_string()),
+        },
         ("GET", path) if path.starts_with("/api/content/buttons/") && path.ends_with("/active") => {
             match content::list_active_content(config, request, path) {
                 Ok(body) => json_response(200, body),
@@ -147,6 +159,12 @@ pub(crate) fn route_request(request: &HttpRequest, config: &AdminConfig) -> Http
             Ok(body) => json_response(200, body),
             Err(error) => error_response(500, error.to_string()),
         },
+        ("GET", "/api/events/recent") => {
+            match super::handler::recent_button_events(config, request) {
+                Ok(body) => json_response(200, body),
+                Err(error) => error_response(400, error.to_string()),
+            }
+        }
         ("GET", path) if path.starts_with("/api/media/") => {
             super::pages::serve_file(&config.media_root, path.trim_start_matches("/api/media/"))
         }
@@ -159,4 +177,19 @@ pub(crate) fn route_request(request: &HttpRequest, config: &AdminConfig) -> Http
         ("GET", _) => super::pages::serve_static(&config.ui_dist, &request.path),
         _ => error_response(405, "method not allowed"),
     }
+}
+
+fn canonical_admin_api_path(path: &str) -> String {
+    if path == "/api/pi/v1/status" {
+        return path.to_string();
+    }
+
+    for prefix in ["/auth/", "/setup/", "/content/", "/media/", "/events/"] {
+        let versioned_prefix = format!("/api/pi/v1{prefix}");
+        if let Some(rest) = path.strip_prefix(&versioned_prefix) {
+            return format!("/api{prefix}{rest}");
+        }
+    }
+
+    path.to_string()
 }

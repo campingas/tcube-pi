@@ -67,6 +67,38 @@ export type InactiveContentItem = {
   preview_url: string;
 };
 
+export type ContentEmptyState = {
+  title: string;
+  detail: string;
+};
+
+export type ContentListResponse<T> = {
+  items: T[];
+  empty_state: ContentEmptyState | null;
+};
+
+export type ContentInventoryItem = {
+  id: string;
+  status: "active" | "draft" | "unused" | string;
+  button_id: number;
+  content_type: ContentType;
+  language: string | null;
+  title: string;
+  text: string | null;
+  source: string;
+  state: "active" | "archived" | string;
+  audio_path: string | null;
+  preview_url: string | null;
+  reason: string;
+};
+
+export type ContentInventory = {
+  items: ContentInventoryItem[];
+  active_count: number;
+  draft_count: number;
+  unused_count: number;
+};
+
 export type RecoveryCode = {
   code: string;
   expires_at: string;
@@ -85,9 +117,29 @@ export type CleanupResponse = {
   deleted_count: number;
 };
 
+export type GeneratedSpeechStatus = {
+  online: boolean;
+  provider: string;
+  checked_at: string;
+  cached: boolean;
+  cache_ttl_seconds: number;
+  next_check_after_seconds: number;
+  message: string;
+};
+
+export type RecentButtonEvent = {
+  occurred_at: string;
+  button_id: number;
+  mode: string;
+  response_id: string;
+  response_text: string;
+};
+
 type RequestOptions = RequestInit & {
   json?: unknown;
 };
+
+const API_ROOT = "/api/pi/v1";
 
 export class ApiError extends Error {
   status: number;
@@ -125,31 +177,31 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
 }
 
 export function getStatus() {
-  return api<ServiceStatus>("/api/pi/v1/status");
+  return api<ServiceStatus>(`${API_ROOT}/status`);
 }
 
 export function getSession() {
-  return api<AuthSession>("/api/auth/session");
+  return api<AuthSession>(`${API_ROOT}/auth/session`);
 }
 
 export function bootstrapOwner(body: { username: string; display_name: string; password: string }) {
-  return api<AuthSession>("/api/auth/bootstrap", { method: "POST", json: body });
+  return api<AuthSession>(`${API_ROOT}/auth/bootstrap`, { method: "POST", json: body });
 }
 
 export function loginPassword(body: { username: string; password: string }) {
-  return api<AuthSession>("/api/auth/login/password", { method: "POST", json: body });
+  return api<AuthSession>(`${API_ROOT}/auth/login/password`, { method: "POST", json: body });
 }
 
 export function logout() {
-  return api<{ status: "ok" }>("/api/auth/logout", { method: "POST" });
+  return api<{ status: "ok" }>(`${API_ROOT}/auth/logout`, { method: "POST" });
 }
 
 export function createRecoveryCode() {
-  return api<RecoveryCode>("/api/auth/recovery-code", { method: "POST" });
+  return api<RecoveryCode>(`${API_ROOT}/auth/recovery-code`, { method: "POST" });
 }
 
 export function createInvitation(deviceId: string) {
-  return api<Invitation>("/api/auth/invitations", {
+  return api<Invitation>(`${API_ROOT}/auth/invitations`, {
     method: "POST",
     json: { device_id: deviceId }
   });
@@ -161,26 +213,34 @@ export function acceptInvitation(body: {
   display_name: string;
   password: string;
 }) {
-  return api<AuthSession>("/api/auth/invitations/accept", { method: "POST", json: body });
+  return api<AuthSession>(`${API_ROOT}/auth/invitations/accept`, { method: "POST", json: body });
 }
 
 export function recoverPassword(body: { code: string; password: string }) {
-  return api<{ status: "ok" }>("/api/auth/recover", { method: "POST", json: body });
+  return api<{ status: "ok" }>(`${API_ROOT}/auth/recover`, { method: "POST", json: body });
 }
 
 export function getSetupReview() {
-  return api<SetupReview>("/api/setup/review");
+  return api<SetupReview>(`${API_ROOT}/setup/review`);
+}
+
+export function listRecentEvents() {
+  return api<RecentButtonEvent[]>(`${API_ROOT}/events/recent`);
+}
+
+export function getContentInventory() {
+  return api<ContentInventory>(`${API_ROOT}/content/inventory`);
 }
 
 export function saveCubeName(cubeName: string) {
   return api<{ status: "ok"; device_id: string; name: string; provisioned: boolean; token: string | null }>(
-    "/api/setup/name",
+    `${API_ROOT}/setup/name`,
     { method: "POST", json: { cube_name: cubeName } }
   );
 }
 
 export function verifyWifi(ssid: string, dashboardIp: string) {
-  return api<{ status: "ok" }>("/api/setup/wifi/verified", {
+  return api<{ status: "ok" }>(`${API_ROOT}/setup/wifi/verified`, {
     method: "POST",
     json: { ssid, dashboard_ip: dashboardIp }
   });
@@ -192,50 +252,50 @@ export function completeSetup() {
     led_pattern: string;
     spoken_confirmation: boolean;
     dashboard_address: string;
-  }>("/api/setup/complete", { method: "POST" });
+  }>(`${API_ROOT}/setup/complete`, { method: "POST" });
 }
 
 export function saveButtonMode(buttonId: number, mode: ButtonMode, language: string) {
   const body = mode === "language" ? { mode, language } : { mode };
-  return api<{ status: "ok" }>(`/api/setup/buttons/${buttonId}/mode`, {
+  return api<{ status: "ok" }>(`${API_ROOT}/setup/buttons/${buttonId}/mode`, {
     method: "POST",
     json: body
   });
 }
 
 export function listActiveContent(buttonId: number, contentType: ContentType, language?: string) {
-  return api<ActiveContentItem[]>(
-    `/api/content/buttons/${buttonId}/${contentType}/active${languageQuery(contentType, language)}`
+  return api<ContentListResponse<ActiveContentItem>>(
+    `${API_ROOT}/content/buttons/${buttonId}/${contentType}/active${languageQuery(contentType, language)}`
   );
 }
 
 export function listInactiveContent(buttonId: number, contentType: ContentType, language?: string) {
-  return api<InactiveContentItem[]>(
-    `/api/content/buttons/${buttonId}/${contentType}/inactive${languageQuery(contentType, language)}`
+  return api<ContentListResponse<InactiveContentItem>>(
+    `${API_ROOT}/content/buttons/${buttonId}/${contentType}/inactive${languageQuery(contentType, language)}`
   );
 }
 
 export function activateContentItem(id: string) {
-  return api<InactiveContentItem>(`/api/content/items/${encodeURIComponent(id)}/activate`, {
+  return api<InactiveContentItem>(`${API_ROOT}/content/items/${encodeURIComponent(id)}/activate`, {
     method: "POST"
   });
 }
 
 export function trashContentItem(id: string) {
-  return api<{ status: "ok" }>(`/api/content/items/${encodeURIComponent(id)}`, {
+  return api<{ status: "ok" }>(`${API_ROOT}/content/items/${encodeURIComponent(id)}`, {
     method: "DELETE"
   });
 }
 
 export function clearUnusedGeneratedSpeech(buttonId: number, language: string) {
-  return api<CleanupResponse>("/api/content/generated-speech/unused", {
+  return api<CleanupResponse>(`${API_ROOT}/content/generated-speech/unused`, {
     method: "DELETE",
     json: { button_id: buttonId, language }
   });
 }
 
-export function saveMultipart(path: "/api/content/recordings" | "/api/content/uploads", form: FormData) {
-  return api<InactiveContentItem>(path, {
+export function saveMultipart(path: "/content/recordings" | "/content/uploads", form: FormData) {
+  return api<InactiveContentItem>(`${API_ROOT}${path}`, {
     method: "POST",
     body: form
   });
@@ -248,10 +308,18 @@ export function generateSpeech(body: {
   provider?: string;
   voice?: string;
 }) {
-  return api<InactiveContentItem>("/api/content/generated-speech", {
+  return api<InactiveContentItem>(`${API_ROOT}/content/generated-speech`, {
     method: "POST",
     json: body
   });
+}
+
+export function getGeneratedSpeechStatus(provider: string, language: string) {
+  const params = new URLSearchParams({
+    provider: provider.trim() || "auto",
+    language: language.trim() || "English"
+  });
+  return api<GeneratedSpeechStatus>(`${API_ROOT}/content/generated-speech/status?${params.toString()}`);
 }
 
 function languageQuery(contentType: ContentType, language?: string) {

@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <filter id="greenBlueGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="15" result="blur1" />
+      <feGaussianBlur stdDeviation="30" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur2" />
+        <feMergeNode in="blur1" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <radialGradient id="triangleGradient" cx="50%" cy="55%" r="60%" fx="45%" fy="45%">
+      <stop offset="0%" stop-color="#E2FFFA" /> <stop offset="35%" stop-color="#39FFC8" /> <stop offset="75%" stop-color="#00A3FF" /> <stop offset="100%" stop-color="#004680" /> </radialGradient>
+
+    <linearGradient id="innerGelGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#00A3FF" stop-opacity="0" />
+    </linearGradient>
+
+    <linearGradient id="glossHighlight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <style>
+    @keyframes pulseGlow {
+      0% {
+        transform: scale(1);
+        filter: url(#greenBlueGlow) drop-shadow(0 0 20px rgba(57, 255, 200, 0.6));
+      }
+      50% {
+        transform: scale(1.02);
+        filter: url(#greenBlueGlow) drop-shadow(0 0 40px rgba(0, 163, 255, 0.9));
+      }
+      100% {
+        transform: scale(1);
+        filter: url(#greenBlueGlow) drop-shadow(0 0 20px rgba(57, 255, 200, 0.6));
+      }
+    }
+
+    .triangle-body {
+      transform-origin: 250px 280px;
+      animation: pulseGlow 4s ease-in-out infinite;
+    }
+
+    .eye {
+      fill: #051A2E; /* Very deep blue-black */
+    }
+
+    .mouth {
+      stroke: #051A2E;
+      stroke-width: 7;
+      stroke-linecap: round;
+      fill: none;
+    }
+
+    .blush {
+      fill: #FF5E97; /* Pink blush for cute contrast against green/blue */
+      opacity: 0.4;
+      filter: blur(5px);
+    }
+  </style>
+
+  <rect width="100%" height="100%" fill="#02101F" opacity="0.1" rx="15"/>
+
+  <g class="triangle-body">
+    
+    <path d="M 250 60 
+             C 275 60, 420 370, 410 400 
+             C 400 430, 100 430, 90 400 
+             C 80 370, 225 60, 250 60 Z" 
+          fill="url(#triangleGradient)" />
+
+    <path d="M 250 110 
+             C 265 110, 370 340, 360 365 
+             C 350 390, 150 390, 140 365 
+             C 130 340, 235 110, 250 110 Z" 
+          fill="url(#innerGelGrad)" 
+          opacity="0.4" />
+
+    <path d="M 215 115 
+             C 235 80, 265 80, 285 115
+             L 310 170
+             C 270 150, 230 150, 190 170 Z" 
+          fill="url(#glossHighlight)" />
+
+    <circle cx="170" cy="335" r="24" class="blush" />
+    <circle cx="330" cy="335" r="24" class="blush" />
+
+    <circle cx="195" cy="305" r="15" class="eye" />
+    <circle cx="305" cy="305" r="15" class="eye" />
+    
+    <circle cx="191" cy="299" r="5" fill="#FFFFFF" />
+    <circle cx="301" cy="299" r="5" fill="#FFFFFF" />
+    <circle cx="199" cy="309" r="2" fill="#FFFFFF" />
+    <circle cx="309" cy="309" r="2" fill="#FFFFFF" />
+
+    <path d="M 235 325 Q 250 355, 265 325" class="mouth" />
+  </g>
+</svg>

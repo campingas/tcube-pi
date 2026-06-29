@@ -1,4 +1,4 @@
-import type { ActiveContentItem, ButtonMode, ContentType, InactiveContentItem } from "./api";
+import type { ActiveContentItem, ButtonMode, ContentEmptyState, ContentType, InactiveContentItem } from "./api";
 
 export type ButtonConfig = {
   id: number;
@@ -10,9 +10,10 @@ export type ButtonConfig = {
 export type ContentState = {
   active: ActiveContentItem[];
   inactive: InactiveContentItem[];
+  activeEmptyState: ContentEmptyState | null;
+  inactiveEmptyState: ContentEmptyState | null;
   loading: boolean;
   error: string | null;
 };
 
 export type MessageType = "info" | "success" | "error";
-
