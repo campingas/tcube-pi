@@ -240,6 +240,16 @@ test("settings page matches grouped setup controls and calls settings APIs", asy
   await page.getByRole("button", { name: "Clear unused content" }).click();
   await expect(page.getByText("Cube state refreshed.")).toBeVisible();
 
+  await page.getByRole("button", { name: "Factory reset" }).click();
+  const resetDialog = page.getByRole("dialog", { name: "Factory reset this cube?" });
+  await expect(resetDialog).toBeVisible();
+  await expect(resetDialog.getByRole("button", { name: "Factory reset" })).toBeDisabled();
+  await resetDialog.getByLabel("Factory reset confirmation").fill("FACTORY RESET");
+  await expect(resetDialog.getByRole("button", { name: "Factory reset" })).toBeEnabled();
+  await resetDialog.getByRole("button", { name: "Factory reset" }).click();
+  await expect(page.getByText("Factory reset complete. Create a new owner account to set up this cube.")).toBeVisible();
+  await expect(page.getByText("Create local owner")).toBeVisible();
+
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
@@ -391,6 +401,11 @@ async function mockAdminApi(page: Page) {
 
     if (path === "/api/pi/v1/content/unused" && route.request().method() === "DELETE") {
       await route.fulfill({ json: { status: "ok", deleted_count: 1 } });
+      return;
+    }
+
+    if (path === "/api/pi/v1/setup/factory-reset" && route.request().method() === "POST") {
+      await route.fulfill({ json: { status: "ok", bootstrap_required: true } });
       return;
     }
 

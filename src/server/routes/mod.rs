@@ -87,6 +87,16 @@ pub(crate) fn route_request(request: &HttpRequest, config: &AdminConfig) -> Http
             Ok(body) => json_response(200, body),
             Err(error) => error_response(400, error.to_string()),
         },
+        ("POST", "/api/setup/factory-reset") => match setup::factory_reset(config, request) {
+            Ok(body) => {
+                let mut response = json_response(200, body);
+                response
+                    .headers
+                    .push(("Set-Cookie".to_string(), auth::clear_session_cookie()));
+                response
+            }
+            Err(error) => error_response(400, error.to_string()),
+        },
         ("POST", path) if path.starts_with("/api/setup/buttons/") && path.ends_with("/mode") => {
             match setup::set_button_mode(config, request, path) {
                 Ok(()) => json_response(200, serde_json::json!({ "status": "ok" })),

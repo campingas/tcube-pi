@@ -117,6 +117,11 @@ export type CleanupResponse = {
   deleted_count: number;
 };
 
+export type FactoryResetResponse = {
+  status: "ok";
+  bootstrap_required: true;
+};
+
 export type GeneratedSpeechStatus = {
   online: boolean;
   provider: string;
@@ -296,6 +301,13 @@ export function clearUnusedGeneratedSpeech(buttonId: number, language: string) {
 
 export function clearUnusedContent() {
   return api<CleanupResponse>(`${API_ROOT}/content/unused`, { method: "DELETE" });
+}
+
+export function factoryReset(confirmation: string) {
+  return api<FactoryResetResponse>(`${API_ROOT}/setup/factory-reset`, {
+    method: "POST",
+    json: { confirmation }
+  });
 }
 
 export function saveMultipart(path: "/content/recordings" | "/content/uploads", form: FormData) {

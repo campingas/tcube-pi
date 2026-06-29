@@ -25,6 +25,25 @@ const MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
 const MAX_REQUEST_BODY_BYTES: usize = 25 * 1024 * 1024;
 const SPEECH_PROVIDER_HEALTH_TTL: Duration = Duration::from_secs(20);
 const SPEECH_PROVIDER_HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
+const FACTORY_RESET_CONFIRMATION: &str = "FACTORY RESET";
+const FACTORY_RESET_TABLES: &[&str] = &[
+    "content_package_failures",
+    "content_packages",
+    "cube_invitations",
+    "recovery_codes",
+    "admin_sessions",
+    "cube_memberships",
+    "admin_accounts",
+    "media_artifacts",
+    "content_jobs",
+    "content_items",
+    "button_events",
+    "setup_debug_events",
+    "trusted_sessions",
+    "button_mappings",
+    "device_setup",
+    "devices",
+];
 
 static SPEECH_PROVIDER_HEALTH_CACHE: OnceLock<Mutex<HashMap<String, CachedSpeechProviderHealth>>> =
     OnceLock::new();
@@ -92,6 +111,12 @@ pub(crate) struct CompleteSetupResponse {
     led_pattern: &'static str,
     spoken_confirmation: bool,
     dashboard_address: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct FactoryResetResponse {
+    status: &'static str,
+    bootstrap_required: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -209,6 +234,11 @@ pub(crate) struct WifiRequest {
 pub(crate) struct ButtonModeRequest {
     mode: String,
     language: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct FactoryResetRequest {
+    confirmation: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -906,6 +936,42 @@ pub(crate) fn complete_setup(
         led_pattern: "soft_green_pulse_3s",
         spoken_confirmation: false,
         dashboard_address: setup_review_from_conn(config, &conn)?.dashboard_address,
+    })
+}
+
+pub(crate) fn factory_reset(
+    config: &AdminConfig,
+    request: &HttpRequest,
+) -> Result<FactoryResetResponse> {
+    let mut conn = owner_connection(config, request)?;
+    let body: FactoryResetRequest =
+        serde_json::from_slice(&request.body).context("invalid request body")?;
+    if body.confirmation.trim() != FACTORY_RESET_CONFIRMATION {
+        anyhow::bail!("factory reset confirmation must be FACTORY RESET");
+    }
+
+    migrate_admin_database(&conn, config)?;
+    delete_factory_reset_media(config)?;
+
+    let tx = conn
+        .transaction()
+        .context("failed to start factory reset transaction")?;
+    for table in FACTORY_RESET_TABLES {
+        tx.execute(&format!("delete from {table}"), [])
+            .with_context(|| format!("failed to clear {table} during factory reset"))?;
+    }
+    tx.execute(
+        "delete from sqlite_sequence where name in ('setup_debug_events', 'button_events', 'content_package_failures')",
+        [],
+    )
+    .context("failed to reset factory reset sequences")?;
+    seed_admin_defaults(&tx, config)?;
+    tx.commit()
+        .context("failed to commit factory reset transaction")?;
+
+    Ok(FactoryResetResponse {
+        status: "ok",
+        bootstrap_required: true,
     })
 }
 
@@ -2654,6 +2720,25 @@ fn delete_content_audio_file(config: &AdminConfig, audio_path: &str) -> Result<(
             Err(error).with_context(|| format!("failed to delete audio file {}", path.display()))
         }
     }
+}
+
+fn delete_factory_reset_media(config: &AdminConfig) -> Result<()> {
+    for directory in ["draft", "active"] {
+        let path = config.media_root.join(directory);
+        match fs::remove_dir_all(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "failed to delete factory reset media directory {}",
+                        path.display()
+                    )
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn purge_after() -> String {
@@ -4410,11 +4495,22 @@ mod tests {
                 "POST",
                 "/api/auth/invitations",
                 json!({ "device_id": "device-1" }),
-                Some(manager_cookie),
+                Some(manager_cookie.clone()),
             ),
             &config,
         );
         assert_eq!(invitation.status, 400);
+
+        let reset = route_request(
+            &json_request(
+                "POST",
+                "/api/setup/factory-reset",
+                json!({ "confirmation": "FACTORY RESET" }),
+                Some(manager_cookie),
+            ),
+            &config,
+        );
+        assert_eq!(reset.status, 400);
     }
 
     #[test]
@@ -4751,6 +4847,174 @@ mod tests {
             )
             .unwrap();
         assert_eq!(trashed_count, 2);
+    }
+
+    #[test]
+    fn factory_reset_requires_confirmation_and_restores_first_run_defaults() {
+        let database = test_database();
+        let config = test_config(database.path());
+        let account_id = seed_auth_database(database.path(), "admin", "secret-password").unwrap();
+        let token =
+            create_session(&Connection::open(database.path()).unwrap(), &account_id).unwrap();
+        let cookie = session_cookie(&token);
+
+        let wrong_confirmation = route_request(
+            &json_request(
+                "POST",
+                "/api/pi/v1/setup/factory-reset",
+                json!({ "confirmation": "reset" }),
+                Some(cookie.clone()),
+            ),
+            &config,
+        );
+        assert_eq!(wrong_confirmation.status, 400);
+
+        let session_before = route_request(
+            &HttpRequest {
+                method: "GET".to_string(),
+                path: "/api/auth/session".to_string(),
+                query: HashMap::new(),
+                headers: HashMap::from([("cookie".to_string(), cookie.clone())]),
+                body: Vec::new(),
+            },
+            &config,
+        );
+        assert_eq!(session_before.status, 200);
+
+        let conn = Connection::open(database.path()).unwrap();
+        migrate_admin_database(&conn, &config).unwrap();
+        conn.execute(
+            "update device_setup \
+             set setup_complete = 1, cube_name = 'Nursery Cube', wifi_ssid = 'Home', \
+                 wifi_verified_at = ?1, dashboard_ip = '192.168.50.20', updated_at = ?1 \
+             where id = 1",
+            [now()],
+        )
+        .unwrap();
+        conn.execute(
+            "insert into trusted_sessions (id, label, created_at) values ('trusted-1', 'Phone', ?1)",
+            [now()],
+        )
+        .unwrap();
+        conn.execute(
+            "insert into content_items \
+             (id, content_type, button_id, language, title, text, audio_path, source, state, order_index) \
+             values \
+             ('reset-active', 'language', 1, 'English', 'Parent active', 'Parent active', 'data/audio/active/language/parent.wav', 'recorded', 'active', 50), \
+             ('reset-draft', 'language', 1, 'English', 'Parent draft', 'Parent draft', 'data/audio/draft/language/draft.wav', 'uploaded', 'archived', 51)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "insert into media_artifacts (id, content_item_id, media_type, path, state) \
+             values ('artifact-1', 'reset-active', 'recorded_audio', 'data/audio/active/language/parent.wav', 'active')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "insert into content_jobs (id, job_type, status, language) \
+             values ('job-1', 'tts', 'queued', 'English')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "insert into button_events (occurred_at, button_id, mode, response_id, response_text) \
+             values (?1, 1, 'language', 'reset-active', 'Parent active')",
+            [now()],
+        )
+        .unwrap();
+        conn.execute(
+            "insert into setup_debug_events (event_type, button_id, details) \
+             values ('setup_help_button_press', 4, '{}')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "insert into content_packages \
+             (package_id, device_id, revision, schema_version, minimum_runtime_version, status, created_at) \
+             values ('package-1', 'device-1', 1, 1, '0.0.1', 'active', ?1)",
+            [now()],
+        )
+        .unwrap();
+        conn.execute(
+            "insert into content_package_failures \
+             (device_id, package_id, runtime_version, stage, detail, occurred_at) \
+             values ('device-1', 'package-1', '0.0.1', 'download', 'failed', ?1)",
+            [now()],
+        )
+        .unwrap();
+        drop(conn);
+
+        let active_audio = config.media_root.join("active/language/parent.wav");
+        let draft_audio = config.media_root.join("draft/language/draft.wav");
+        fs::create_dir_all(active_audio.parent().unwrap()).unwrap();
+        fs::create_dir_all(draft_audio.parent().unwrap()).unwrap();
+        fs::write(&active_audio, b"active").unwrap();
+        fs::write(&draft_audio, b"draft").unwrap();
+
+        let reset = route_request(
+            &json_request(
+                "POST",
+                "/api/pi/v1/setup/factory-reset",
+                json!({ "confirmation": "FACTORY RESET" }),
+                Some(cookie.clone()),
+            ),
+            &config,
+        );
+        assert_eq!(reset.status, 200);
+        assert!(reset
+            .headers
+            .iter()
+            .any(|(name, value)| name == "Set-Cookie" && value.starts_with("tcube_session=;")));
+        let reset_body: serde_json::Value = serde_json::from_slice(&reset.body).unwrap();
+        assert_eq!(reset_body["bootstrap_required"], true);
+        assert!(!active_audio.exists());
+        assert!(!draft_audio.exists());
+
+        let conn = Connection::open(database.path()).unwrap();
+        assert_eq!(table_count(&conn, "admin_accounts").unwrap(), 0);
+        assert_eq!(table_count(&conn, "admin_sessions").unwrap(), 0);
+        assert_eq!(table_count(&conn, "button_events").unwrap(), 0);
+        assert_eq!(table_count(&conn, "setup_debug_events").unwrap(), 0);
+        assert_eq!(table_count(&conn, "content_jobs").unwrap(), 0);
+        assert_eq!(table_count(&conn, "media_artifacts").unwrap(), 0);
+        assert_eq!(table_count(&conn, "content_packages").unwrap(), 0);
+        assert_eq!(table_count(&conn, "content_package_failures").unwrap(), 0);
+        assert_eq!(table_count(&conn, "button_mappings").unwrap(), 5);
+        assert_eq!(table_count(&conn, "content_items").unwrap(), 30);
+        let setup_complete: i64 = conn
+            .query_row(
+                "select setup_complete from device_setup where id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(setup_complete, 0);
+        let top_mode: String = conn
+            .query_row(
+                "select mode || ':' || coalesce(language, '') from button_mappings where button_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(top_mode, "language:English");
+        drop(conn);
+
+        let session_after = route_request(
+            &HttpRequest {
+                method: "GET".to_string(),
+                path: "/api/auth/session".to_string(),
+                query: HashMap::new(),
+                headers: HashMap::from([("cookie".to_string(), cookie)]),
+                body: Vec::new(),
+            },
+            &config,
+        );
+        assert_eq!(session_after.status, 200);
+        let session_after_body: serde_json::Value =
+            serde_json::from_slice(&session_after.body).unwrap();
+        assert_eq!(session_after_body["authenticated"], false);
+        assert_eq!(session_after_body["bootstrap_required"], true);
     }
 
     #[test]

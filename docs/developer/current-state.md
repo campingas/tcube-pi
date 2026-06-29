@@ -234,8 +234,9 @@ Latest settings page implementation on 2026-06-29:
 - Manager invitation copy now copies the full browser URL with `?invite=...`, matching the accept-invitation flow instead of copying only the raw code.
 - The authenticated top bar renders manager accounts as `manager` while keeping the existing manager role color styling.
 - Added owner-only `DELETE /api/pi/v1/content/unused`, which reuses content inventory classification to trash active audio that is unused by the current button setup and delete matching `data/audio/...` files.
-- Password change, session revocation, and factory reset remain visually present but disabled because the local API contracts do not exist yet.
-- Mobile Playwright coverage now verifies settings layout, save-name, recovery-code, manager-invite, clear-unused-content, and viewport overflow behavior.
+- Added owner-only `POST /api/pi/v1/setup/factory-reset`, wired to the Settings Danger zone with typed `FACTORY RESET` confirmation, to clear setup, accounts, sessions, content rows, events, sync state, and parent-created `data/audio/{draft,active}/` media before reseeding defaults.
+- Password change and session revocation remain visually present but disabled because the local API contracts do not exist yet.
+- Mobile Playwright coverage now verifies settings layout, save-name, recovery-code, manager-invite, clear-unused-content, factory-reset confirmation, and viewport overflow behavior.
 
 Latest CI workflow validation on 2026-06-23:
 

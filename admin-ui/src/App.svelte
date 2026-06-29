@@ -55,6 +55,7 @@
     completeSetup,
     createInvitation,
     createRecoveryCode,
+    factoryReset,
     generateSpeech,
     getContentInventory,
     getGeneratedSpeechStatus,
@@ -178,6 +179,8 @@
   let settingsCubeNameOpen = true;
   let settingsWifiOpen = false;
   let settingsRecoveryOpen = true;
+  let factoryResetPromptOpen = false;
+  let factoryResetConfirmation = "";
 
   $: buttons = buildButtonConfigs(setup);
   $: selectedButton = buttons.find((button) => button.id === selectedButtonId) ?? buttons[0] ?? null;
@@ -703,6 +706,39 @@
       const result = await clearUnusedContent();
       setMessage(`${result.deleted_count} unused audio item${result.deleted_count === 1 ? "" : "s"} cleared.`, "success");
     }, "Unused content cleared.");
+  }
+
+  function openFactoryResetPrompt() {
+    factoryResetConfirmation = "";
+    factoryResetPromptOpen = true;
+  }
+
+  function cancelFactoryReset() {
+    factoryResetPromptOpen = false;
+    factoryResetConfirmation = "";
+  }
+
+  async function confirmFactoryReset() {
+    if (factoryResetConfirmation !== "FACTORY RESET") return;
+    busy = true;
+    try {
+      await factoryReset(factoryResetConfirmation);
+      session = { authenticated: false, bootstrap_required: true, account: null, cubes: [] };
+      setup = null;
+      events = [];
+      inventory = null;
+      contentState = {};
+      recoveryCode = null;
+      invitation = null;
+      factoryResetPromptOpen = false;
+      factoryResetConfirmation = "";
+      view = "dashboard";
+      setMessage("Factory reset complete. Create a new owner account to set up this cube.", "success");
+    } catch (error) {
+      setError(error);
+    } finally {
+      busy = false;
+    }
   }
 
   async function copyText(value: string, label: string) {
@@ -1941,7 +1977,7 @@
             <div class="settings-danger-title">Factory reset</div>
             <div class="settings-danger-desc">Reset setup, accounts, and content back to defaults.</div>
           </div>
-          <button type="button" class="settings-danger-btn" disabled title="Factory reset is not exposed by the local API yet.">
+          <button type="button" class="settings-danger-btn" on:click={openFactoryResetPrompt} disabled={busy || !isOwner}>
             Factory reset
           </button>
         </div>
@@ -2141,6 +2177,44 @@
         <button type="button" class="btn-secondary" on:click={cancelTrashContent}>Cancel</button>
         <button type="button" class="btn-primary trash-confirm" on:click={confirmTrashContent}>
           <Trash2 size={16} strokeWidth={1.5} aria-hidden="true" />Move to trash
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if factoryResetPromptOpen}
+  <div class="trash-backdrop" role="presentation" on:click={cancelFactoryReset}>
+    <div
+      class="trash-dialog"
+      role="dialog"
+      tabindex="-1"
+      aria-modal="true"
+      aria-labelledby="factory-reset-dialog-title"
+      aria-describedby="factory-reset-dialog-desc"
+      on:click|stopPropagation
+      on:keydown={(event) => {
+        if (event.key === "Escape") cancelFactoryReset();
+      }}
+    >
+      <div class="trash-dialog-icon"><AlertTriangle size={22} strokeWidth={1.5} aria-hidden="true" /></div>
+      <div class="trash-dialog-body">
+        <div id="factory-reset-dialog-title" class="trash-dialog-title">Factory reset this cube?</div>
+        <div id="factory-reset-dialog-desc" class="trash-dialog-desc">This deletes setup, accounts, sessions, activity, drafts, and parent-created audio. Type FACTORY RESET to continue.</div>
+        <label class="field-label factory-reset-label">Confirmation
+          <input
+            class="settings-input"
+            aria-label="Factory reset confirmation"
+            bind:value={factoryResetConfirmation}
+            autocomplete="off"
+            placeholder="FACTORY RESET"
+          />
+        </label>
+      </div>
+      <div class="trash-dialog-actions">
+        <button type="button" class="btn-secondary" on:click={cancelFactoryReset} disabled={busy}>Cancel</button>
+        <button type="button" class="btn-primary trash-confirm" on:click={confirmFactoryReset} disabled={busy || factoryResetConfirmation !== "FACTORY RESET"}>
+          <Trash2 size={16} strokeWidth={1.5} aria-hidden="true" />Factory reset
         </button>
       </div>
     </div>

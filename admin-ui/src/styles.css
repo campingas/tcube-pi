@@ -1312,6 +1312,10 @@ audio {
   line-height: 1.4;
 }
 
+.factory-reset-label {
+  margin-top: 10px;
+}
+
 .trash-dialog-actions {
   display: flex;
   justify-content: flex-end;
