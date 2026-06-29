@@ -9,7 +9,10 @@
     Bell,
     Bolt,
     Check,
+    ChevronRight,
+    ChevronUp,
     CircleCheck,
+    Copy,
     Cuboid,
     Database,
     FileAudio,
@@ -18,8 +21,10 @@
     HardDrive,
     KeyRound,
     Languages,
+    Link,
     LogIn,
     LogOut,
+    Lock,
     Mic,
     Minus,
     Music,
@@ -33,15 +38,19 @@
     SlidersHorizontal,
     Trash2,
     Upload,
+    Usb,
     User,
+    Users,
     WandSparkles,
     Wifi,
-    Wrench
+    Wrench,
+    X
   } from "@lucide/svelte";
   import {
     acceptInvitation,
     activateContentItem,
     bootstrapOwner,
+    clearUnusedContent,
     clearUnusedGeneratedSpeech,
     completeSetup,
     createInvitation,
@@ -166,13 +175,16 @@
   let lastMenuLlmStatusKey = "";
   let menuLlmCheckTimer: number | null = null;
   let menuLlmBackoffSeconds = generatedSpeechMinBackoffSeconds;
+  let settingsCubeNameOpen = true;
+  let settingsWifiOpen = false;
+  let settingsRecoveryOpen = true;
 
   $: buttons = buildButtonConfigs(setup);
   $: selectedButton = buttons.find((button) => button.id === selectedButtonId) ?? buttons[0] ?? null;
   $: selectedContent = selectedButton?.contentType ? contentState[contentKey(selectedButton)] : null;
   $: currentRole = session?.cubes?.[0]?.role ?? "";
   $: isOwner = currentRole === "owner";
-  $: roleLabel = currentRole === "owner" ? "owner" : currentRole === "manager" ? "admin" : currentRole || "member";
+  $: roleLabel = currentRole === "owner" ? "owner" : currentRole === "manager" ? "manager" : currentRole || "member";
   $: roleClass = currentRole === "owner" ? "owner" : currentRole === "manager" ? "admin" : "member";
   $: invitationCodeFromUrl = new URLSearchParams(window.location.search).get("invite") ?? "";
   $: loadedActive = inventory?.active_count ?? Object.values(contentState).reduce((sum, state) => sum + state.active.length, 0);
@@ -683,6 +695,27 @@
     const deviceId = setup?.device_id;
     if (!deviceId) throw new Error("Save the cube name before creating a manager invitation.");
     invitation = await createInvitation(deviceId);
+  }
+
+  async function clearAllUnusedContent() {
+    if (!window.confirm("Clear all unused audio files from this cube? Active content in the current setup and drafts will stay available.")) return;
+    await run(async () => {
+      const result = await clearUnusedContent();
+      setMessage(`${result.deleted_count} unused audio item${result.deleted_count === 1 ? "" : "s"} cleared.`, "success");
+    }, "Unused content cleared.");
+  }
+
+  async function copyText(value: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setMessage(`${label} copied.`, "success");
+    } catch {
+      setError("Copy failed. Select and copy the code manually.");
+    }
+  }
+
+  function invitationUrl(code: string) {
+    return `${window.location.origin}/?invite=${encodeURIComponent(code)}`;
   }
 
   async function startRecording() {
@@ -1704,41 +1737,227 @@
 {/snippet}
 
 {#snippet SettingsView()}
-  {@render TopBar(true)}
-  <div class="body">
+  <nav class="settings-topbar">
+    <button type="button" class="settings-back-btn" aria-label="Back to dashboard" on:click={() => (view = "dashboard")}>
+      <ArrowLeft size={18} strokeWidth={1.5} aria-hidden="true" />
+    </button>
+    <div class="settings-topbar-title">Settings</div>
+    <div class="settings-topbar-sub">{fmt(setup?.cube_name)}</div>
+  </nav>
+
+  <div class="body settings-body">
     <section class:error={messageType === "error"} class:success={messageType === "success"} class="notice" aria-live="polite">
       {message}
     </section>
-    <section class="card">
-      <div class="sec-hdr">
-        <div class="sec-title"><Cuboid size={16} strokeWidth={1.5} aria-hidden="true" />Cube</div>
+
+    <section class="settings-group">
+      <div class="settings-group-label">Cube</div>
+      <div class="settings-group-card">
+        <button
+          type="button"
+          class:expanded={settingsCubeNameOpen}
+          class="settings-row"
+          on:click={() => (settingsCubeNameOpen = !settingsCubeNameOpen)}
+          disabled={!isOwner}
+        >
+          <div class="settings-row-icon si-coral"><Cuboid size={17} strokeWidth={1.5} aria-hidden="true" /></div>
+          <div class="settings-row-body">
+            <div class="settings-row-title">Cube name</div>
+          </div>
+          <div class="settings-row-right">
+            <span class="settings-row-value">{fmt(setup?.cube_name)}</span>
+            {#if settingsCubeNameOpen}<ChevronUp size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
+          </div>
+        </button>
+        {#if settingsCubeNameOpen}
+          <form class="settings-edit" on:submit|preventDefault={() => run(() => saveCubeName(cubeName), "Cube name saved.")}>
+            <label class="field-label">Display name
+              <input class="settings-input" bind:value={cubeName} maxlength="32" disabled={!isOwner} />
+            </label>
+            <div class="settings-hint">Shown in this dashboard and in the activity log.</div>
+            <div class="settings-row-actions">
+              <button type="button" class="settings-cancel-btn" on:click={() => (cubeName = setup?.cube_name || "T-Cube")} disabled={busy}>Cancel</button>
+              <button type="submit" class="settings-save-btn" disabled={busy || !isOwner}>Save name</button>
+            </div>
+          </form>
+        {/if}
+
+        <button
+          type="button"
+          class:expanded={settingsWifiOpen}
+          class="settings-row"
+          on:click={() => (settingsWifiOpen = !settingsWifiOpen)}
+          disabled={!isOwner}
+        >
+          <div class="settings-row-icon si-teal"><Wifi size={17} strokeWidth={1.5} aria-hidden="true" /></div>
+          <div class="settings-row-body">
+            <div class="settings-row-title">Wi-Fi</div>
+            <div class="settings-row-desc">{wifiForm.ssid || "Home"} · {fmt(wifiForm.dashboard_ip || setup?.dashboard_address)}</div>
+          </div>
+          <div class="settings-row-right">
+            <span class:bs-teal={Boolean(setup?.wifi_verified)} class:bs-amber={!Boolean(setup?.wifi_verified)} class="settings-badge">{setup?.wifi_verified ? "Verified" : "Pending"}</span>
+            {#if settingsWifiOpen}<ChevronUp size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
+          </div>
+        </button>
+        {#if settingsWifiOpen}
+          <form class="settings-edit" on:submit|preventDefault={() => run(() => verifyWifi(wifiForm.ssid, wifiForm.dashboard_ip), "Wi-Fi marked verified.")}>
+            <label class="field-label">Wi-Fi SSID
+              <input class="settings-input" bind:value={wifiForm.ssid} placeholder="Home Wi-Fi" disabled={!isOwner} />
+            </label>
+            <label class="field-label">Dashboard IP
+              <input class="settings-input" bind:value={wifiForm.dashboard_ip} placeholder="192.168.1.10" disabled={!isOwner} />
+            </label>
+            <div class="settings-row-actions">
+              <button type="button" class="settings-cancel-btn" on:click={() => (settingsWifiOpen = false)} disabled={busy}>Cancel</button>
+              <button type="submit" class="settings-save-btn" disabled={busy || !isOwner}>Mark verified</button>
+            </div>
+          </form>
+        {/if}
+
+        <div class="settings-row no-tap">
+          <div class="settings-row-icon si-muted"><Usb size={17} strokeWidth={1.5} aria-hidden="true" /></div>
+          <div class="settings-row-body">
+            <div class="settings-row-title">USB address</div>
+            <div class="settings-row-desc">Available when connected via USB-C OTG</div>
+          </div>
+          <div class="settings-row-right">
+            <span class="settings-row-value">{status?.usb_address ?? "Not connected"}</span>
+          </div>
+        </div>
       </div>
-      <form class="form-stack" on:submit|preventDefault={() => run(() => saveCubeName(cubeName), "Cube name saved.")}>
-        <label>Cube name <input bind:value={cubeName} disabled={!isOwner} /></label>
-        <button type="submit" class="btn-secondary" disabled={busy || !isOwner}>Save name</button>
-      </form>
-      <form class="form-stack" on:submit|preventDefault={() => run(() => verifyWifi(wifiForm.ssid, wifiForm.dashboard_ip), "Wi-Fi marked verified.")}>
-        <label>Wi-Fi SSID <input bind:value={wifiForm.ssid} placeholder="Home Wi-Fi" disabled={!isOwner} /></label>
-        <label>Dashboard IP <input bind:value={wifiForm.dashboard_ip} placeholder="192.168.1.10" disabled={!isOwner} /></label>
-        <button type="submit" class="btn-secondary" disabled={busy || !isOwner}>Mark Wi-Fi verified</button>
-      </form>
     </section>
-    <section class="card">
-      <div class="sec-hdr">
-        <div class="sec-title"><User size={16} strokeWidth={1.5} aria-hidden="true" />Account</div>
+
+    <section class="settings-group">
+      <div class="settings-group-label">Account</div>
+      <div class="settings-group-card">
+        <div class="settings-row no-tap">
+          <div class="settings-row-icon si-sage"><User size={17} strokeWidth={1.5} aria-hidden="true" /></div>
+          <div class="settings-row-body">
+            <div class="settings-row-title">{session?.account?.display_name || session?.account?.username}</div>
+            <div class="settings-row-desc">Signed in</div>
+          </div>
+          <div class="settings-row-right">
+            <span class="settings-badge bs-teal">{roleLabel}</span>
+          </div>
+        </div>
+
+        <button type="button" class="settings-row" disabled title="Password changes are not exposed by the local API yet.">
+          <div class="settings-row-icon si-muted"><Lock size={17} strokeWidth={1.5} aria-hidden="true" /></div>
+          <div class="settings-row-body">
+            <div class="settings-row-title">Change password</div>
+            <div class="settings-row-desc">Use a recovery code from the login screen for now.</div>
+          </div>
+          <div class="settings-row-right">
+            <span class="settings-badge bs-muted">Soon</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          class:expanded={settingsRecoveryOpen}
+          class="settings-row"
+          on:click={() => (settingsRecoveryOpen = !settingsRecoveryOpen)}
+        >
+          <div class="settings-row-icon si-amber"><KeyRound size={17} strokeWidth={1.5} aria-hidden="true" /></div>
+          <div class="settings-row-body">
+            <div class="settings-row-title">Recovery code</div>
+          </div>
+          <div class="settings-row-right">
+            {#if recoveryCode}<span class="settings-badge bs-amber">Created</span>{/if}
+            {#if settingsRecoveryOpen}<ChevronUp size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
+          </div>
+        </button>
+        {#if settingsRecoveryOpen}
+          <div class="settings-recovery-block">
+            {#if recoveryCode}
+              <div class="settings-secret-code">{recoveryCode.code}</div>
+              <div class="settings-warning"><AlertTriangle size={14} strokeWidth={1.5} aria-hidden="true" />Store this once. It expires {recoveryCode.expires_at} and can reset the account password.</div>
+              <button type="button" class="settings-copy-btn" on:click={() => copyText(recoveryCode?.code ?? "", "Recovery code")}>
+                <Copy size={15} strokeWidth={1.5} aria-hidden="true" />Copy recovery code
+              </button>
+            {:else}
+              <button type="button" class="settings-copy-btn" on:click={() => run(async () => (recoveryCode = await createRecoveryCode()), "Recovery code created.")} disabled={busy}>
+                <Copy size={15} strokeWidth={1.5} aria-hidden="true" />Create recovery code
+              </button>
+            {/if}
+          </div>
+        {/if}
       </div>
-      <div class="settings-actions">
-        <button type="button" class="btn-secondary" on:click={() => run(async () => (recoveryCode = await createRecoveryCode()), "Recovery code created.")} disabled={busy}>Create recovery code</button>
-        <button type="button" class="btn-secondary" on:click={() => run(createManagerInvitation, "Manager invitation created.")} disabled={busy || !isOwner || !setup?.device_id}>Create manager invitation</button>
-        <button type="button" class="btn-secondary" on:click={() => run(logout, "Logged out.")} disabled={busy}><LogOut size={16} strokeWidth={1.5} aria-hidden="true" />Log out</button>
-      </div>
-      {#if recoveryCode}
-        <div class="secret"><code>{recoveryCode.code}</code><span>Expires {recoveryCode.expires_at}</span></div>
-      {/if}
-      {#if invitation}
-        <div class="secret"><code>{invitation.code}</code><span>Expires {invitation.expires_at}</span></div>
-      {/if}
     </section>
+
+    <section class="settings-group">
+      <div class="settings-group-label">Manager invitations · Owner only</div>
+      <div class="settings-group-card">
+        <div class="settings-row no-tap">
+          <div class="settings-row-icon si-violet"><Users size={17} strokeWidth={1.5} aria-hidden="true" /></div>
+          <div class="settings-row-body">
+            <div class="settings-row-title">Invite a manager</div>
+            <div class="settings-row-desc">Managers can add and manage content but cannot change setup or invite others.</div>
+          </div>
+        </div>
+
+        {#if invitation}
+          <div class="settings-invite-item">
+            <div class="settings-invite-icon"><Link size={17} strokeWidth={1.5} aria-hidden="true" /></div>
+            <div class="settings-invite-body">
+              <div class="settings-invite-code">{invitation.code}</div>
+              <div class="settings-invite-meta">Expires {invitation.expires_at} · single use</div>
+            </div>
+            <div class="settings-row-right">
+              <button type="button" class="settings-square-btn violet" aria-label="Copy invite link" on:click={() => copyText(invitationUrl(invitation?.code ?? ""), "Invitation link")}>
+                <Copy size={15} strokeWidth={1.5} aria-hidden="true" />
+              </button>
+              <button type="button" class="settings-square-btn" aria-label="Dismiss invitation" on:click={() => (invitation = null)}>
+                <X size={15} strokeWidth={1.5} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        {/if}
+
+        <button type="button" class="settings-new-invite-btn" on:click={() => run(createManagerInvitation, "Manager invitation created.")} disabled={busy || !isOwner || !setup?.device_id}>
+          <Plus size={16} strokeWidth={1.5} aria-hidden="true" />Create new invitation link
+        </button>
+      </div>
+    </section>
+
+    <section class="settings-group">
+      <div class="settings-group-label">Danger zone</div>
+      <div class="settings-danger-card">
+        <div class="settings-danger-header">
+          <AlertTriangle size={16} strokeWidth={1.5} aria-hidden="true" />
+          <div>Irreversible actions</div>
+        </div>
+        <div class="settings-danger-row">
+          <div class="settings-danger-body">
+            <div class="settings-danger-title">Clear all unused content</div>
+            <div class="settings-danger-desc">Removes audio no longer used by the current button setup. Active setup content and drafts stay available.</div>
+          </div>
+          <button type="button" class="settings-danger-btn" on:click={clearAllUnusedContent} disabled={busy || !isOwner || totalUnused === 0}>
+            Clear unused content
+          </button>
+        </div>
+        <div class="settings-danger-row">
+          <div class="settings-danger-body">
+            <div class="settings-danger-title">Factory reset</div>
+            <div class="settings-danger-desc">Reset setup, accounts, and content back to defaults.</div>
+          </div>
+          <button type="button" class="settings-danger-btn" disabled title="Factory reset is not exposed by the local API yet.">
+            Factory reset
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <div class="settings-logout-row">
+      <button type="button" class="settings-logout-btn" on:click={() => run(logout, "Logged out.")} disabled={busy}>
+        <LogOut size={17} strokeWidth={1.5} aria-hidden="true" />Sign out of this device
+      </button>
+    </div>
+
+    <div class="settings-version-footer">
+      tcube-pi · {status?.service ?? "admin"}<br />
+      <span>{status?.hostname ?? "host pending"} · {status?.mode ?? "local"}</span>
+    </div>
   </div>
 {/snippet}
 

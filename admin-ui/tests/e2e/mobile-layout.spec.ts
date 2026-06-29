@@ -42,6 +42,25 @@ test("mobile dashboard stacks primary cards and keeps stats within the viewport"
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test("top bar shows manager role as manager while keeping manager styling", async ({ page }) => {
+  await page.route("**/api/pi/v1/auth/session", async (route) => {
+    await route.fulfill({
+      json: {
+        authenticated: true,
+        bootstrap_required: false,
+        account: { id: "acct-manager", username: "bob43", display_name: "bob43" },
+        cubes: [{ device_id: "cube-1", label: "T-Cube", role: "manager" }]
+      }
+    });
+  });
+  await page.goto("/");
+
+  await expect(page.getByText("Signed in as")).toBeVisible();
+  await expect(page.locator(".topbar-session-user")).toHaveText("bob43");
+  await expect(page.locator(".topbar-session-role")).toHaveText("manager");
+  await expect(page.locator(".topbar-session-role")).toHaveClass(/role-admin/);
+});
+
 test("mobile button selector keeps five fixed-size button pills horizontally usable", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Manage all/i }).click();
@@ -182,8 +201,52 @@ test("generated speech disables only generate controls while TTS is offline", as
   await expect(page.getByText("LLMs online")).toBeVisible();
 });
 
+test("settings page matches grouped setup controls and calls settings APIs", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as Window & { __copiedText?: string }).__copiedText = value;
+        }
+      }
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+
+  await expect(page.getByRole("navigation").getByText("Settings")).toBeVisible();
+  await expect(page.getByText("Cube", { exact: true })).toBeVisible();
+  await expect(page.getByText("Account", { exact: true })).toBeVisible();
+  await expect(page.getByText("Manager invitations · Owner only")).toBeVisible();
+  await expect(page.getByText("Danger zone")).toBeVisible();
+
+  await expect(page.getByLabel("Display name")).toHaveValue("T-Cube");
+  await page.getByLabel("Display name").fill("Mia's Cube");
+  await page.getByRole("button", { name: "Save name" }).click();
+  await expect(page.getByText("Cube state refreshed.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Create recovery code" }).click();
+  await expect(page.getByText("RCV-123-456")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy recovery code" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Create new invitation link" }).click();
+  await expect(page.getByText("INV-789-ABC")).toBeVisible();
+  await page.getByRole("button", { name: "Copy invite link" }).click();
+  await expect(page.getByText("Invitation link copied.")).toBeVisible();
+  const expectedInviteUrl = await page.evaluate(() => `${window.location.origin}/?invite=INV-789-ABC`);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __copiedText?: string }).__copiedText)).toBe(expectedInviteUrl);
+
+  await page.getByRole("button", { name: "Clear unused content" }).click();
+  await expect(page.getByText("Cube state refreshed.")).toBeVisible();
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
 async function mockAdminApi(page: Page) {
   let generatedSpeechStatusCalls = 0;
+  page.on("dialog", (dialog) => dialog.accept());
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -282,6 +345,57 @@ async function mockAdminApi(page: Page) {
           items: []
         }
       });
+      return;
+    }
+
+    if (path === "/api/pi/v1/setup/name" && route.request().method() === "POST") {
+      await route.fulfill({
+        json: {
+          status: "ok",
+          device_id: "cube-1",
+          name: "Mia's Cube",
+          provisioned: true,
+          token: null
+        }
+      });
+      return;
+    }
+
+    if (path === "/api/pi/v1/setup/wifi/verified" && route.request().method() === "POST") {
+      await route.fulfill({ json: { status: "ok" } });
+      return;
+    }
+
+    if (path === "/api/pi/v1/auth/recovery-code" && route.request().method() === "POST") {
+      await route.fulfill({
+        json: {
+          code: "RCV-123-456",
+          expires_at: "2026-07-06T00:00:00Z"
+        }
+      });
+      return;
+    }
+
+    if (path === "/api/pi/v1/auth/invitations" && route.request().method() === "POST") {
+      await route.fulfill({
+        json: {
+          id: "invite-1",
+          code: "INV-789-ABC",
+          device_id: "cube-1",
+          role: "manager",
+          expires_at: "2026-07-06T00:00:00Z"
+        }
+      });
+      return;
+    }
+
+    if (path === "/api/pi/v1/content/unused" && route.request().method() === "DELETE") {
+      await route.fulfill({ json: { status: "ok", deleted_count: 1 } });
+      return;
+    }
+
+    if (path === "/api/pi/v1/auth/logout" && route.request().method() === "POST") {
+      await route.fulfill({ json: { status: "ok" } });
       return;
     }
 

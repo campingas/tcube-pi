@@ -227,6 +227,16 @@ Latest generated TTS offline handling on 2026-06-29:
 - The main dashboard status strip uses the same generated-speech status API to switch the LLMs chip between offline and online without a tight polling loop.
 - Mobile Playwright coverage now verifies the offline notice, disabled Generate controls, unaffected Record controls, and recovery after a later online status response.
 
+Latest settings page implementation on 2026-06-29:
+
+- The top-right Settings action now opens a mockup-aligned grouped settings screen with Cube, Account, Manager invitations, Danger zone, logout, and version/status footer sections.
+- Settings rows are wired to existing APIs for cube name, Wi-Fi verification, recovery code creation, manager invitation creation, clipboard copy, and logout.
+- Manager invitation copy now copies the full browser URL with `?invite=...`, matching the accept-invitation flow instead of copying only the raw code.
+- The authenticated top bar renders manager accounts as `manager` while keeping the existing manager role color styling.
+- Added owner-only `DELETE /api/pi/v1/content/unused`, which reuses content inventory classification to trash active audio that is unused by the current button setup and delete matching `data/audio/...` files.
+- Password change, session revocation, and factory reset remain visually present but disabled because the local API contracts do not exist yet.
+- Mobile Playwright coverage now verifies settings layout, save-name, recovery-code, manager-invite, clear-unused-content, and viewport overflow behavior.
+
 Latest CI workflow validation on 2026-06-23:
 
 - `.github/workflows/ci.yml` parses as YAML locally.

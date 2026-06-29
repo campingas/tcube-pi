@@ -1221,6 +1221,35 @@ pub(crate) fn content_inventory(
     })
 }
 
+pub(crate) fn trash_unused_content(
+    config: &AdminConfig,
+    request: &HttpRequest,
+) -> Result<CleanupResponse> {
+    let conn = owner_connection(config, request)?;
+    let unused = unused_content_items(&conn)?;
+    let audio_paths = unused
+        .iter()
+        .filter_map(|item| item.audio_path.clone())
+        .collect::<Vec<_>>();
+    for audio_path in &audio_paths {
+        delete_content_audio_file(config, audio_path)?;
+    }
+    let trashed_at = now();
+    let purge_after_at = purge_after();
+    for item in &unused {
+        conn.execute(
+            "update content_items \
+             set state = 'trash', trashed_at = ?1, purge_after = ?2, updated_at = ?3 \
+             where id = ?4",
+            params![trashed_at, purge_after_at, trashed_at, item.id],
+        )?;
+    }
+    Ok(CleanupResponse {
+        status: "ok",
+        deleted_count: unused.len(),
+    })
+}
+
 pub(crate) fn activate_content_item(
     config: &AdminConfig,
     request: &HttpRequest,
@@ -2223,6 +2252,24 @@ fn current_button_mappings(conn: &Connection) -> Result<HashMap<i64, CurrentButt
     Ok(mappings)
 }
 
+fn unused_content_items(conn: &Connection) -> Result<Vec<ContentInventoryRow>> {
+    let mappings = current_button_mappings(conn)?;
+    let mut stmt = conn.prepare(
+        "select id, content_type, title, text, language, source, state, audio_path, button_id \
+         from content_items \
+         where source in ('recorded', 'uploaded', 'generated') and state = 'active' and audio_path is not null \
+         order by button_id, content_type, language, order_index, id",
+    )?;
+    let rows = stmt
+        .query_map([], inventory_item_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("failed to read unused content rows")?;
+    Ok(rows
+        .into_iter()
+        .filter(|item| inventory_status(item, mappings.get(&item.button_id)).0 == "unused")
+        .collect())
+}
+
 fn default_button_mappings() -> HashMap<i64, CurrentButtonMapping> {
     HashMap::from([
         (
@@ -2586,6 +2633,27 @@ fn delete_draft_audio_files(config: &AdminConfig, audio_paths: &[String]) -> Res
         delete_draft_audio_file(config, Some(audio_path))?;
     }
     Ok(())
+}
+
+fn content_audio_absolute_path(
+    config: &AdminConfig,
+    audio_path: &str,
+) -> Option<std::path::PathBuf> {
+    let relative = audio_path.strip_prefix("data/audio/")?;
+    Some(config.media_root.join(relative))
+}
+
+fn delete_content_audio_file(config: &AdminConfig, audio_path: &str) -> Result<()> {
+    let Some(path) = content_audio_absolute_path(config, audio_path) else {
+        return Ok(());
+    };
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => {
+            Err(error).with_context(|| format!("failed to delete audio file {}", path.display()))
+        }
+    }
 }
 
 fn purge_after() -> String {
@@ -4608,6 +4676,11 @@ mod tests {
         )
         .unwrap();
         drop(conn);
+        fs::create_dir_all(config.media_root.join("active/language")).unwrap();
+        let hello_audio = config.media_root.join("active/language/hello.wav");
+        let bye_audio = config.media_root.join("active/language/bye.wav");
+        fs::write(&hello_audio, b"hello").unwrap();
+        fs::write(&bye_audio, b"bye").unwrap();
 
         let mode = route_request(
             &json_request(
@@ -4625,7 +4698,7 @@ mod tests {
                 method: "GET".to_string(),
                 path: "/api/content/inventory".to_string(),
                 query: HashMap::new(),
-                headers: HashMap::from([("cookie".to_string(), cookie)]),
+                headers: HashMap::from([("cookie".to_string(), cookie.clone())]),
                 body: Vec::new(),
             },
             &config,
@@ -4653,6 +4726,31 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Button 1 is set to French"));
+
+        let cleanup = route_request(
+            &HttpRequest {
+                method: "DELETE".to_string(),
+                path: "/api/content/unused".to_string(),
+                query: HashMap::new(),
+                headers: HashMap::from([("cookie".to_string(), cookie)]),
+                body: Vec::new(),
+            },
+            &config,
+        );
+        assert_eq!(cleanup.status, 200);
+        let cleanup_body: serde_json::Value = serde_json::from_slice(&cleanup.body).unwrap();
+        assert_eq!(cleanup_body["deleted_count"], 2);
+        assert!(!hello_audio.exists());
+        assert!(!bye_audio.exists());
+        let trashed_count: i64 = Connection::open(database.path())
+            .unwrap()
+            .query_row(
+                "select count(*) from content_items where id in ('inventory-active-one', 'inventory-active-two') and state = 'trash'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(trashed_count, 2);
     }
 
     #[test]

@@ -1561,6 +1561,436 @@ audio {
   padding: 14px;
 }
 
+.settings-topbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 0.5px solid var(--border-strong);
+  background: var(--surface-0);
+  padding: 13px 16px;
+}
+
+.settings-back-btn {
+  display: flex;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+}
+
+.settings-topbar-title {
+  flex: 1;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.settings-topbar-sub {
+  max-width: 130px;
+  overflow: hidden;
+  color: var(--text-disabled);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-body {
+  padding-bottom: 16px;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  margin: 14px 12px 0;
+}
+
+.settings-group-label {
+  color: var(--text-disabled);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  padding: 0 2px 8px;
+  text-transform: uppercase;
+}
+
+.settings-group-card,
+.settings-danger-card {
+  overflow: hidden;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-0);
+}
+
+.settings-row,
+.settings-invite-item {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  border-bottom: 0.5px solid var(--border);
+  background: transparent;
+  color: inherit;
+  padding: 13px 14px;
+  text-align: left;
+}
+
+.settings-row:hover:not(.no-tap):not(:disabled) {
+  background: var(--surface-1);
+}
+
+.settings-row.expanded {
+  background: var(--surface-1);
+}
+
+.settings-row:last-child,
+.settings-invite-item:last-child {
+  border-bottom: 0;
+}
+
+.settings-row.no-tap {
+  cursor: default;
+}
+
+.settings-row-icon,
+.settings-invite-icon {
+  display: flex;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+}
+
+.si-coral {
+  background: var(--glow-coral);
+  color: var(--accent-coral);
+}
+
+.si-teal {
+  background: var(--glow-teal);
+  color: var(--accent-teal);
+}
+
+.si-amber {
+  background: var(--glow-amber);
+  color: var(--accent-amber);
+}
+
+.si-violet,
+.settings-invite-icon {
+  background: var(--glow-violet);
+  color: var(--accent-violet);
+}
+
+.si-sage {
+  background: var(--glow-sage);
+  color: var(--accent-sage);
+}
+
+.si-muted {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.settings-row-body,
+.settings-invite-body,
+.settings-danger-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-row-title,
+.settings-danger-title {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row-desc,
+.settings-danger-desc,
+.settings-hint,
+.settings-invite-meta {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+}
+
+.settings-row-desc {
+  white-space: nowrap;
+}
+
+.settings-row-right {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-disabled);
+}
+
+.settings-row-value {
+  max-width: 120px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-badge {
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.bs-teal {
+  background: var(--glow-teal);
+  color: var(--accent-teal);
+}
+
+.bs-amber {
+  background: var(--glow-amber);
+  color: var(--accent-amber);
+}
+
+.bs-muted {
+  background: var(--surface-2);
+  color: var(--text-disabled);
+}
+
+.settings-edit,
+.settings-recovery-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--surface-1);
+  padding: 0 14px 14px;
+}
+
+.settings-edit .field-label {
+  padding-top: 12px;
+}
+
+.settings-input {
+  background: var(--surface-2);
+}
+
+.settings-row-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-save-btn,
+.settings-cancel-btn,
+.settings-copy-btn,
+.settings-new-invite-btn,
+.settings-danger-btn,
+.settings-logout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px;
+}
+
+.settings-save-btn {
+  flex: 1;
+  border: 0;
+  background: var(--accent-coral);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.settings-cancel-btn {
+  border: 0.5px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  padding-inline: 16px;
+}
+
+.settings-recovery-block {
+  padding-top: 12px;
+}
+
+.settings-secret-code {
+  overflow-wrap: anywhere;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-family: "SF Mono", "Fira Code", ui-monospace, monospace;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  padding: 13px 14px;
+  text-align: center;
+}
+
+.settings-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--accent-amber);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.settings-warning svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.settings-copy-btn,
+.settings-new-invite-btn {
+  width: 100%;
+  border: 0.5px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+.settings-new-invite-btn {
+  width: calc(100% - 28px);
+  margin: 12px 14px;
+  background: var(--surface-1);
+}
+
+.settings-new-invite-btn:hover:not(:disabled) {
+  border-color: var(--accent-violet);
+  background: var(--glow-violet);
+  color: var(--accent-violet);
+}
+
+.settings-invite-item {
+  padding: 12px 14px;
+}
+
+.settings-invite-code {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-family: "SF Mono", "Fira Code", ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-square-btn {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-disabled);
+}
+
+.settings-square-btn.violet {
+  border-color: var(--accent-violet);
+  color: var(--accent-violet);
+}
+
+.settings-square-btn:hover {
+  border-color: var(--accent-coral);
+  background: var(--glow-coral);
+  color: var(--accent-coral);
+}
+
+.settings-danger-card {
+  border-color: rgba(197, 83, 71, 0.25);
+}
+
+.settings-danger-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 0.5px solid rgba(197, 83, 71, 0.15);
+  color: var(--accent-coral);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 12px 14px;
+  text-transform: uppercase;
+}
+
+.settings-danger-row {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 0.5px solid var(--border);
+  padding: 13px 14px;
+}
+
+.settings-danger-row:last-child {
+  border-bottom: 0;
+}
+
+.settings-danger-btn {
+  flex-shrink: 0;
+  border: 0.5px solid var(--accent-coral);
+  background: transparent;
+  color: var(--accent-coral);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.settings-danger-btn:hover:not(:disabled) {
+  background: var(--glow-coral);
+}
+
+.settings-logout-row {
+  margin: 14px 12px 0;
+}
+
+.settings-logout-btn {
+  width: 100%;
+  border: 0.5px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-0);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.settings-logout-btn:hover:not(:disabled) {
+  border-color: var(--accent-coral);
+  background: var(--glow-coral);
+  color: var(--accent-coral);
+}
+
+.settings-version-footer {
+  color: var(--text-disabled);
+  font-size: 11px;
+  line-height: 1.7;
+  padding: 16px 14px 4px;
+  text-align: center;
+}
+
+.settings-version-footer span {
+  color: var(--text-disabled);
+}
+
 @media (min-width: 600px) {
   .shell {
     max-width: 960px;
@@ -1577,7 +2007,8 @@ audio {
   }
 
   .auth-body,
-  .config-body {
+  .config-body,
+  .settings-body {
     display: flex;
   }
 

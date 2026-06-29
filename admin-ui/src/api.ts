@@ -294,6 +294,10 @@ export function clearUnusedGeneratedSpeech(buttonId: number, language: string) {
   });
 }
 
+export function clearUnusedContent() {
+  return api<CleanupResponse>(`${API_ROOT}/content/unused`, { method: "DELETE" });
+}
+
 export function saveMultipart(path: "/content/recordings" | "/content/uploads", form: FormData) {
   return api<InactiveContentItem>(`${API_ROOT}${path}`, {
     method: "POST",

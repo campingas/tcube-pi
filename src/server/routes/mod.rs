@@ -149,6 +149,10 @@ pub(crate) fn route_request(request: &HttpRequest, config: &AdminConfig) -> Http
                 Err(error) => error_response(400, error.to_string()),
             }
         }
+        ("DELETE", "/api/content/unused") => match content::trash_unused_content(config, request) {
+            Ok(body) => json_response(200, body),
+            Err(error) => error_response(400, error.to_string()),
+        },
         ("DELETE", path) if path.starts_with("/api/content/items/") => {
             match content::trash_content_item(config, request, path) {
                 Ok(()) => json_response(200, serde_json::json!({ "status": "ok" })),
