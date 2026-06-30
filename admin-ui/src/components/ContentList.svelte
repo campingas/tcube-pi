@@ -13,14 +13,6 @@
 </script>
 
 <section class="content-surface">
-  <div class="section-heading-row compact">
-    <div>
-      <p class="terminal-kicker">Published</p>
-      <h3>Active content</h3>
-    </div>
-    <span class="badge ready">{items.length} active</span>
-  </div>
-
   {#if loading}
     <p class="muted">Loading active content...</p>
   {:else if error}

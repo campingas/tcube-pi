@@ -9,7 +9,6 @@
   export let selectedButton: ButtonConfig;
   export let draftForm: DraftForm;
   export let updateDraftForm: (patch: Partial<DraftForm>) => void;
-  export let languages: string[] = [];
   export let providers: string[] = [];
   export let busy = false;
   export let recorder: MediaRecorder | null = null;
@@ -30,6 +29,12 @@
   export let generatedSpeechDisabled = false;
   export let generatedSpeechStatusLoading = false;
   export let generatedSpeechStatusError: string | null = null;
+
+  $: isLanguageButton = selectedButton.contentType === "language";
+  $: mediaTitleReady = isLanguageButton || Boolean(draftForm.title.trim());
+  $: languageTextReady = !isLanguageButton || Boolean(draftForm.text.trim());
+  $: recordingSaveDisabled = busy || !recordedWav || !mediaTitleReady || !languageTextReady;
+  $: uploadSaveDisabled = busy || !uploadFile || !mediaTitleReady || !languageTextReady;
 </script>
 
 <section class="content-input-surface">
@@ -70,18 +75,13 @@
     </button>
   </div>
 
-  <div class="add-body add-meta-grid">
-    <label>Title or label
-      <input class="neo-field" value={draftForm.title} placeholder="Hello baby" on:input={(event) => updateDraftForm({ title: (event.currentTarget as HTMLInputElement).value })} />
-    </label>
-    <label>Language
-      <select class="neo-field" value={draftForm.language} disabled={selectedButton.contentType === "language"} on:change={(event) => updateDraftForm({ language: (event.currentTarget as HTMLSelectElement).value })}>
-        {#each languages as language}
-          <option value={language}>{language}</option>
-        {/each}
-      </select>
-    </label>
-  </div>
+  {#if selectedTab !== "generate" && !isLanguageButton}
+    <div class="add-body add-meta-grid">
+      <label>Title or label
+        <input class="neo-field" value={draftForm.title} placeholder="Roar" on:input={(event) => updateDraftForm({ title: (event.currentTarget as HTMLInputElement).value })} />
+      </label>
+    </div>
+  {/if}
 
   {#if selectedTab === "record"}
     <div class:recording-active={recordingStatus === "recording"} class:recording-ready={Boolean(recordedWav)} class="record-zone" data-testid="record-zone">
@@ -92,9 +92,11 @@
           <Mic size={24} strokeWidth={1.5} aria-hidden="true" />
         {/if}
       </button>
-      <label class="field-label">Text spoken
-        <input class="neo-field" value={draftForm.text} placeholder={selectedButton.contentType === "music" ? "Optional" : "Short phrase"} on:input={(event) => updateDraftForm({ text: (event.currentTarget as HTMLInputElement).value })} />
-      </label>
+      {#if isLanguageButton}
+        <label class="field-label">Text spoken
+          <input class="neo-field" value={draftForm.text} placeholder="Short phrase" on:input={(event) => updateDraftForm({ text: (event.currentTarget as HTMLInputElement).value })} />
+        </label>
+      {/if}
       <div class="record-step" data-testid="record-status">{recordingHint(recordingStatus, recordSeconds, Boolean(recordedWav))}</div>
       {#if recordWaveform.length}
         <div class="record-wave" aria-label="Live microphone level" data-testid="record-waveform">
@@ -114,7 +116,7 @@
             <X size={15} strokeWidth={1.5} aria-hidden="true" />
             Discard
           </button>
-          <button type="button" class="btn-primary" on:click={submitRecording} disabled={busy}>
+          <button type="button" class="btn-primary" on:click={submitRecording} disabled={recordingSaveDisabled}>
             <Play size={15} strokeWidth={1.5} aria-hidden="true" />
             Save recording
           </button>
@@ -132,7 +134,12 @@
       {#if uploadPreviewUrl}
         <audio controls src={uploadPreviewUrl}></audio>
       {/if}
-      <button type="button" class="btn-primary" on:click={submitUpload} disabled={busy || !uploadFile}>
+      {#if isLanguageButton}
+        <label class="field-label upload-text-field">Text spoken
+          <input class="neo-field" value={draftForm.text} placeholder="Short phrase" on:input={(event) => updateDraftForm({ text: (event.currentTarget as HTMLInputElement).value })} />
+        </label>
+      {/if}
+      <button type="button" class="btn-primary" on:click={submitUpload} disabled={uploadSaveDisabled}>
         <Upload size={15} strokeWidth={1.5} aria-hidden="true" />
         Upload draft
       </button>

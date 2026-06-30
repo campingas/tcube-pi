@@ -57,34 +57,3 @@ export function buttonViewModels(buttons: ButtonConfig[], state: Record<string, 
 export function updateDraftFormValue(form: DraftForm, patch: Partial<DraftForm>): DraftForm {
   return { ...form, ...patch };
 }
-
-export function buttonConfigFooterLabel(state: ButtonConfigViewModel) {
-  if (state.selectedButton?.contentType === "language" && state.selectedTab === "record") return "Save recording";
-  if (state.selectedButton?.contentType === "language" && state.selectedTab === "upload") return "Save upload";
-  if (state.selectedButton?.contentType && state.selectedTab === "record" && state.recordedWav) return "Save recording";
-  if (state.selectedButton?.contentType && state.selectedTab === "upload" && state.uploadFile) return "Save upload";
-  if (state.selectedButton?.contentType === "language" && state.selectedTab === "generate" && state.draftForm.text.trim()) {
-    return "Save draft";
-  }
-  return "Save mode";
-}
-
-export function buttonConfigFooterDisabled(state: ButtonConfigViewModel) {
-  if (state.busy || !state.selectedButton) return true;
-  if (state.selectedButton.contentType === "language" && state.selectedTab === "record" && !state.recordedWav) {
-    return true;
-  }
-  if (state.selectedButton.contentType === "language" && state.selectedTab === "upload" && !state.uploadFile) {
-    return true;
-  }
-  if (state.selectedButton.contentType === "language" && state.selectedTab === "record" && state.recordedWav && !state.draftForm.text.trim()) {
-    return true;
-  }
-  if (state.selectedButton.contentType === "language" && state.selectedTab === "upload" && state.uploadFile && !state.draftForm.text.trim()) {
-    return true;
-  }
-  if (state.selectedButton.contentType === "language" && state.selectedTab === "generate" && state.draftForm.text.trim()) {
-    return state.generatedSpeechDisabled;
-  }
-  return false;
-}

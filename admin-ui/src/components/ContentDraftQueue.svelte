@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Check, Trash2 } from "@lucide/svelte";
   import type { InactiveContentItem } from "../api";
+  import { sourceLabel, trimAudioTitle } from "../view-utils";
 
   export let items: InactiveContentItem[] = [];
   export let loading = false;
@@ -13,17 +14,14 @@
 </script>
 
 <section class="content-surface">
-  <div class="section-heading-row compact">
-    <div>
-      <p class="terminal-kicker">Review queue</p>
-      <h3>Inactive drafts</h3>
-    </div>
-    {#if canClearGenerated}
-      <button type="button" class="neo-button secondary small" on:click={clearGenerated} disabled={busy}>
+  {#if canClearGenerated}
+    <div class="draft-actions-row">
+      <span class="draft-actions-note">Drafts stay inactive until activated.</span>
+      <button type="button" class="btn-secondary draft-clear-btn" on:click={clearGenerated} disabled={busy}>
         Clear generated
       </button>
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   {#if loading}
     <p class="muted">Loading drafts...</p>
@@ -33,23 +31,19 @@
     <div class="content-list">
       {#each items as item}
         <div class="ci" role="listitem">
-          <div class="ci-icon {item.source === 'generated' ? 'ci-generated' : item.source === 'uploaded' ? 'ci-uploaded' : 'ci-recorded'}">
+          <div class="ci-icon {item.source === 'generated' ? 'ci-generated' : item.source === 'uploaded' ? 'ci-uploaded' : item.source === 'recorded' ? 'ci-recorded' : 'ci-default'}">
             <Check size={16} strokeWidth={1.5} aria-hidden="true" />
           </div>
-          <div>
-            <strong>{item.title}</strong>
-            <p>{item.text || item.audio_path}</p>
-            <span>{item.source} · {item.language || item.content_type} · inactive</span>
+          <div class="ci-meta">
+            <strong class="ci-name" title={item.title}>{trimAudioTitle(item.title)}</strong>
+            <p class="ci-detail">{item.text || sourceLabel(item.source)}</p>
           </div>
-          {#if item.preview_url}
-            <audio controls src={item.preview_url}></audio>
-          {/if}
-          <div class="button-row">
-            <button type="button" class="neo-button" on:click={() => activate(item.id)} disabled={busy}>
-              Activate
+          <div class="ci-actions">
+            <button type="button" class="cia ok" on:click={() => activate(item.id)} aria-label="Activate draft" disabled={busy}>
+              <Check size={16} strokeWidth={1.5} aria-hidden="true" />
             </button>
-            <button type="button" class="neo-button danger" on:click={() => trash(item.id)} disabled={busy}>
-              Trash
+            <button type="button" class="cia del" on:click={() => trash(item.id)} aria-label="Move draft to trash" disabled={busy}>
+              <Trash2 size={16} strokeWidth={1.5} aria-hidden="true" />
             </button>
           </div>
         </div>

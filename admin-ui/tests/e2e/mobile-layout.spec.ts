@@ -144,6 +144,8 @@ test("button config mode changes update selector and hero icons on mobile", asyn
 
   await expect(page.getByTestId("selected-button-hero-icon")).toHaveClass(/fpi-lang/);
   await expect(page.getByTestId("button-selector-1-icon")).toHaveClass(/fpi-lang/);
+  await expect(page.locator(".save-bar")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save mode" })).toBeVisible();
 
   await page.getByTestId("button-mode-music").click();
   await expect(page.getByTestId("button-mode-music")).toHaveAttribute("aria-checked", "true");
@@ -163,6 +165,8 @@ test("button config active rows trim long titles, show summaries, and open the t
   await page.goto("/");
   await page.getByTestId("dashboard-button-1").click();
 
+  await expect(page.getByText("Published")).toHaveCount(0);
+  await expect(page.getByText("Active content")).toHaveCount(0);
   const activeRow = page.getByRole("button", { name: /Play This file name is intentionally long/ });
   await expect(activeRow).toBeVisible();
   await expect(activeRow.getByRole("button", { name: "Move to trash" })).toBeVisible();
@@ -208,9 +212,7 @@ test("recording flow shows live microphone feedback and draft guidance", async (
   await expect(page.locator(".record-btn-big")).toBeVisible();
   await expect(page.getByTestId("record-status")).toHaveText("Tap record, then speak clearly near your phone.");
   await expect(page.getByText("After recording, preview the audio here before saving.")).toBeVisible();
-
-  const footerSaveButton = page.locator(".save-bar").getByRole("button", { name: "Save recording" });
-  await expect(footerSaveButton).toBeDisabled();
+  await expect(page.locator(".save-bar")).toHaveCount(0);
 
   await page.getByTestId("record-toggle").click();
   expect(await page.evaluate(() => (window as Window & { __getUserMediaCalls?: number }).__getUserMediaCalls ?? 0)).toBe(1);
@@ -222,16 +224,32 @@ test("recording flow shows live microphone feedback and draft guidance", async (
   await expect(page.getByTestId("record-status")).toContainText("Preview");
   await expect(page.locator(".record-zone audio")).toBeVisible();
   await expect(page.getByText("Enter the text spoken before saving this recording.")).toBeVisible();
-  await expect(footerSaveButton).toBeDisabled();
+  await expect(page.getByTestId("record-zone").getByRole("button", { name: "Save recording" })).toBeDisabled();
 
   await page.getByLabel("Text spoken").fill("Bonjour tout le monde.");
-  await expect(footerSaveButton).toBeEnabled();
   await expect(page.getByTestId("record-zone").getByRole("button", { name: "Save recording" })).toBeEnabled();
+  await page.getByTestId("record-zone").getByRole("button", { name: "Save recording" }).click();
+  await expect(page.getByRole("tab", { name: /Drafts/i })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Inactive drafts")).toHaveCount(0);
+  await expect(page.getByText("Review queue")).toHaveCount(0);
+  await expect(page.getByText("test · language · inactive")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Activate draft" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Move draft to trash" })).toBeVisible();
 
   await page.getByRole("tab", { name: /Upload/i }).click();
   await expect(page.getByRole("tab", { name: /Upload/i })).toHaveClass(/active-atab/);
   await expect(page.getByTestId("upload-zone")).toBeVisible();
   await expect(page.getByText("Choose an MP3 or WAV file to stage as a draft.")).toBeVisible();
+  await expect(page.getByTestId("upload-zone").getByLabel("Text spoken")).toBeVisible();
+  await expect(page.getByTestId("upload-zone").getByRole("button", { name: "Upload draft" })).toBeDisabled();
+  await page.getByTestId("upload-zone").locator("input[type='file']").setInputFiles({
+    name: "bonjour.wav",
+    mimeType: "audio/wav",
+    buffer: Buffer.from("mock upload")
+  });
+  await expect(page.getByTestId("upload-zone").getByRole("button", { name: "Upload draft" })).toBeEnabled();
+  await page.getByTestId("upload-zone").getByRole("button", { name: "Upload draft" }).click();
+  await expect(page.getByRole("tab", { name: /Drafts/i })).toHaveAttribute("aria-selected", "true");
 });
 
 test("generated speech disables only generate controls while TTS is offline", async ({ page }) => {
@@ -353,7 +371,7 @@ test("settings page matches grouped setup controls and calls settings APIs", asy
   await expect(page.getByLabel("Display name")).toHaveValue("T-Cube");
   await page.getByLabel("Display name").fill("Mia's Cube");
   await page.getByRole("button", { name: "Save name" }).click();
-  await expect(page.getByText("Cube state refreshed.")).toBeVisible();
+  await expect(page.getByText("Cube name saved.")).toBeVisible();
 
   await page.getByRole("button", { name: "Create recovery code" }).click();
   await expect(page.getByText("RCV-123-456")).toBeVisible();
@@ -367,7 +385,7 @@ test("settings page matches grouped setup controls and calls settings APIs", asy
   await expect.poll(() => page.evaluate(() => (window as Window & { __copiedText?: string }).__copiedText)).toBe(expectedInviteUrl);
 
   await page.getByRole("button", { name: "Clear unused content" }).click();
-  await expect(page.getByText("Cube state refreshed.")).toBeVisible();
+  await expect(page.getByText("Unused content cleared.")).toBeVisible();
 
   await page.getByRole("button", { name: "Factory reset" }).click();
   const resetDialog = page.getByRole("dialog", { name: "Factory reset this cube?" });
@@ -626,6 +644,24 @@ async function mockAdminApi(page: Page) {
 
     if (path === "/api/pi/v1/auth/logout" && route.request().method() === "POST") {
       await route.fulfill({ json: { status: "ok" } });
+      return;
+    }
+
+    if ((path === "/api/pi/v1/content/recordings" || path === "/api/pi/v1/content/uploads") && route.request().method() === "POST") {
+      const source = path.endsWith("/recordings") ? "recorded" : "uploaded";
+      await route.fulfill({
+        json: {
+          id: `${source}-draft`,
+          content_type: "language",
+          title: `${source}-english-bonjour-tout-le-monde.wav`,
+          text: "Bonjour tout le monde.",
+          language: "English",
+          state: "archived",
+          source,
+          audio_path: `draft/language/${source}-english-bonjour-tout-le-monde.wav`,
+          preview_url: `/api/media/draft/language/${source}-english-bonjour-tout-le-monde.wav`
+        }
+      });
       return;
     }
 

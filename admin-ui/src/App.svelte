@@ -371,8 +371,8 @@
     busy = true;
     try {
       await action();
-      setMessage(success, "success");
       await refreshAll();
+      setMessage(success, "success");
     } catch (error) {
       setError(error);
     } finally {
@@ -925,23 +925,6 @@
     return true;
   }
 
-  async function runFooterAction() {
-    if (!selectedButton) return;
-    if (selectedButton.contentType && selectedTab === "record" && recordedWav) {
-      await submitRecording();
-      return;
-    }
-    if (selectedButton.contentType && selectedTab === "upload" && uploadFile) {
-      await submitUpload();
-      return;
-    }
-    if (selectedButton.contentType === "language" && selectedTab === "generate" && draftForm.text.trim()) {
-      await submitGeneration();
-      return;
-    }
-    await saveSelectedButtonMode(selectedButton);
-  }
-
   function modeClass(mode: ButtonMode) {
     if (mode === "language") return "lang";
     if (mode === "animals") return "animal";
@@ -1119,7 +1102,6 @@
         chooseUpload,
         submitUpload,
         submitGeneration,
-        runFooterAction,
         playContentPreview,
         promptTrashContent,
         cancelTrashContent,

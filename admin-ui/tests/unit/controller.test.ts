@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import {
-  buttonConfigFooterDisabled,
-  buttonConfigFooterLabel,
-  updateDraftFormValue
-} from "../../src/button-config-controller.ts";
+import { updateDraftFormValue } from "../../src/button-config-controller.ts";
 import {
   generatedSpeechDisabled,
   generatedSpeechOfflineStatus,
@@ -43,55 +39,7 @@ const baseDraft: DraftForm = {
   voice: ""
 };
 
-function footerState(overrides = {}) {
-  return {
-    setup: null,
-    message: "",
-    messageType: "info",
-    buttons: [{ ...languageButton, activeCount: 0, draftCount: 0 }],
-    selectedButtonId: 1,
-    selectedButton: { ...languageButton, activeCount: 0, draftCount: 0 },
-    selectedContent: null,
-    selectedTab: "record",
-    contentListTab: "active",
-    draftForm: baseDraft,
-    recordedWav: null,
-    uploadFile: null,
-    contentDurations: {},
-    events: [],
-    generatedSpeechDisabled: false,
-    busy: false,
-    ...overrides
-  } as Parameters<typeof buttonConfigFooterLabel>[0];
-}
-
 describe("button config controller", () => {
-  test("requires recorded language audio and text before enabling save recording", () => {
-    assert.equal(buttonConfigFooterLabel(footerState()), "Save recording");
-    assert.equal(buttonConfigFooterDisabled(footerState()), true);
-
-    const withAudio = footerState({ recordedWav: {} });
-    assert.equal(buttonConfigFooterDisabled(withAudio), true);
-
-    const withAudioAndText = footerState({
-      recordedWav: {},
-      draftForm: { ...baseDraft, text: "Bonjour" }
-    });
-    assert.equal(buttonConfigFooterDisabled(withAudioAndText), false);
-  });
-
-  test("routes generated speech footer through save draft and respects health disabled state", () => {
-    const ready = footerState({
-      selectedTab: "generate",
-      draftForm: { ...baseDraft, text: "Bonjour" },
-      generatedSpeechDisabled: false
-    });
-    assert.equal(buttonConfigFooterLabel(ready), "Save draft");
-    assert.equal(buttonConfigFooterDisabled(ready), false);
-
-    assert.equal(buttonConfigFooterDisabled({ ...ready, generatedSpeechDisabled: true }), true);
-  });
-
   test("patches draft forms without mutating the original object", () => {
     const next = updateDraftFormValue(baseDraft, { text: "Bonjour", provider: "voxtral" });
     assert.deepEqual(next, { ...baseDraft, text: "Bonjour", provider: "voxtral" });

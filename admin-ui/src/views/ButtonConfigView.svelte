@@ -2,7 +2,6 @@
   import { AlertTriangle, Check, Languages, Minus, Music, PawPrint, Play, SlidersHorizontal, Upload, Wrench } from "@lucide/svelte";
   import type { ActiveContentItem, AuthSession, ButtonMode } from "../api";
   import type { RecordedWav } from "../audio";
-  import { buttonConfigFooterDisabled, buttonConfigFooterLabel } from "../button-config-controller";
   import type { ButtonConfigViewModel } from "../button-config-controller";
   import type { DraftForm } from "../types";
   import TopBar from "../components/TopBar.svelte";
@@ -46,17 +45,11 @@
     chooseUpload: (event: Event) => void;
     submitUpload: () => void | Promise<void>;
     submitGeneration: () => void | Promise<void>;
-    runFooterAction: () => void | Promise<void>;
     playContentPreview: (item: ActiveContentItem) => void | Promise<void>;
     promptTrashContent: (item: { id: string; title: string }) => void;
     cancelTrashContent: () => void;
     confirmTrashContent: () => void | Promise<void>;
   };
-
-  let footerActionLabel = "Save mode";
-  let footerActionDisabled = false;
-  $: footerActionLabel = buttonConfigFooterLabel(state);
-  $: footerActionDisabled = buttonConfigFooterDisabled(state);
 </script>
 
 <TopBar
@@ -186,6 +179,12 @@
           </label>
         </div>
       {/if}
+      <div class="mode-save-row">
+        <div class="mode-save-note">Changes apply on the next button press.</div>
+        <button type="button" class="btn-primary mode-save-btn" on:click={actions.saveSelectedButtonMode} disabled={state.busy}>
+          <Check size={16} strokeWidth={1.5} aria-hidden="true" />Save mode
+        </button>
+      </div>
     </section>
 
       {#if state.selectedButton.contentType}
@@ -239,7 +238,6 @@
           selectedButton={state.selectedButton}
           draftForm={state.draftForm}
           updateDraftForm={actions.updateDraftForm}
-          languages={["English", "French", "Vietnamese", "Spanish", "German", "Italian", "Portuguese", "Dutch", "Arabic", "Hindi"]}
           providers={["auto", "voxtral", "vietnamese-vits"]}
           busy={state.busy}
           recorder={state.recorder}
@@ -274,15 +272,6 @@
     {/if}
   {/if}
 </div>
-
-{#if state.selectedButton}
-  <div class="save-bar">
-    <div class="save-note">{footerActionLabel === "Save mode" ? "Changes apply on the next button press" : "Drafts stay inactive until activated"}</div>
-    <button type="button" class="save-btn" on:click={actions.runFooterAction} disabled={footerActionDisabled}>
-      <Check size={16} strokeWidth={1.5} aria-hidden="true" />{footerActionLabel}
-    </button>
-  </div>
-{/if}
 
 {#if state.trashPrompt}
   <div class="trash-backdrop" role="presentation" on:click={actions.cancelTrashContent}>

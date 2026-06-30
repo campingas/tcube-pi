@@ -135,6 +135,21 @@ Latest recent activity feed update on 2026-07-01:
 - The dashboard Recent activity card now renders dedicated icons, action text, and relative time for sign-in, button press, recorded, uploaded, generated, activated, and deleted activity.
 - Validation: `just check`, `just test`, `just check-admin-ui`, `just build-admin-ui`, `just test-admin-ui-unit`, and `just test-admin-ui-mobile`.
 
+Latest button configuration save-flow update on 2026-07-01:
+
+- Removed the duplicate sticky footer media-save action from the button configuration page.
+- Moved `Save mode` into the Mode section so button behavior changes are saved near the controls they affect.
+- Language uploads now show the required `Text spoken` field inside the Upload tab, and Record/Upload draft buttons stay disabled until required draft metadata exists.
+- Mutation success messages now survive the follow-up refresh instead of being replaced by the generic refresh message.
+- Validation: `just check-admin-ui`, `just build-admin-ui`, `just test-admin-ui-unit`, and `just test-admin-ui-mobile`.
+
+Latest button content list cleanup on 2026-07-01:
+
+- Removed redundant Active/Draft pane subheaders from the button configuration page.
+- Draft rows now use the same compact audio-row styling as active rows, with muted detail text and icon-only activate/trash actions instead of raw browser-default text.
+- Mobile Playwright coverage now verifies the redundant labels and draft metadata line stay absent.
+- Validation: `just check-admin-ui`, `just build-admin-ui`, `just test-admin-ui-unit`, and `just test-admin-ui-mobile`.
+
 Latest mobile-first admin UI draft replication on 2026-06-28:
 
 - `just check-admin-ui`
@@ -169,7 +184,7 @@ Latest recording draft flow validation on 2026-06-28:
 - `just test`
 - Language recordings, uploads, and generated speech require spoken text but do not require a parent-entered title; the stored title/filename is generated from source or TTS model, language, spoken text, and timestamp. Generated speech titles use `generated-{tts-model}-{language}-{text}-{timestamp}`.
 - Animal and music recordings/uploads require only a title. Generate is available only for language buttons.
-- The button configuration sticky footer now submits the pending Add content action when a recording/upload/generated speech draft is ready; otherwise it saves the button mode.
+- Draft recording/upload/generated-speech saves are handled from the Add content composer, while button mode changes are saved from the Mode section.
 
 Latest audio draft storage validation on 2026-06-29:
 
@@ -196,7 +211,7 @@ Latest button active-count fix on 2026-06-29:
 
 - Button cards and the button configuration header now display the loaded per-button active content count instead of taking the maximum of that list count and the setup-level content-type count.
 - Summary count render expressions now pass `contentState` explicitly into active/draft count helpers so button strip and selected-button stats update after content activation refreshes.
-- Button mode changes can reuse existing modes/languages on multiple buttons, the footer `Save mode` action remains enabled without requiring pending media, and active/draft content lists stay scoped to the selected button/language instead of falling back to other content.
+- Button mode changes can reuse existing modes/languages on multiple buttons, `Save mode` lives in the Mode section, and active/draft content lists stay scoped to the selected button/language instead of falling back to other content.
 
 Latest content empty-state clarity on 2026-06-29:
 
@@ -395,21 +410,21 @@ Latest admin UI route/component split on 2026-06-30:
 
 - `admin-ui/src/App.svelte` now delegates authenticated dashboard, button configuration, inventory, settings, and auth flows to focused typed view components instead of a single inline render tree.
 - Shared content and status presentation moved into `admin-ui/src/components/` and `admin-ui/src/view-utils.ts`, and stale prototype components were removed.
-- The mobile recording flow keeps the draft-text footer enablement in sync with the live input, and the generated-speech footer no longer duplicates the form submit label.
+- The mobile recording flow keeps draft-text validation in sync with the live input, and generated speech uses its own form submit control.
 - Validation after the split: `just check-admin-ui`, `just build-admin-ui`, and `just test-admin-ui-mobile`.
 
 Latest admin UI split follow-up on 2026-06-30:
 
 - Auth submit buttons again respect the shared busy state to prevent duplicate login, bootstrap, recovery, and invitation submissions.
 - Button content draft form edits now flow through an explicit `updateDraftForm` patch action owned by `App.svelte`, so generated-speech status checks react to provider/text changes without hidden child prop mutation.
-- Button configuration footer label and disabled-state decisions now use named helper functions and the canonical draft form state instead of a local draft-text sync bridge.
+- Button content draft form decisions use canonical draft form state instead of a local draft-text sync bridge.
 - Validation after the follow-up: `just check-admin-ui`, `just build-admin-ui`, and `just test-admin-ui-mobile`.
 
 Latest admin UI controller extraction on 2026-06-30:
 
-- Button configuration view-model helpers, content keys/counts, immutable draft-form patching, and footer action decisions now live in a typed `button-config-controller.ts` module.
+- Button configuration view-model helpers, content keys/counts, and immutable draft-form patching now live in a typed `button-config-controller.ts` module.
 - Generated-speech health keys, menu status keys, disabled-state calculation, provider-key parsing, offline status creation, and backoff transitions now live in a typed `generated-speech-health.ts` module.
-- Added dependency-free Node TypeScript unit coverage for footer action states, draft-form patching, generated-speech keys, disabled states, offline status, and backoff transitions, with `just test-admin-ui-unit` and a matching CI step.
+- Added dependency-free Node TypeScript unit coverage for draft-form patching, generated-speech keys, disabled states, offline status, and backoff transitions, with `just test-admin-ui-unit` and a matching CI step.
 - Validation after the extraction: `just test-admin-ui-unit`, `just check-admin-ui`, `just build-admin-ui`, and `just test-admin-ui-mobile`.
 
 Latest admin UI recording controller extraction on 2026-06-30:
@@ -438,5 +453,5 @@ Latest dashboard audio drilldown update on 2026-06-30:
 Latest Add content UI restoration on 2026-07-01:
 
 - Button configuration `Add content` now uses the richer mobile-first composer again: icon tabs, large record/stop control, waveform/status panel, framed upload zone, and structured generated-speech fields.
-- Existing recording, upload, generated-speech health, draft validation, and sticky footer behavior were preserved.
+- Existing recording, upload, generated-speech health, and draft validation behavior were preserved.
 - Mobile Playwright coverage now checks the restored Add-content tab styling, record control, upload zone, and recording save state.
