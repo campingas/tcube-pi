@@ -61,6 +61,23 @@ test("top bar shows manager role as manager while keeping manager styling", asyn
   await expect(page.locator(".topbar-session-role")).toHaveClass(/role-admin/);
 });
 
+test("create owner screen does not show a refresh action", async ({ page }) => {
+  await page.route("**/api/pi/v1/auth/session", async (route) => {
+    await route.fulfill({
+      json: {
+        authenticated: false,
+        bootstrap_required: true,
+        account: null,
+        cubes: []
+      }
+    });
+  });
+  await page.goto("/");
+
+  await expect(page.getByText("Create local owner")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Refresh" })).toHaveCount(0);
+});
+
 test("mobile button selector keeps five fixed-size button pills horizontally usable", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Manage all/i }).click();
@@ -199,6 +216,53 @@ test("generated speech disables only generate controls while TTS is offline", as
   await expect(page.getByRole("button", { name: "Generate speech" })).toBeEnabled();
   await page.getByRole("button", { name: /go to dashboard/i }).click();
   await expect(page.getByText("LLMs online")).toBeVisible();
+});
+
+test("setup checklist sits below the notice and Wi-Fi action opens settings verification", async ({ page }) => {
+  await page.route("**/api/pi/v1/setup/review", async (route) => {
+    await route.fulfill({
+      json: {
+        cube_name: "T-Cube",
+        device_id: "cube-1",
+        admin_created: true,
+        wifi_verified: false,
+        dashboard_ip: "",
+        dashboard_address: "https://tcube.local/",
+        button_modes: {
+          "1": "language:English",
+          "2": "animals",
+          "3": "music",
+          "4": "setup_help",
+          "5": "disabled"
+        },
+        active_counts: {
+          language: 2,
+          animals: 1,
+          music: 1
+        }
+      }
+    });
+  });
+  await page.goto("/");
+
+  const notice = page.locator(".notice").first();
+  const setupChecklist = page.getByLabel("Setup checklist");
+  const hero = page.getByTestId("dashboard-hero-card");
+  await expect(setupChecklist).toBeVisible();
+  const [noticeBox, setupBox, heroBox] = await Promise.all([
+    notice.boundingBox(),
+    setupChecklist.boundingBox(),
+    hero.boundingBox()
+  ]);
+  expect(noticeBox).not.toBeNull();
+  expect(setupBox).not.toBeNull();
+  expect(heroBox).not.toBeNull();
+  expect(setupBox!.y).toBeGreaterThan(noticeBox!.y + noticeBox!.height - 1);
+  expect(heroBox!.y).toBeGreaterThan(setupBox!.y + setupBox!.height - 1);
+
+  await page.getByRole("button", { name: /Wi-Fi verified/i }).click();
+  await expect(page.getByRole("navigation").getByText("Settings")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mark verified" })).toBeVisible();
 });
 
 test("settings page matches grouped setup controls and calls settings APIs", async ({ page }) => {

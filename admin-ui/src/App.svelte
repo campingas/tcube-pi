@@ -611,6 +611,10 @@
     if (id === "animals") selectedButtonId = buttons.find((button) => button.contentType === "animals")?.id ?? 2;
     if (id === "music") selectedButtonId = buttons.find((button) => button.contentType === "music")?.id ?? 3;
     if (id === "language" || id === "animals" || id === "music") view = "button-config";
+    if (id === "wifi") {
+      settingsWifiOpen = true;
+      view = "settings";
+    }
   }
 
   function setSelectedMode(mode: ButtonMode) {
@@ -1175,9 +1179,6 @@
       </button>
       <div class="topbar-session">Local parent dashboard</div>
     </div>
-      <button type="button" class="icon-btn" aria-label="Refresh" on:click={refreshAll}>
-        <RefreshCw size={18} strokeWidth={1.5} aria-hidden="true" />
-      </button>
     </nav>
 
     <div class="body auth-body">
@@ -1328,6 +1329,10 @@
       {message}
     </section>
 
+    {#if !setupReady}
+      {@render SetupChecklist()}
+    {/if}
+
     <section class="card" data-testid="dashboard-hero-card">
       <div class="cube-hero">
         <div class="cube-avatar" aria-hidden="true">
@@ -1446,43 +1451,44 @@
       {@render EventFeed(events)}
     </section>
 
-    {#if !setupReady}
-      <section class="setup-banner" aria-label="Setup checklist">
-        <div class="setup-banner-hdr">
-          <AlertTriangle size={18} strokeWidth={1.5} aria-hidden="true" />
-          <div class="setup-banner-title">Setup incomplete</div>
-          <div class="setup-pct">{prerequisites.filter((item) => item.complete).length} of {prerequisites.length} done</div>
-        </div>
-        <div class="prereq-list" role="list">
-          {#each prerequisites as item}
-            <button type="button" class:prereq-done={item.complete} class="prereq-item" on:click={() => selectSetupAction(item.id)}>
-              <div class:pc-done={item.complete} class:pc-todo={!item.complete} class="prereq-check">
-                {#if item.complete}<Check size={12} strokeWidth={1.5} aria-hidden="true" />{:else}<Minus size={12} strokeWidth={1.5} aria-hidden="true" />{/if}
-              </div>
-              <div class="prereq-body">
-                <div class="prereq-name">{item.label}</div>
-                <div class="prereq-detail">{item.detail}</div>
-              </div>
-              {#if !item.complete}
-                <div class="prereq-action">{item.action}<ArrowRight size={13} strokeWidth={1.5} aria-hidden="true" /></div>
-              {/if}
-            </button>
-          {/each}
-        </div>
-        <button
-          type="button"
-          class:ready={setupReady}
-          class="setup-complete-btn"
-          title={!setupReady ? `Missing: ${blockedSetupText}` : "Completing setup switches the cube to child mode."}
-          disabled={busy || !isOwner || !setupReady}
-          on:click={() => window.confirm("Completing setup switches the cube to child mode. You can still manage content from this dashboard.") && run(completeSetup, "Setup complete. The cube is ready for child mode.")}
-        >
-          <Play size={16} strokeWidth={1.5} aria-hidden="true" />
-          Complete setup — {prerequisites.filter((item) => !item.complete).length} items remaining
-        </button>
-      </section>
-    {/if}
   </div>
+{/snippet}
+
+{#snippet SetupChecklist()}
+  <section class="setup-banner" aria-label="Setup checklist">
+    <div class="setup-banner-hdr">
+      <AlertTriangle size={18} strokeWidth={1.5} aria-hidden="true" />
+      <div class="setup-banner-title">Setup incomplete</div>
+      <div class="setup-pct">{prerequisites.filter((item) => item.complete).length} of {prerequisites.length} done</div>
+    </div>
+    <div class="prereq-list" role="list">
+      {#each prerequisites as item}
+        <button type="button" class:prereq-done={item.complete} class="prereq-item" on:click={() => selectSetupAction(item.id)}>
+          <div class:pc-done={item.complete} class:pc-todo={!item.complete} class="prereq-check">
+            {#if item.complete}<Check size={12} strokeWidth={1.5} aria-hidden="true" />{:else}<Minus size={12} strokeWidth={1.5} aria-hidden="true" />{/if}
+          </div>
+          <div class="prereq-body">
+            <div class="prereq-name">{item.label}</div>
+            <div class="prereq-detail">{item.detail}</div>
+          </div>
+          {#if !item.complete}
+            <div class="prereq-action">{item.action}<ArrowRight size={13} strokeWidth={1.5} aria-hidden="true" /></div>
+          {/if}
+        </button>
+      {/each}
+    </div>
+    <button
+      type="button"
+      class:ready={setupReady}
+      class="setup-complete-btn"
+      title={!setupReady ? `Missing: ${blockedSetupText}` : "Completing setup switches the cube to child mode."}
+      disabled={busy || !isOwner || !setupReady}
+      on:click={() => window.confirm("Completing setup switches the cube to child mode. You can still manage content from this dashboard.") && run(completeSetup, "Setup complete. The cube is ready for child mode.")}
+    >
+      <Play size={16} strokeWidth={1.5} aria-hidden="true" />
+      Complete setup — {prerequisites.filter((item) => !item.complete).length} items remaining
+    </button>
+  </section>
 {/snippet}
 
 {#snippet ButtonConfigView()}

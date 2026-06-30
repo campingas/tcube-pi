@@ -1,23 +1,35 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use axum::body::{to_bytes, Body};
-use axum::extract::State;
 use axum::http::{HeaderName, HeaderValue, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
-use base64::Engine;
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
-use scrypt::{scrypt, Params as ScryptParams};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 use crate::config::AdminConfig;
+use crate::db::admin::auth::{
+    account_by_username, account_password_hash, authenticate_session, create_session,
+    ensure_first_account_owner_membership, first_cube_identity, generate_uuid_v4, hash_password,
+    local_cubes, local_device_id, normalize_username, now, random_token, require_local_cube_role,
+    revoke_all_sessions, session_id_for_token, sha256_hex, timestamp, verify_password, LocalCube,
+    RoleRequirement,
+};
+#[cfg(test)]
+use crate::db::admin::auth::{add_cube_membership, session_expires_at, CubeRole};
+use crate::db::admin::content::{self as content_storage, ContentEmptyState, NewContentItem};
+#[cfg(test)]
+use crate::db::admin::schema::migrate_admin_database;
+use crate::db::admin::schema::{
+    open_admin_database, open_existing_database, table_count, table_exists,
+};
+use crate::db::admin::setup::{self as setup_storage, SetupReview};
 
 const SESSION_COOKIE_NAME: &str = "tcube_session";
 const SESSION_MAX_AGE_SECONDS: i64 = 90 * 24 * 60 * 60;
@@ -26,24 +38,6 @@ const MAX_REQUEST_BODY_BYTES: usize = 25 * 1024 * 1024;
 const SPEECH_PROVIDER_HEALTH_TTL: Duration = Duration::from_secs(20);
 const SPEECH_PROVIDER_HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const FACTORY_RESET_CONFIRMATION: &str = "FACTORY RESET";
-const FACTORY_RESET_TABLES: &[&str] = &[
-    "content_package_failures",
-    "content_packages",
-    "cube_invitations",
-    "recovery_codes",
-    "admin_sessions",
-    "cube_memberships",
-    "admin_accounts",
-    "media_artifacts",
-    "content_jobs",
-    "content_items",
-    "button_events",
-    "setup_debug_events",
-    "trusted_sessions",
-    "button_mappings",
-    "device_setup",
-    "devices",
-];
 
 static SPEECH_PROVIDER_HEALTH_CACHE: OnceLock<Mutex<HashMap<String, CachedSpeechProviderHealth>>> =
     OnceLock::new();
@@ -84,6 +78,16 @@ pub(crate) struct CubeResponse {
     role: String,
 }
 
+impl From<LocalCube> for CubeResponse {
+    fn from(cube: LocalCube) -> Self {
+        Self {
+            device_id: cube.device_id,
+            label: cube.label,
+            role: cube.role,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct SetupReviewResponse {
     cube_name: String,
@@ -94,6 +98,21 @@ pub(crate) struct SetupReviewResponse {
     dashboard_address: String,
     button_modes: HashMap<String, String>,
     active_counts: HashMap<String, i64>,
+}
+
+impl From<SetupReview> for SetupReviewResponse {
+    fn from(review: SetupReview) -> Self {
+        Self {
+            cube_name: review.cube_name,
+            device_id: review.device_id,
+            admin_created: review.admin_created,
+            wifi_verified: review.wifi_verified,
+            dashboard_ip: review.dashboard_ip,
+            dashboard_address: review.dashboard_address,
+            button_modes: review.button_modes,
+            active_counts: review.active_counts,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -148,6 +167,15 @@ pub(crate) struct InactiveContentResponse {
 pub(crate) struct ContentEmptyStateResponse {
     title: String,
     detail: String,
+}
+
+impl From<ContentEmptyState> for ContentEmptyStateResponse {
+    fn from(empty_state: ContentEmptyState) -> Self {
+        Self {
+            title: empty_state.title,
+            detail: empty_state.detail,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -291,61 +319,6 @@ pub(crate) struct InvitationResponse {
 }
 
 #[derive(Debug)]
-pub(crate) struct AuthAccount {
-    id: String,
-    username: String,
-    display_name: String,
-}
-
-#[derive(Debug)]
-pub(crate) struct AuthSession {
-    account: AuthAccount,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CubeRole {
-    Owner,
-    Manager,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RoleRequirement {
-    Member,
-    Owner,
-}
-
-#[derive(Debug)]
-pub(crate) struct ContentItemRow {
-    id: String,
-    content_type: String,
-    title: Option<String>,
-    text: Option<String>,
-    language: Option<String>,
-    source: String,
-    state: String,
-    audio_path: Option<String>,
-}
-
-#[derive(Debug)]
-pub(crate) struct ContentInventoryRow {
-    id: String,
-    content_type: String,
-    title: Option<String>,
-    text: Option<String>,
-    language: Option<String>,
-    source: String,
-    state: String,
-    audio_path: Option<String>,
-    button_id: i64,
-}
-
-#[derive(Clone, Debug)]
-struct CurrentButtonMapping {
-    mode: String,
-    language: Option<String>,
-}
-
-#[derive(Debug)]
 pub(crate) struct MediaInput {
     content_type: String,
     button_id: i64,
@@ -389,27 +362,6 @@ struct CachedSpeechProviderHealth {
     message: String,
 }
 
-pub async fn handle_request(
-    State(config): State<Arc<AdminConfig>>,
-    request: Request<Body>,
-) -> impl IntoResponse {
-    let request = match HttpRequest::from_request(request).await {
-        Ok(request) => request,
-        Err(error) => return error_response(400, error.to_string()).into_response(),
-    };
-    let response = match tokio::task::spawn_blocking(move || {
-        super::routes::route_request(&request, config.as_ref())
-    })
-    .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            return error_response(500, format!("admin request failed: {error}")).into_response()
-        }
-    };
-    response.into_response()
-}
-
 pub(crate) fn pi_status(config: &AdminConfig) -> StatusResponse {
     StatusResponse {
         status: "ok",
@@ -442,7 +394,11 @@ pub(crate) fn auth_session(
     };
 
     if let Some(session) = authenticate_session(&conn, token)? {
-        let cubes = local_cubes(&conn, &session.account.id)?;
+        ensure_first_account_owner_membership(&conn, &session.account.id)?;
+        let cubes = local_cubes(&conn, &session.account.id)?
+            .into_iter()
+            .map(Into::into)
+            .collect();
         return Ok((
             AuthSessionResponse {
                 authenticated: true,
@@ -490,7 +446,11 @@ pub(crate) fn login_password(
         anyhow::bail!("invalid username or password");
     }
     let token = create_session(&conn, &account.id)?;
-    let cubes = local_cubes(&conn, &account.id)?;
+    ensure_first_account_owner_membership(&conn, &account.id)?;
+    let cubes = local_cubes(&conn, &account.id)?
+        .into_iter()
+        .map(Into::into)
+        .collect();
 
     Ok((
         AuthSessionResponse {
@@ -548,21 +508,28 @@ pub(crate) fn bootstrap_owner(
         ],
     )?;
 
-    if let Some(device_id) = conn
-        .prepare("select device_id from device_setup where id = 1")?
-        .query_row([], |row| row.get::<_, Option<String>>(0))
-        .optional()?
-        .flatten()
-    {
-        conn.execute(
-            "insert into cube_memberships (account_id, device_id, role, created_at) \
-             values (?1, ?2, 'owner', ?3)",
-            params![account_id, device_id, now()],
-        )?;
-    }
+    let (device_id, cube_name) = first_cube_identity(&conn)?;
+    conn.execute(
+        "insert into devices (id, label, token_hash, created_at, revoked_at) \
+         values (?1, ?2, ?3, ?4, null) \
+         on conflict(id) do update set label = excluded.label",
+        params![device_id, cube_name, "0".repeat(64), now()],
+    )?;
+    conn.execute(
+        "update device_setup set device_id = ?1, updated_at = ?2 where id = 1",
+        params![device_id, now()],
+    )?;
+    conn.execute(
+        "insert into cube_memberships (account_id, device_id, role, created_at) \
+         values (?1, ?2, 'owner', ?3)",
+        params![account_id, device_id, now()],
+    )?;
 
     let token = create_session(&conn, &account_id)?;
-    let cubes = local_cubes(&conn, &account_id)?;
+    let cubes = local_cubes(&conn, &account_id)?
+        .into_iter()
+        .map(Into::into)
+        .collect();
     Ok((
         AuthSessionResponse {
             authenticated: true,
@@ -763,7 +730,10 @@ pub(crate) fn accept_invitation(
         params![now(), account_id, invitation.0],
     )?;
     let token = create_session(&conn, &account_id)?;
-    let cubes = local_cubes(&conn, &account_id)?;
+    let cubes = local_cubes(&conn, &account_id)?
+        .into_iter()
+        .map(Into::into)
+        .collect();
     Ok((
         AuthSessionResponse {
             authenticated: true,
@@ -792,32 +762,11 @@ pub(crate) fn set_cube_name(
     if name.is_empty() {
         anyhow::bail!("cube name is required");
     }
-    ensure_setup_row(&conn, config)?;
-    let device_id = conn
-        .prepare("select device_id from device_setup where id = 1")?
-        .query_row([], |row| row.get::<_, Option<String>>(0))
-        .optional()?
-        .flatten()
-        .unwrap_or_else(generate_uuid_v4);
-    conn.execute(
-        "insert into devices (id, label, token_hash, created_at, revoked_at) \
-         values (?1, ?2, ?3, ?4, null) \
-         on conflict(id) do update set label = excluded.label",
-        params![device_id, name, "0".repeat(64), now()],
-    )?;
-    conn.execute(
-        "update device_setup set cube_name = ?1, device_id = ?2, updated_at = ?3 where id = 1",
-        params![name, device_id, now()],
-    )?;
-    conn.execute(
-        "insert or ignore into cube_memberships (account_id, device_id, role, created_at) \
-         values (?1, ?2, 'owner', ?3)",
-        params![session.account.id, device_id, now()],
-    )?;
+    let saved = setup_storage::save_cube_name(&conn, config, &session.account.id, name)?;
     Ok(CubeSaveResponse {
         status: "ok",
-        device_id,
-        name: name.to_string(),
+        device_id: saved.device_id,
+        name: saved.name,
         provisioned: false,
         token: None,
     })
@@ -835,13 +784,7 @@ pub(crate) fn verify_wifi(config: &AdminConfig, request: &HttpRequest) -> Result
     if dashboard_ip.is_empty() {
         anyhow::bail!("dashboard ip is required after wifi verification");
     }
-    ensure_setup_row(&conn, config)?;
-    conn.execute(
-        "update device_setup \
-         set wifi_ssid = ?1, wifi_verified_at = ?2, dashboard_ip = ?3, updated_at = ?4 \
-         where id = 1",
-        params![ssid, now(), dashboard_ip, now()],
-    )?;
+    setup_storage::verify_wifi(&conn, config, ssid, dashboard_ip)?;
     Ok(())
 }
 
@@ -881,25 +824,7 @@ pub(crate) fn set_button_mode(
     } else {
         None
     };
-    let content_type = match mode {
-        "language" | "animals" | "music" => Some(mode),
-        _ => None,
-    };
-    conn.execute(
-        "insert into button_mappings \
-         (button_id, mode, language, content_type, manual_order_weight, updated_at) \
-         values (?1, ?2, ?3, ?4, ?5, ?6) \
-         on conflict(button_id) do update set \
-         mode = excluded.mode, language = excluded.language, content_type = excluded.content_type, updated_at = excluded.updated_at",
-        params![
-            button_id,
-            mode,
-            selected_language,
-            content_type,
-            button_id - 1,
-            now()
-        ],
-    )?;
+    setup_storage::set_button_mode(&conn, button_id, mode, selected_language.as_deref())?;
     Ok(())
 }
 
@@ -927,10 +852,7 @@ pub(crate) fn complete_setup(
     if review.active_counts.get("music").copied().unwrap_or(0) < 1 {
         anyhow::bail!("at least one music item must be active");
     }
-    conn.execute(
-        "update device_setup set setup_complete = 1, updated_at = ?1 where id = 1",
-        [now()],
-    )?;
+    setup_storage::mark_setup_complete(&conn)?;
     Ok(CompleteSetupResponse {
         status: "complete",
         led_pattern: "soft_green_pulse_3s",
@@ -950,24 +872,8 @@ pub(crate) fn factory_reset(
         anyhow::bail!("factory reset confirmation must be FACTORY RESET");
     }
 
-    migrate_admin_database(&conn, config)?;
     delete_factory_reset_media(config)?;
-
-    let tx = conn
-        .transaction()
-        .context("failed to start factory reset transaction")?;
-    for table in FACTORY_RESET_TABLES {
-        tx.execute(&format!("delete from {table}"), [])
-            .with_context(|| format!("failed to clear {table} during factory reset"))?;
-    }
-    tx.execute(
-        "delete from sqlite_sequence where name in ('setup_debug_events', 'button_events', 'content_package_failures')",
-        [],
-    )
-    .context("failed to reset factory reset sequences")?;
-    seed_admin_defaults(&tx, config)?;
-    tx.commit()
-        .context("failed to commit factory reset transaction")?;
+    setup_storage::factory_reset_database(&mut conn, config)?;
 
     Ok(FactoryResetResponse {
         status: "ok",
@@ -1028,28 +934,34 @@ pub(crate) fn save_multipart_media(
         .with_context(|| format!("failed to write media file {}", absolute_path.display()))?;
 
     let item_id = format!("{source}-{}-{}", normalized.content_type, random_token(12)?);
-    let order_index = next_order_index(&conn, &normalized.content_type, normalized.button_id)?;
-    conn.execute(
-        "insert into content_items \
-         (id, content_type, button_id, language, title, text, audio_path, source, state, order_index) \
-         values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'archived', ?9)",
-        params![
-            item_id,
-            normalized.content_type,
-            normalized.button_id,
-            empty_to_null(&normalized.language),
-            title,
-            if normalized.content_type == "language" {
-                normalized.text.clone()
-            } else {
-                normalized.title.clone()
-            },
-            relative_path,
+    let order_index =
+        content_storage::next_order_index(&conn, &normalized.content_type, normalized.button_id)?;
+    let text = if normalized.content_type == "language" {
+        normalized.text.clone()
+    } else {
+        normalized.title.clone()
+    };
+    content_storage::insert_content_item(
+        &conn,
+        &NewContentItem {
+            id: &item_id,
+            content_type: &normalized.content_type,
+            button_id: normalized.button_id,
+            language: empty_to_null(&normalized.language),
+            title: &title,
+            text: &text,
+            audio_path: &relative_path,
             source,
-            order_index
-        ],
+            order_index,
+        },
     )?;
-    insert_media_artifact_if_present(&conn, &item_id, source, &relative_path, None)?;
+    content_storage::insert_media_artifact_if_present(
+        &conn,
+        &item_id,
+        source,
+        &relative_path,
+        None,
+    )?;
     inactive_response_for_item(&conn, &item_id)
 }
 
@@ -1102,22 +1014,28 @@ pub(crate) fn save_generated_speech(
         .with_context(|| format!("failed to write media file {}", absolute_path.display()))?;
 
     let item_id = format!("generated-language-{}", random_token(12)?);
-    let order_index = next_order_index(&conn, "language", body.button_id)?;
-    conn.execute(
-        "insert into content_items \
-         (id, content_type, button_id, language, title, text, audio_path, source, state, order_index) \
-         values (?1, 'language', ?2, ?3, ?4, ?5, ?6, 'generated', 'archived', ?7)",
-        params![
-            item_id,
-            body.button_id,
-            language,
-            filename,
+    let order_index = content_storage::next_order_index(&conn, "language", body.button_id)?;
+    content_storage::insert_content_item(
+        &conn,
+        &NewContentItem {
+            id: &item_id,
+            content_type: "language",
+            button_id: body.button_id,
+            language: Some(language),
+            title: &filename,
             text,
-            relative_path,
-            order_index
-        ],
+            audio_path: &relative_path,
+            source: "generated",
+            order_index,
+        },
     )?;
-    insert_media_artifact_if_present(&conn, &item_id, "generated", &relative_path, Some(text))?;
+    content_storage::insert_media_artifact_if_present(
+        &conn,
+        &item_id,
+        "generated",
+        &relative_path,
+        Some(text),
+    )?;
     inactive_response_for_item(&conn, &item_id)
 }
 
@@ -1160,9 +1078,10 @@ pub(crate) fn list_active_content(
         .map(String::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let items = active_content_rows(&conn, button_id, content_type, language)?;
+    let items = content_storage::active_content_rows(&conn, button_id, content_type, language)?;
     let empty_state = if items.is_empty() {
-        content_empty_state(&conn, button_id, content_type, language, "active")?
+        content_storage::content_empty_state(&conn, button_id, content_type, language, "active")?
+            .map(Into::into)
     } else {
         None
     };
@@ -1203,9 +1122,10 @@ pub(crate) fn list_inactive_content(
     } else {
         None
     };
-    let rows = inactive_content_rows(&conn, button_id, content_type, language)?;
+    let rows = content_storage::inactive_content_rows(&conn, button_id, content_type, language)?;
     let empty_state = if rows.is_empty() {
-        content_empty_state(&conn, button_id, content_type, language, "archived")?
+        content_storage::content_empty_state(&conn, button_id, content_type, language, "archived")?
+            .map(Into::into)
     } else {
         None
     };
@@ -1238,31 +1158,21 @@ pub(crate) fn content_inventory(
     request: &HttpRequest,
 ) -> Result<ContentInventoryResponse> {
     let conn = authenticated_connection(config, request)?;
-    let mappings = current_button_mappings(&conn)?;
-    let mut stmt = conn.prepare(
-        "select id, content_type, title, text, language, source, state, audio_path, button_id \
-         from content_items \
-         where state in ('active', 'archived') and audio_path is not null \
-         order by button_id, content_type, language, state, order_index, id",
-    )?;
-    let rows = stmt
-        .query_map([], inventory_item_from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("failed to read content inventory")?;
+    let rows = content_storage::content_inventory_rows(&conn)?;
     let mut active_count = 0;
     let mut draft_count = 0;
     let mut unused_count = 0;
     let items = rows
         .into_iter()
         .map(|item| {
-            let (status, reason) = inventory_status(&item, mappings.get(&item.button_id));
+            let (status, reason) = content_storage::inventory_status(&conn, &item)?;
             match status {
                 "active" => active_count += 1,
                 "draft" => draft_count += 1,
                 "unused" => unused_count += 1,
                 _ => {}
             }
-            ContentInventoryItemResponse {
+            Ok(ContentInventoryItemResponse {
                 id: item.id,
                 status: status.to_string(),
                 button_id: item.button_id,
@@ -1275,9 +1185,9 @@ pub(crate) fn content_inventory(
                 preview_url: item.audio_path.as_deref().map(content_preview_url),
                 audio_path: item.audio_path,
                 reason,
-            }
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(ContentInventoryResponse {
         items,
@@ -1292,7 +1202,7 @@ pub(crate) fn trash_unused_content(
     request: &HttpRequest,
 ) -> Result<CleanupResponse> {
     let conn = owner_connection(config, request)?;
-    let unused = unused_content_items(&conn)?;
+    let unused = content_storage::unused_content_items(&conn)?;
     let audio_paths = unused
         .iter()
         .filter_map(|item| item.audio_path.clone())
@@ -1302,14 +1212,7 @@ pub(crate) fn trash_unused_content(
     }
     let trashed_at = now();
     let purge_after_at = purge_after();
-    for item in &unused {
-        conn.execute(
-            "update content_items \
-             set state = 'trash', trashed_at = ?1, purge_after = ?2, updated_at = ?3 \
-             where id = ?4",
-            params![trashed_at, purge_after_at, trashed_at, item.id],
-        )?;
-    }
+    content_storage::trash_content_items(&conn, &unused, &trashed_at, &purge_after_at)?;
     Ok(CleanupResponse {
         status: "ok",
         deleted_count: unused.len(),
@@ -1326,7 +1229,8 @@ pub(crate) fn activate_content_item(
         .trim_start_matches("/api/content/items/")
         .trim_end_matches("/activate")
         .trim_matches('/');
-    let item = content_item_by_id(&conn, item_id)?.context("content item not found")?;
+    let item =
+        content_storage::content_item_by_id(&conn, item_id)?.context("content item not found")?;
     if !matches!(item.source.as_str(), "recorded" | "uploaded" | "generated") {
         anyhow::bail!(
             "only inactive recorded, uploaded, or generated content can be activated here"
@@ -1337,10 +1241,7 @@ pub(crate) fn activate_content_item(
     }
     let audio_path = item.audio_path.clone().unwrap_or_default();
     let next_audio_path = activate_audio_file(config, &audio_path)?;
-    conn.execute(
-        "update content_items set state = 'active', audio_path = ?1, updated_at = ?2 where id = ?3",
-        params![next_audio_path, now(), item.id],
-    )?;
+    content_storage::activate_content_item(&conn, &item.id, &next_audio_path)?;
     Ok(InactiveContentResponse {
         id: item.id,
         content_type: item.content_type.clone(),
@@ -1367,14 +1268,11 @@ pub(crate) fn trash_content_item(
     let item_id = path
         .trim_start_matches("/api/content/items/")
         .trim_matches('/');
-    let item = content_item_by_id(&conn, item_id)?.context("content item not found")?;
+    let item =
+        content_storage::content_item_by_id(&conn, item_id)?.context("content item not found")?;
     delete_draft_audio_file(config, item.audio_path.as_deref())?;
-    let changes = conn.execute(
-        "update content_items \
-         set state = 'trash', trashed_at = ?1, purge_after = ?2, updated_at = ?3 \
-         where id = ?4",
-        params![now(), purge_after(), now(), item_id],
-    )?;
+    let trashed_at = now();
+    let changes = content_storage::trash_content_item(&conn, item_id, &trashed_at, &purge_after())?;
     if changes == 0 {
         anyhow::bail!("content item not found: {item_id}");
     }
@@ -1395,14 +1293,16 @@ pub(crate) fn trash_unused_generated_speech(
     if language.is_empty() {
         anyhow::bail!("language is required");
     }
-    let draft_paths = draft_audio_paths_for_cleanup(&conn, body.button_id, language)?;
+    let draft_paths =
+        content_storage::draft_audio_paths_for_cleanup(&conn, body.button_id, language)?;
     delete_draft_audio_files(config, &draft_paths)?;
-    let deleted_count = conn.execute(
-        "update content_items \
-         set state = 'trash', trashed_at = ?1, purge_after = ?2, updated_at = ?3 \
-         where source in ('recorded', 'uploaded', 'generated') and state = 'archived' and content_type = 'language' \
-           and button_id = ?4 and language = ?5",
-        params![now(), purge_after(), now(), body.button_id, language],
+    let trashed_at = now();
+    let deleted_count = content_storage::trash_generated_language_drafts(
+        &conn,
+        body.button_id,
+        language,
+        &trashed_at,
+        &purge_after(),
     )?;
     Ok(CleanupResponse {
         status: "ok",
@@ -1480,7 +1380,7 @@ fn role_authorized_connection(
 
 pub(crate) fn setup_review(config: &AdminConfig) -> Result<SetupReviewResponse> {
     let Some(conn) = open_existing_database(&config.database)? else {
-        return Ok(default_setup_review(config));
+        return Ok(setup_storage::default_setup_review(config).into());
     };
     setup_review_from_conn(config, &conn)
 }
@@ -1489,398 +1389,7 @@ pub(crate) fn setup_review_from_conn(
     config: &AdminConfig,
     conn: &Connection,
 ) -> Result<SetupReviewResponse> {
-    if !table_exists(conn, "device_setup")? {
-        return Ok(default_setup_review(config));
-    }
-
-    let setup = conn
-        .prepare(
-            "select cube_name, device_id, wifi_verified_at, dashboard_host, dashboard_ip \
-             from device_setup where id = 1",
-        )?
-        .query_row([], |row| {
-            Ok((
-                row.get::<_, Option<String>>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-            ))
-        });
-    let (cube_name, device_id, wifi_verified_at, dashboard_host, dashboard_ip) = setup
-        .unwrap_or_else(|_| {
-            (
-                Some("T-Cube".to_string()),
-                None,
-                None,
-                config.hostname.clone(),
-                None,
-            )
-        });
-
-    Ok(SetupReviewResponse {
-        cube_name: cube_name.unwrap_or_else(|| "T-Cube".to_string()),
-        device_id,
-        admin_created: table_count(conn, "admin_accounts")? > 0,
-        wifi_verified: wifi_verified_at.is_some(),
-        dashboard_ip,
-        dashboard_address: format!("https://{dashboard_host}/"),
-        button_modes: button_modes(conn)?,
-        active_counts: active_counts(conn)?,
-    })
-}
-
-fn ensure_setup_row(conn: &Connection, config: &AdminConfig) -> Result<()> {
-    conn.execute(
-        "insert or ignore into device_setup (id, dashboard_host) values (1, ?1)",
-        [config.hostname.as_str()],
-    )?;
-    Ok(())
-}
-
-fn default_setup_review(config: &AdminConfig) -> SetupReviewResponse {
-    let mut button_modes = HashMap::new();
-    button_modes.insert("1".to_string(), "language:English".to_string());
-    button_modes.insert("2".to_string(), "animals".to_string());
-    button_modes.insert("3".to_string(), "music".to_string());
-    button_modes.insert("4".to_string(), "setup_help".to_string());
-    button_modes.insert("5".to_string(), "setup_help".to_string());
-
-    SetupReviewResponse {
-        cube_name: "T-Cube".to_string(),
-        device_id: None,
-        admin_created: false,
-        wifi_verified: false,
-        dashboard_ip: None,
-        dashboard_address: format!("https://{}/", config.hostname),
-        button_modes,
-        active_counts: HashMap::new(),
-    }
-}
-
-fn local_cubes(conn: &Connection, account_id: &str) -> Result<Vec<CubeResponse>> {
-    if !table_exists(conn, "devices")? {
-        return Ok(Vec::new());
-    }
-    if table_exists(conn, "cube_memberships")? {
-        let mut stmt = conn.prepare(
-            "select d.id, d.label, m.role from cube_memberships m \
-             join devices d on d.id = m.device_id \
-             where m.account_id = ?1 and d.revoked_at is null order by d.label",
-        )?;
-        let rows = stmt.query_map([account_id], |row| {
-            Ok(CubeResponse {
-                device_id: row.get(0)?,
-                label: row.get(1)?,
-                role: row.get(2)?,
-            })
-        })?;
-        return rows
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("failed to read local cube memberships");
-    }
-
-    let mut stmt = conn.prepare(
-        "select id, label from devices where revoked_at is null order by created_at limit 1",
-    )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(CubeResponse {
-            device_id: row.get(0)?,
-            label: row.get(1)?,
-            role: "owner".to_string(),
-        })
-    })?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .context("failed to read local cube identity")
-}
-
-fn local_device_id(conn: &Connection) -> Result<String> {
-    if table_exists(conn, "device_setup")? {
-        let device_id = conn
-            .prepare("select device_id from device_setup where id = 1")?
-            .query_row([], |row| row.get::<_, Option<String>>(0))
-            .optional()?
-            .flatten();
-        if let Some(device_id) = device_id {
-            return Ok(device_id);
-        }
-    }
-    if table_exists(conn, "devices")? {
-        let device_id = conn
-            .prepare("select id from devices where revoked_at is null order by created_at limit 1")?
-            .query_row([], |row| row.get::<_, String>(0))
-            .optional()?;
-        if let Some(device_id) = device_id {
-            return Ok(device_id);
-        }
-    }
-    anyhow::bail!("local cube is not initialized");
-}
-
-fn require_local_cube_role(
-    conn: &Connection,
-    account_id: &str,
-    requirement: RoleRequirement,
-) -> Result<()> {
-    let device_id = match local_device_id(conn) {
-        Ok(device_id) => device_id,
-        Err(error) if requirement == RoleRequirement::Owner => {
-            let account_count = table_count(conn, "admin_accounts")?;
-            if account_count == 1 && account_by_id(conn, account_id)?.is_some() {
-                return Ok(());
-            }
-            return Err(error);
-        }
-        Err(error) => return Err(error),
-    };
-    let role = local_cube_role(conn, account_id, &device_id)?;
-    if requirement == RoleRequirement::Owner && role != CubeRole::Owner {
-        anyhow::bail!("cube owner permission required");
-    }
-    Ok(())
-}
-
-fn local_cube_role(conn: &Connection, account_id: &str, device_id: &str) -> Result<CubeRole> {
-    if !table_exists(conn, "cube_memberships")? {
-        return Ok(CubeRole::Owner);
-    }
-    let role = conn
-        .prepare("select role from cube_memberships where account_id = ?1 and device_id = ?2")?
-        .query_row(params![account_id, device_id], |row| {
-            row.get::<_, String>(0)
-        })
-        .optional()
-        .context("failed to read cube membership")?;
-    match role.as_deref() {
-        Some("owner") => Ok(CubeRole::Owner),
-        Some("manager") => Ok(CubeRole::Manager),
-        _ => anyhow::bail!("cube membership required"),
-    }
-}
-
-#[cfg(test)]
-fn add_cube_membership(
-    conn: &Connection,
-    account_id: &str,
-    device_id: &str,
-    role: CubeRole,
-) -> Result<()> {
-    let role = match role {
-        CubeRole::Owner => "owner",
-        CubeRole::Manager => "manager",
-    };
-    conn.execute(
-        "insert into cube_memberships (account_id, device_id, role, created_at) \
-         values (?1, ?2, ?3, ?4) \
-         on conflict(account_id, device_id) do update set role = excluded.role",
-        params![account_id, device_id, role, now()],
-    )?;
-    Ok(())
-}
-
-fn account_by_username(conn: &Connection, username: &str) -> Result<Option<AuthAccount>> {
-    conn.prepare(
-        "select id, username, display_name from admin_accounts \
-         where username = ?1 collate nocase and disabled_at is null",
-    )?
-    .query_row([username.trim()], |row| {
-        Ok(AuthAccount {
-            id: row.get(0)?,
-            username: row.get(1)?,
-            display_name: row.get(2)?,
-        })
-    })
-    .optional()
-    .context("failed to read admin account")
-}
-
-fn account_by_id(conn: &Connection, account_id: &str) -> Result<Option<AuthAccount>> {
-    conn.prepare(
-        "select id, username, display_name from admin_accounts \
-         where id = ?1 and disabled_at is null",
-    )?
-    .query_row([account_id], |row| {
-        Ok(AuthAccount {
-            id: row.get(0)?,
-            username: row.get(1)?,
-            display_name: row.get(2)?,
-        })
-    })
-    .optional()
-    .context("failed to read admin account")
-}
-
-fn normalize_username(username: &str) -> Result<String> {
-    let value = username.trim().to_lowercase();
-    if value.len() < 3 || value.len() > 32 {
-        anyhow::bail!("username must be 3-32 letters, numbers, dots, dashes, or underscores");
-    }
-    let mut chars = value.chars();
-    let Some(first) = chars.next() else {
-        anyhow::bail!("username must be 3-32 letters, numbers, dots, dashes, or underscores");
-    };
-    if !first.is_ascii_alphanumeric()
-        || !chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-')
-    {
-        anyhow::bail!("username must be 3-32 letters, numbers, dots, dashes, or underscores");
-    }
-    Ok(value)
-}
-
-fn account_password_hash(conn: &Connection, account_id: &str) -> Result<Option<String>> {
-    conn.prepare("select password_hash from admin_accounts where id = ?1")?
-        .query_row([account_id], |row| row.get(0))
-        .optional()
-        .context("failed to read admin password hash")
-}
-
-fn authenticate_session(conn: &Connection, token: Option<&str>) -> Result<Option<AuthSession>> {
-    let Some(token) = token else {
-        return Ok(None);
-    };
-    let Some(row) = conn
-        .prepare(
-            "select s.id, s.account_id, s.expires_at, a.username, a.display_name \
-             from admin_sessions s join admin_accounts a on a.id = s.account_id \
-             where s.token_hash = ?1 and s.revoked_at is null and a.disabled_at is null",
-        )?
-        .query_row([sha256_hex(token)], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-            ))
-        })
-        .optional()?
-    else {
-        return Ok(None);
-    };
-    if row.2 <= now() {
-        return Ok(None);
-    }
-
-    let expires_at = session_expires_at();
-    conn.execute(
-        "update admin_sessions set last_seen_at = ?1, expires_at = ?2 where id = ?3",
-        params![now(), expires_at, row.0],
-    )?;
-
-    Ok(Some(AuthSession {
-        account: AuthAccount {
-            id: row.1,
-            username: row.3,
-            display_name: row.4,
-        },
-    }))
-}
-
-fn create_session(conn: &Connection, account_id: &str) -> Result<String> {
-    let token = random_token(32)?;
-    let timestamp = now();
-    conn.execute(
-        "insert into admin_sessions \
-         (id, account_id, token_hash, created_at, last_seen_at, expires_at) \
-         values (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![
-            random_token(16)?,
-            account_id,
-            sha256_hex(&token),
-            timestamp,
-            timestamp,
-            session_expires_at()
-        ],
-    )?;
-    Ok(token)
-}
-
-fn session_id_for_token(conn: &Connection, token: &str) -> Result<Option<String>> {
-    conn.prepare("select id from admin_sessions where token_hash = ?1 and revoked_at is null")?
-        .query_row([sha256_hex(token)], |row| row.get(0))
-        .optional()
-        .context("failed to read session")
-}
-
-fn revoke_all_sessions(conn: &Connection, account_id: &str) -> Result<()> {
-    conn.execute(
-        "update admin_sessions set revoked_at = ?1 where account_id = ?2 and revoked_at is null",
-        params![now(), account_id],
-    )?;
-    Ok(())
-}
-
-fn verify_password(password: &str, encoded: &str) -> Result<bool> {
-    let parts = encoded.split('$').collect::<Vec<_>>();
-    if parts.len() != 3 {
-        return Ok(false);
-    }
-    let salt = hex::decode(parts[1]).context("invalid password salt")?;
-    let expected = hex::decode(parts[2]).context("invalid password digest")?;
-    let actual = match parts[0] {
-        "scrypt" => scrypt_digest(password, &salt)?,
-        "sha256" => {
-            let mut hasher = Sha256::new();
-            hasher.update(format!("{}:{password}", parts[1]));
-            hasher.finalize().to_vec()
-        }
-        _ => return Ok(false),
-    };
-    Ok(constant_time_eq(&actual, &expected))
-}
-
-fn hash_password(password: &str) -> Result<String> {
-    let mut salt = [0_u8; 16];
-    getrandom::getrandom(&mut salt).context("failed to generate password salt")?;
-    let digest = scrypt_digest(password, &salt)?;
-    Ok(format!(
-        "scrypt${}${}",
-        hex::encode(salt),
-        hex::encode(digest)
-    ))
-}
-
-fn scrypt_digest(password: &str, salt: &[u8]) -> Result<Vec<u8>> {
-    let params = ScryptParams::new(14, 8, 1, 32).context("invalid scrypt parameters")?;
-    let mut output = [0_u8; 32];
-    scrypt(password.as_bytes(), salt, &params, &mut output).context("failed to hash password")?;
-    Ok(output.to_vec())
-}
-
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    left.iter()
-        .zip(right)
-        .fold(0_u8, |acc, (left, right)| acc | (left ^ right))
-        == 0
-}
-
-fn random_token(length: usize) -> Result<String> {
-    let mut bytes = vec![0_u8; length];
-    getrandom::getrandom(&mut bytes).context("failed to generate random token")?;
-    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
-}
-
-fn generate_uuid_v4() -> String {
-    let mut bytes = [0_u8; 16];
-    getrandom::getrandom(&mut bytes).expect("failed to generate uuid bytes");
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex = hex::encode(bytes);
-    format!(
-        "{}-{}-{}-{}-{}",
-        &hex[0..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..32]
-    )
-}
-
-fn sha256_hex(value: &str) -> String {
-    hex::encode(Sha256::digest(value.as_bytes()))
+    Ok(setup_storage::setup_review_from_conn(config, conn)?.into())
 }
 
 pub(crate) fn session_cookie(token: &str) -> String {
@@ -1893,546 +1402,9 @@ pub(crate) fn clear_session_cookie() -> String {
     format!("{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0")
 }
 
-fn session_expires_at() -> String {
-    timestamp(Utc::now() + chrono::Duration::seconds(SESSION_MAX_AGE_SECONDS))
-}
-
-fn now() -> String {
-    timestamp(Utc::now())
-}
-
-fn timestamp(value: chrono::DateTime<Utc>) -> String {
-    value.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
-}
-
-fn button_modes(conn: &Connection) -> Result<HashMap<String, String>> {
-    if !table_exists(conn, "button_mappings")? {
-        return Ok(HashMap::new());
-    }
-
-    let mut stmt =
-        conn.prepare("select button_id, mode, language from button_mappings order by button_id")?;
-    let rows = stmt.query_map([], |row| {
-        let button_id: i64 = row.get(0)?;
-        let mode: String = row.get(1)?;
-        let language: Option<String> = row.get(2)?;
-        let label = if mode == "language" {
-            format!(
-                "language:{}",
-                language.unwrap_or_else(|| "English".to_string())
-            )
-        } else {
-            mode
-        };
-        Ok((button_id.to_string(), label))
-    })?;
-
-    rows.collect::<rusqlite::Result<HashMap<_, _>>>()
-        .context("failed to read button mappings")
-}
-
-fn active_counts(conn: &Connection) -> Result<HashMap<String, i64>> {
-    if !table_exists(conn, "content_items")? {
-        return Ok(HashMap::new());
-    }
-
-    let mut stmt = conn.prepare(
-        "select content_type, count(*) from content_items where state = 'active' group by content_type",
-    )?;
-    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
-    rows.collect::<rusqlite::Result<HashMap<_, _>>>()
-        .context("failed to read active content counts")
-}
-
-fn active_content_rows(
-    conn: &Connection,
-    button_id: i64,
-    content_type: &str,
-    language: Option<&str>,
-) -> Result<Vec<ContentItemRow>> {
-    let language = if content_type == "language" {
-        language.map(str::trim).filter(|value| !value.is_empty())
-    } else {
-        None
-    };
-    let sql = if language.is_some() {
-        "select id, content_type, title, text, language, source, state, audio_path \
-         from content_items \
-         where button_id = ?1 and content_type = ?2 and state = 'active' and language = ?3 \
-         order by order_index, id"
-    } else {
-        "select id, content_type, title, text, language, source, state, audio_path \
-         from content_items \
-         where button_id = ?1 and content_type = ?2 and state = 'active' \
-         order by order_index, id"
-    };
-    let mut stmt = conn.prepare(sql)?;
-    let rows = if let Some(language) = language {
-        stmt.query_map(
-            params![button_id, content_type, language],
-            content_item_from_row,
-        )?
-        .collect::<rusqlite::Result<Vec<_>>>()?
-    } else {
-        stmt.query_map(params![button_id, content_type], content_item_from_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?
-    };
-    Ok(rows)
-}
-
-fn inactive_content_rows(
-    conn: &Connection,
-    button_id: i64,
-    content_type: &str,
-    language: Option<&str>,
-) -> Result<Vec<ContentItemRow>> {
-    let sql = if language.is_some() {
-        "select id, content_type, title, text, language, source, state, audio_path \
-         from content_items \
-         where button_id = ?1 and content_type = ?2 and state = 'archived' \
-           and language = ?3 and source in ('recorded', 'uploaded', 'generated') \
-         order by created_at desc, id"
-    } else {
-        "select id, content_type, title, text, language, source, state, audio_path \
-         from content_items \
-         where button_id = ?1 and content_type = ?2 and state = 'archived' \
-           and source in ('recorded', 'uploaded', 'generated') \
-         order by created_at desc, id"
-    };
-    let mut stmt = conn.prepare(sql)?;
-    let rows = if let Some(language) = language {
-        stmt.query_map(
-            params![button_id, content_type, language],
-            content_item_from_row,
-        )?
-        .collect::<rusqlite::Result<Vec<_>>>()?
-    } else {
-        stmt.query_map(params![button_id, content_type], content_item_from_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?
-    };
-    Ok(rows)
-}
-
-fn content_empty_state(
-    conn: &Connection,
-    button_id: i64,
-    content_type: &str,
-    language: Option<&str>,
-    state: &str,
-) -> Result<Option<ContentEmptyStateResponse>> {
-    if !table_exists(conn, "content_items")? {
-        return Ok(Some(empty_state_no_content(content_type, language, state)));
-    }
-
-    if content_type == "language" {
-        let same_button_other_languages =
-            content_languages_for_button(conn, button_id, state, language)?;
-        if !same_button_other_languages.is_empty() {
-            return Ok(Some(ContentEmptyStateResponse {
-                title: empty_title(content_type, language, state),
-                detail: format!(
-                    "This button has {} content in {}. Switch language back or add new content for {}.",
-                    state_label(state),
-                    join_labels(&same_button_other_languages),
-                    language.unwrap_or("this language")
-                ),
-            }));
-        }
-
-        if let Some(language) = language {
-            let other_buttons = content_buttons_for_language(conn, button_id, language, state)?;
-            if !other_buttons.is_empty() {
-                return Ok(Some(ContentEmptyStateResponse {
-                    title: empty_title(content_type, Some(language), state),
-                    detail: format!(
-                        "{language} {} content exists on {}. This button starts with its own empty content set.",
-                        state_label(state),
-                        join_button_labels(&other_buttons)
-                    ),
-                }));
-            }
-        }
-    } else {
-        let other_buttons = content_buttons_for_type(conn, button_id, content_type, state)?;
-        if !other_buttons.is_empty() {
-            return Ok(Some(ContentEmptyStateResponse {
-                title: empty_title(content_type, None, state),
-                detail: format!(
-                    "{} {} content exists on {}. This button starts with its own empty content set.",
-                    content_type_label(content_type),
-                    state_label(state),
-                    join_button_labels(&other_buttons)
-                ),
-            }));
-        }
-    }
-
-    let matching_count = count_content_rows(conn, content_type, language, state)?;
-    if matching_count > 0 {
-        return Ok(Some(ContentEmptyStateResponse {
-            title: empty_title(content_type, language, state),
-            detail: format!(
-                "{} content exists elsewhere, but not for this button selection. Add content here to make this button playable.",
-                content_type_label(content_type)
-            ),
-        }));
-    }
-
-    Ok(Some(empty_state_no_content(content_type, language, state)))
-}
-
-fn empty_state_no_content(
-    content_type: &str,
-    language: Option<&str>,
-    state: &str,
-) -> ContentEmptyStateResponse {
-    ContentEmptyStateResponse {
-        title: empty_title(content_type, language, state),
-        detail: format!(
-            "No {} {} content exists yet. Record, upload, or generate content to create the first item.",
-            language.unwrap_or_else(|| content_type_label(content_type)),
-            state_label(state)
-        ),
-    }
-}
-
-fn empty_title(content_type: &str, language: Option<&str>, state: &str) -> String {
-    let scope = language.unwrap_or_else(|| content_type_label(content_type));
-    format!("No {} {} content on this button", state_label(state), scope)
-}
-
-fn state_label(state: &str) -> &'static str {
-    if state == "active" {
-        "active"
-    } else {
-        "draft"
-    }
-}
-
-fn content_type_label(content_type: &str) -> &'static str {
-    match content_type {
-        "language" => "language",
-        "animals" => "animal",
-        "music" => "music",
-        _ => "content",
-    }
-}
-
-fn join_labels(values: &[String]) -> String {
-    values
-        .iter()
-        .take(3)
-        .cloned()
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn join_button_labels(buttons: &[i64]) -> String {
-    buttons
-        .iter()
-        .take(3)
-        .map(|button| format!("Button {button}"))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn count_content_rows(
-    conn: &Connection,
-    content_type: &str,
-    language: Option<&str>,
-    state: &str,
-) -> Result<i64> {
-    let source_filter = if state == "archived" {
-        " and source in ('recorded', 'uploaded', 'generated')"
-    } else {
-        ""
-    };
-    let sql = if content_type == "language" && language.is_some() {
-        format!(
-            "select count(*) from content_items where content_type = ?1 and state = ?2 and language = ?3{source_filter}"
-        )
-    } else {
-        format!(
-            "select count(*) from content_items where content_type = ?1 and state = ?2{source_filter}"
-        )
-    };
-    if content_type == "language" {
-        if let Some(language) = language {
-            return conn
-                .query_row(&sql, params![content_type, state, language], |row| {
-                    row.get(0)
-                })
-                .context("failed to count scoped content rows");
-        }
-    }
-    conn.query_row(&sql, params![content_type, state], |row| row.get(0))
-        .context("failed to count scoped content rows")
-}
-
-fn content_languages_for_button(
-    conn: &Connection,
-    button_id: i64,
-    state: &str,
-    excluded_language: Option<&str>,
-) -> Result<Vec<String>> {
-    let source_filter = if state == "archived" {
-        " and source in ('recorded', 'uploaded', 'generated')"
-    } else {
-        ""
-    };
-    let sql = format!(
-        "select distinct language from content_items \
-         where button_id = ?1 and content_type = 'language' and state = ?2 \
-           and language is not null{source_filter} \
-         order by language"
-    );
-    let mut values = conn
-        .prepare(&sql)?
-        .query_map(params![button_id, state], |row| row.get::<_, String>(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("failed to read content languages for button")?;
-    if let Some(excluded_language) = excluded_language {
-        values.retain(|value| value != excluded_language);
-    }
-    Ok(values)
-}
-
-fn content_buttons_for_language(
-    conn: &Connection,
-    button_id: i64,
-    language: &str,
-    state: &str,
-) -> Result<Vec<i64>> {
-    let source_filter = if state == "archived" {
-        " and source in ('recorded', 'uploaded', 'generated')"
-    } else {
-        ""
-    };
-    let sql = format!(
-        "select distinct button_id from content_items \
-         where button_id != ?1 and content_type = 'language' and state = ?2 and language = ?3{source_filter} \
-         order by button_id"
-    );
-    conn.prepare(&sql)?
-        .query_map(params![button_id, state, language], |row| row.get(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("failed to read content buttons for language")
-}
-
-fn content_buttons_for_type(
-    conn: &Connection,
-    button_id: i64,
-    content_type: &str,
-    state: &str,
-) -> Result<Vec<i64>> {
-    let source_filter = if state == "archived" {
-        " and source in ('recorded', 'uploaded', 'generated')"
-    } else {
-        ""
-    };
-    let sql = format!(
-        "select distinct button_id from content_items \
-         where button_id != ?1 and content_type = ?2 and state = ?3{source_filter} \
-         order by button_id"
-    );
-    conn.prepare(&sql)?
-        .query_map(params![button_id, content_type, state], |row| row.get(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("failed to read content buttons for type")
-}
-
-fn draft_audio_paths_for_cleanup(
-    conn: &Connection,
-    button_id: i64,
-    language: &str,
-) -> Result<Vec<String>> {
-    conn.prepare(
-        "select audio_path \
-         from content_items \
-         where source in ('recorded', 'uploaded', 'generated') and state = 'archived' \
-           and content_type = 'language' and button_id = ?1 and language = ?2 \
-           and audio_path is not null",
-    )?
-    .query_map(params![button_id, language], |row| row.get(0))?
-    .collect::<rusqlite::Result<Vec<_>>>()
-    .context("failed to read draft audio paths for cleanup")
-}
-
-fn content_item_by_id(conn: &Connection, item_id: &str) -> Result<Option<ContentItemRow>> {
-    conn.prepare(
-        "select id, content_type, title, text, language, source, state, audio_path \
-         from content_items where id = ?1",
-    )?
-    .query_row([item_id], content_item_from_row)
-    .optional()
-    .context("failed to read content item")
-}
-
-fn content_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContentItemRow> {
-    Ok(ContentItemRow {
-        id: row.get(0)?,
-        content_type: row.get(1)?,
-        title: row.get(2)?,
-        text: row.get(3)?,
-        language: row.get(4)?,
-        source: row.get(5)?,
-        state: row.get(6)?,
-        audio_path: row.get(7)?,
-    })
-}
-
-fn inventory_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContentInventoryRow> {
-    Ok(ContentInventoryRow {
-        id: row.get(0)?,
-        content_type: row.get(1)?,
-        title: row.get(2)?,
-        text: row.get(3)?,
-        language: row.get(4)?,
-        source: row.get(5)?,
-        state: row.get(6)?,
-        audio_path: row.get(7)?,
-        button_id: row.get(8)?,
-    })
-}
-
-fn current_button_mappings(conn: &Connection) -> Result<HashMap<i64, CurrentButtonMapping>> {
-    let mut mappings = default_button_mappings();
-    if !table_exists(conn, "button_mappings")? {
-        return Ok(mappings);
-    }
-
-    let mut stmt = conn.prepare("select button_id, mode, language from button_mappings")?;
-    let rows = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            CurrentButtonMapping {
-                mode: row.get(1)?,
-                language: row.get(2)?,
-            },
-        ))
-    })?;
-    for row in rows {
-        let (button_id, mapping) = row?;
-        mappings.insert(button_id, mapping);
-    }
-    Ok(mappings)
-}
-
-fn unused_content_items(conn: &Connection) -> Result<Vec<ContentInventoryRow>> {
-    let mappings = current_button_mappings(conn)?;
-    let mut stmt = conn.prepare(
-        "select id, content_type, title, text, language, source, state, audio_path, button_id \
-         from content_items \
-         where source in ('recorded', 'uploaded', 'generated') and state = 'active' and audio_path is not null \
-         order by button_id, content_type, language, order_index, id",
-    )?;
-    let rows = stmt
-        .query_map([], inventory_item_from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("failed to read unused content rows")?;
-    Ok(rows
-        .into_iter()
-        .filter(|item| inventory_status(item, mappings.get(&item.button_id)).0 == "unused")
-        .collect())
-}
-
-fn default_button_mappings() -> HashMap<i64, CurrentButtonMapping> {
-    HashMap::from([
-        (
-            1,
-            CurrentButtonMapping {
-                mode: "language".to_string(),
-                language: Some("English".to_string()),
-            },
-        ),
-        (
-            2,
-            CurrentButtonMapping {
-                mode: "animals".to_string(),
-                language: None,
-            },
-        ),
-        (
-            3,
-            CurrentButtonMapping {
-                mode: "music".to_string(),
-                language: None,
-            },
-        ),
-        (
-            4,
-            CurrentButtonMapping {
-                mode: "setup_help".to_string(),
-                language: None,
-            },
-        ),
-        (
-            5,
-            CurrentButtonMapping {
-                mode: "setup_help".to_string(),
-                language: None,
-            },
-        ),
-    ])
-}
-
-fn inventory_status(
-    item: &ContentInventoryRow,
-    mapping: Option<&CurrentButtonMapping>,
-) -> (&'static str, String) {
-    if item.state == "archived" {
-        return (
-            "draft",
-            "Draft audio is waiting for review and activation.".to_string(),
-        );
-    }
-
-    let Some(mapping) = mapping else {
-        return (
-            "unused",
-            format!("Button {} has no current mode mapping.", item.button_id),
-        );
-    };
-
-    if mapping.mode != item.content_type {
-        return (
-            "unused",
-            format!(
-                "Button {} is set to {}, not {}.",
-                item.button_id,
-                mode_reason_label(&mapping.mode),
-                content_type_label(&item.content_type)
-            ),
-        );
-    }
-
-    if item.content_type == "language" {
-        let selected = mapping.language.as_deref().unwrap_or("English");
-        let content_language = item.language.as_deref().unwrap_or("unknown");
-        if selected != content_language {
-            return (
-                "unused",
-                format!(
-                    "Button {} is set to {selected}, not {content_language}.",
-                    item.button_id
-                ),
-            );
-        }
-    }
-
-    ("active", "Active in the current button setup.".to_string())
-}
-
-fn mode_reason_label(mode: &str) -> &str {
-    match mode {
-        "setup_help" => "setup help",
-        "disabled" => "disabled",
-        value => value,
-    }
-}
-
 fn inactive_response_for_item(conn: &Connection, item_id: &str) -> Result<InactiveContentResponse> {
-    let item = content_item_by_id(conn, item_id)?.context("content item not found")?;
+    let item =
+        content_storage::content_item_by_id(conn, item_id)?.context("content item not found")?;
     let title = item.title.unwrap_or_else(|| item.id.clone());
     let audio_path = item.audio_path.unwrap_or_default();
     Ok(InactiveContentResponse {
@@ -2917,45 +1889,6 @@ fn recording_timestamp() -> String {
     Utc::now().format("%Y%m%d%H%M%S%3f").to_string()
 }
 
-fn next_order_index(conn: &Connection, content_type: &str, button_id: i64) -> Result<i64> {
-    conn.query_row(
-        "select coalesce(max(order_index), -1) + 1 from content_items where content_type = ?1 and button_id = ?2",
-        params![content_type, button_id],
-        |row| row.get(0),
-    )
-    .context("failed to allocate content order")
-}
-
-fn insert_media_artifact_if_present(
-    conn: &Connection,
-    item_id: &str,
-    source: &str,
-    path: &str,
-    text: Option<&str>,
-) -> Result<()> {
-    if !table_exists(conn, "media_artifacts")? {
-        return Ok(());
-    }
-    let media_type = match source {
-        "recorded" => "recorded_audio",
-        "uploaded" => "uploaded_audio",
-        "generated" => "tts_audio",
-        _ => "uploaded_audio",
-    };
-    conn.execute(
-        "insert into media_artifacts (id, content_item_id, media_type, path, text, state) \
-         values (?1, ?2, ?3, ?4, ?5, 'active')",
-        params![
-            format!("media-{}", random_token(12)?),
-            item_id,
-            media_type,
-            path,
-            text
-        ],
-    )?;
-    Ok(())
-}
-
 fn empty_to_null(value: &str) -> Option<&str> {
     if value.trim().is_empty() {
         None
@@ -3235,443 +2168,6 @@ fn model_name_for_file(model: &str) -> String {
         .to_string()
 }
 
-fn open_existing_database(path: &Path) -> Result<Option<Connection>> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    Connection::open(path)
-        .with_context(|| format!("failed to open SQLite database {}", path.display()))
-        .map(Some)
-}
-
-fn open_admin_database(config: &AdminConfig) -> Result<Connection> {
-    if let Some(parent) = config.database.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {}", parent.display()))?;
-        }
-    }
-    let conn = Connection::open(&config.database).with_context(|| {
-        format!(
-            "failed to open SQLite database {}",
-            config.database.display()
-        )
-    })?;
-    migrate_admin_database(&conn, config)?;
-    restrict_database_permissions(&config.database)?;
-    Ok(conn)
-}
-
-fn migrate_admin_database(conn: &Connection, config: &AdminConfig) -> Result<()> {
-    conn.execute_batch(
-        "
-        create table if not exists schema_migrations (
-          version integer primary key,
-          applied_at text not null default current_timestamp
-        );
-
-        create table if not exists device_setup (
-          id integer primary key check (id = 1),
-          setup_complete integer not null default 0,
-          cube_name text,
-          device_id text references devices(id),
-          admin_credential_hash text,
-          wifi_ssid text,
-          wifi_verified_at text,
-          dashboard_host text not null default 'tcube.local',
-          dashboard_ip text,
-          battery_percent integer,
-          charging_state text not null default 'unknown',
-          low_battery_warning integer not null default 0,
-          updated_at text not null default current_timestamp
-        );
-
-        create table if not exists trusted_sessions (
-          id text primary key,
-          label text not null,
-          created_at text not null default current_timestamp,
-          last_seen_at text,
-          revoked_at text
-        );
-
-        create table if not exists button_mappings (
-          button_id integer primary key check (button_id between 1 and 5),
-          mode text not null check (mode in ('language', 'animals', 'music', 'disabled', 'setup_help')),
-          language text,
-          content_type text,
-          randomness_enabled integer not null default 0,
-          rotation_period text not null default 'none' check (rotation_period in ('none', 'daily', 'weekly')),
-          manual_order_weight integer not null default 0,
-          updated_at text not null default current_timestamp
-        );
-
-        create table if not exists content_items (
-          id text primary key,
-          content_type text not null check (content_type in ('language', 'animals', 'music')),
-          button_id integer,
-          language text,
-          title text,
-          text text,
-          audio_path text,
-          source text not null check (source in ('default', 'generated', 'manual', 'uploaded', 'recorded')),
-          state text not null default 'active' check (state in ('active', 'archived', 'trash')),
-          order_index integer not null default 0,
-          created_at text not null default current_timestamp,
-          updated_at text not null default current_timestamp,
-          trashed_at text,
-          purge_after text,
-          foreign key (button_id) references button_mappings(button_id)
-        );
-
-        create table if not exists media_artifacts (
-          id text primary key,
-          content_item_id text,
-          media_type text not null check (media_type in ('tts_audio', 'uploaded_audio', 'recorded_audio', 'stt_text')),
-          path text,
-          text text,
-          state text not null default 'active' check (state in ('active', 'trash', 'purged')),
-          created_at text not null default current_timestamp,
-          purge_after text,
-          foreign key (content_item_id) references content_items(id)
-        );
-
-        create table if not exists content_jobs (
-          id text primary key,
-          job_type text not null check (job_type in ('language_generation', 'tts', 'stt', 'bulk_upload')),
-          status text not null check (status in ('queued', 'running', 'succeeded', 'failed')),
-          language text,
-          count_requested integer,
-          theme_tags text,
-          attempts integer not null default 0,
-          success_count integer not null default 0,
-          failure_count integer not null default 0,
-          error text,
-          created_at text not null default current_timestamp,
-          updated_at text not null default current_timestamp
-        );
-
-        create table if not exists setup_debug_events (
-          id integer primary key autoincrement,
-          occurred_at text not null default current_timestamp,
-          event_type text not null,
-          button_id integer,
-          details text
-        );
-
-        create table if not exists button_events (
-          id integer primary key autoincrement,
-          occurred_at text not null,
-          button_id integer not null,
-          mode text not null,
-          response_id text not null,
-          response_text text not null
-        );
-
-        create table if not exists devices (
-          id text primary key,
-          label text not null,
-          token_hash text not null,
-          created_at text not null,
-          last_seen_at text,
-          revoked_at text
-        );
-
-        create table if not exists content_packages (
-          package_id text primary key,
-          device_id text not null,
-          revision integer not null,
-          schema_version integer not null,
-          minimum_runtime_version text not null,
-          archive_path text,
-          archive_sha256 text,
-          archive_size integer,
-          status text not null check (status in ('building', 'built', 'published', 'active', 'superseded')),
-          created_at text not null,
-          published_at text,
-          activated_at text,
-          activated_runtime_version text,
-          foreign key (device_id) references devices(id),
-          unique (device_id, revision)
-        );
-
-        create table if not exists content_package_failures (
-          id integer primary key autoincrement,
-          device_id text not null,
-          package_id text not null,
-          runtime_version text not null,
-          stage text not null,
-          detail text not null,
-          occurred_at text not null,
-          foreign key (device_id) references devices(id),
-          foreign key (package_id) references content_packages(package_id)
-        );
-
-        create table if not exists admin_accounts (
-          id text primary key,
-          username text not null unique collate nocase,
-          display_name text not null,
-          password_hash text,
-          created_at text not null,
-          disabled_at text
-        );
-
-        create table if not exists cube_memberships (
-          account_id text not null,
-          device_id text not null,
-          role text not null check (role in ('owner', 'manager')),
-          created_at text not null,
-          primary key (account_id, device_id),
-          foreign key (account_id) references admin_accounts(id),
-          foreign key (device_id) references devices(id)
-        );
-
-        create table if not exists admin_sessions (
-          id text primary key,
-          account_id text not null,
-          token_hash text not null unique,
-          created_at text not null,
-          last_seen_at text not null,
-          expires_at text not null,
-          revoked_at text,
-          foreign key (account_id) references admin_accounts(id)
-        );
-
-        create table if not exists cube_invitations (
-          id text primary key,
-          device_id text not null,
-          invited_by text not null,
-          role text not null check (role = 'manager'),
-          code_hash text not null unique,
-          created_at text not null,
-          expires_at text not null,
-          accepted_at text,
-          accepted_by text,
-          revoked_at text
-        );
-
-        create table if not exists recovery_codes (
-          id text primary key,
-          account_id text not null,
-          code_hash text not null unique,
-          created_at text not null,
-          expires_at text not null,
-          used_at text,
-          foreign key (account_id) references admin_accounts(id)
-        );
-        ",
-    )?;
-    conn.execute(
-        "insert or ignore into schema_migrations (version) values (1), (2), (3)",
-        [],
-    )?;
-    seed_admin_defaults(conn, config)?;
-    Ok(())
-}
-
-fn seed_admin_defaults(conn: &Connection, config: &AdminConfig) -> Result<()> {
-    conn.execute(
-        "insert or ignore into device_setup (id, dashboard_host) values (1, ?1)",
-        [config.hostname.as_str()],
-    )?;
-    let mappings = [
-        (1, "language", Some("English"), Some("language"), 0),
-        (2, "animals", None, Some("animals"), 1),
-        (3, "music", None, Some("music"), 2),
-        (4, "setup_help", None, None, 3),
-        (5, "setup_help", None, None, 4),
-    ];
-    for (button_id, mode, language, content_type, weight) in mappings {
-        conn.execute(
-            "insert or ignore into button_mappings \
-             (button_id, mode, language, content_type, manual_order_weight) \
-             values (?1, ?2, ?3, ?4, ?5)",
-            params![button_id, mode, language, content_type, weight],
-        )?;
-    }
-    seed_default_content(conn)?;
-    Ok(())
-}
-
-fn seed_default_content(conn: &Connection) -> Result<()> {
-    let english = [
-        (
-            "Hello, little one!",
-            "content/audio/english/hello-litle-one.wav",
-        ),
-        ("Good job!", "content/audio/english/good-job.wav"),
-        ("Can you clap?", "content/audio/english/can-you-clap.wav"),
-        (
-            "Where is your nose?",
-            "content/audio/english/where-is-your-nose.wav",
-        ),
-        ("Good morning!", "content/audio/english/good-morning.wav"),
-        (
-            "Tap the button!",
-            "content/audio/english/tap-the-button.wav",
-        ),
-        ("High five!", "content/audio/english/high-five.wav"),
-        (
-            "Show me your smile!",
-            "content/audio/english/show-me-your-smile.wav",
-        ),
-        (
-            "Happy play time!",
-            "content/audio/english/happy-play-time.wav",
-        ),
-        ("One more time!", "content/audio/english/one-more-time.wav"),
-    ];
-    for (index, (text, audio_path)) in english.into_iter().enumerate() {
-        let id = format!("english-default-{:02}", index + 1);
-        conn.execute(
-            "insert or ignore into content_items \
-             (id, content_type, button_id, language, title, text, audio_path, source, state, order_index) \
-             values (?1, 'language', 1, 'English', ?2, ?2, ?3, 'default', 'active', ?4)",
-            params![id, text, audio_path, index as i64],
-        )?;
-    }
-
-    let animals = [
-        (
-            "animal-pig-grunt",
-            "Pig grunt",
-            "Pig grunt",
-            "content/audio/animals/pig-grunt.wav",
-        ),
-        (
-            "animal-cow-moo",
-            "Cow moo",
-            "Cow moo",
-            "content/audio/animals/cow-moo.wav",
-        ),
-        (
-            "animal-cat-meow",
-            "Cat meow",
-            "Cat meow",
-            "content/audio/animals/cat-meow.wav",
-        ),
-        (
-            "animal-goat-baa",
-            "Goat baa",
-            "Goat baa",
-            "content/audio/animals/goat-baa.wav",
-        ),
-        (
-            "animal-hornet-hum",
-            "Hornet hum",
-            "Hornet hum",
-            "content/audio/animals/hornet-hum.wav",
-        ),
-        (
-            "animal-monkey-screech",
-            "Monkey screech",
-            "Monkey screech",
-            "content/audio/animals/monkey-screech.wav",
-        ),
-        (
-            "animal-rooster-crow",
-            "Rooster crow",
-            "Rooster crow",
-            "content/audio/animals/rooster-crow.wav",
-        ),
-        (
-            "animal-horse-neigh",
-            "Horse neigh",
-            "Horse neigh",
-            "content/audio/animals/horse-neigh.wav",
-        ),
-        (
-            "animal-cricket-screech",
-            "Cricket screech",
-            "Cricket screech",
-            "content/audio/animals/cricket-screech.wav",
-        ),
-        (
-            "animal-bird-squeak",
-            "Bird squeak",
-            "Bird squeak",
-            "content/audio/animals/bird-squeak.wav",
-        ),
-    ];
-    for (index, (id, title, text, audio_path)) in animals.into_iter().enumerate() {
-        conn.execute(
-            "insert or ignore into content_items \
-             (id, content_type, button_id, language, title, text, audio_path, source, state, order_index) \
-             values (?1, 'animals', 2, 'English', ?2, ?3, ?4, 'default', 'active', ?5)",
-            params![id, title, text, audio_path, index as i64],
-        )?;
-    }
-
-    let music = [
-        ("Ba oi ba", "content/audio/music/ba-oi-ba.mp3"),
-        ("Elicopter", "content/audio/music/elicopter.mp3"),
-        ("Giant car", "content/audio/music/giant-car.mp3"),
-        (
-            "I am an excavator",
-            "content/audio/music/i-am-an-excavator.mp3",
-        ),
-        (
-            "Il etait un petit navire",
-            "content/audio/music/il-etait-un-petit-navire.mp3",
-        ),
-        ("Police car", "content/audio/music/police-car.mp3"),
-        (
-            "Pomme de reinette",
-            "content/audio/music/pomme-de-reinette.mp3",
-        ),
-        ("Race car", "content/audio/music/race-car.mp3"),
-        ("Rescue team", "content/audio/music/rescue-team.mp3"),
-        ("Super truck", "content/audio/music/super-truck.mp3"),
-    ];
-    for (index, (text, audio_path)) in music.into_iter().enumerate() {
-        let id = format!("music-default-{:02}", index + 1);
-        conn.execute(
-            "insert or ignore into content_items \
-             (id, content_type, button_id, language, title, text, audio_path, source, state, order_index) \
-             values (?1, 'music', 3, null, ?2, ?2, ?3, 'default', 'active', ?4)",
-            params![id, text, audio_path, index as i64],
-        )?;
-    }
-
-    Ok(())
-}
-
-#[cfg(unix)]
-fn restrict_database_permissions(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let mut permissions = fs::metadata(path)?.permissions();
-    permissions.set_mode(0o600);
-    fs::set_permissions(path, permissions)?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn restrict_database_permissions(_path: &Path) -> Result<()> {
-    Ok(())
-}
-
-fn table_count(conn: &Connection, table: &str) -> Result<i64> {
-    if !table_exists(conn, table)? {
-        return Ok(0);
-    }
-    let sql = format!("select count(*) from {table}");
-    conn.query_row(&sql, [], |row| row.get(0))
-        .with_context(|| format!("failed to count {table}"))
-}
-
-fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
-    let exists = conn.query_row(
-        "select 1 from sqlite_master where type = 'table' and name = ?1",
-        [table],
-        |_| Ok(()),
-    );
-    match exists {
-        Ok(()) => Ok(true),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
-        Err(error) => Err(error).context("failed to inspect SQLite schema"),
-    }
-}
-
 pub(crate) fn json_response<T: Serialize>(status: u16, body: T) -> HttpResponse {
     HttpResponse {
         status,
@@ -3687,6 +2183,7 @@ pub(crate) fn error_response(status: u16, detail: impl Into<String>) -> HttpResp
 
 #[derive(Debug)]
 pub(crate) struct HttpRequest {
+    #[cfg(test)]
     pub(crate) method: String,
     pub(crate) path: String,
     pub(crate) query: HashMap<String, String>,
@@ -3695,7 +2192,7 @@ pub(crate) struct HttpRequest {
 }
 
 impl HttpRequest {
-    async fn from_request(request: Request<Body>) -> Result<Self> {
+    pub(crate) async fn from_request(request: Request<Body>) -> Result<Self> {
         let (parts, body) = request.into_parts();
         let body = to_bytes(body, MAX_REQUEST_BODY_BYTES)
             .await
@@ -3711,6 +2208,7 @@ impl HttpRequest {
             })
             .collect();
         Ok(Self {
+            #[cfg(test)]
             method: parts.method.as_str().to_string(),
             path: parts.uri.path().to_string(),
             query: parse_query(parts.uri.query()),
@@ -3938,6 +2436,15 @@ mod tests {
         assert_eq!(bootstrap_body["bootstrap_required"], false);
         assert_eq!(bootstrap_body["account"]["username"], "parent");
         assert_eq!(bootstrap_body["account"]["display_name"], "Parent Admin");
+        assert_eq!(bootstrap_body["cubes"][0]["label"], "T-Cube");
+        assert_eq!(bootstrap_body["cubes"][0]["role"], "owner");
+        assert!(
+            bootstrap_body["cubes"][0]["device_id"]
+                .as_str()
+                .unwrap()
+                .len()
+                > 10
+        );
         let cookie = bootstrap
             .headers
             .iter()
@@ -3958,7 +2465,10 @@ mod tests {
         assert_eq!(name_response.status, 200);
         let name_body: serde_json::Value = serde_json::from_slice(&name_response.body).unwrap();
         let device_id = name_body["device_id"].as_str().unwrap();
-        assert!(!device_id.is_empty());
+        assert_eq!(
+            Some(device_id),
+            bootstrap_body["cubes"][0]["device_id"].as_str()
+        );
 
         let session_response = route_request(
             &HttpRequest {
@@ -4047,6 +2557,45 @@ mod tests {
         assert_eq!(session_response.status, 200);
         assert_eq!(body["authenticated"], true);
         assert_eq!(body["account"]["username"], "admin");
+    }
+
+    #[test]
+    fn single_account_without_membership_is_repaired_as_owner_on_session_read() {
+        let database = test_database();
+        let config = test_config(database.path());
+        let account_id = seed_auth_database(database.path(), "rms", "secret-password").unwrap();
+        let conn = Connection::open(database.path()).unwrap();
+        conn.execute("delete from cube_memberships", []).unwrap();
+        conn.execute("delete from devices", []).unwrap();
+        conn.execute("update device_setup set device_id = null where id = 1", [])
+            .unwrap();
+        let token = create_session(&conn, &account_id).unwrap();
+        drop(conn);
+
+        let session = route_request(
+            &HttpRequest {
+                method: "GET".to_string(),
+                path: "/api/auth/session".to_string(),
+                query: HashMap::new(),
+                headers: HashMap::from([("cookie".to_string(), format!("tcube_session={token}"))]),
+                body: Vec::new(),
+            },
+            &config,
+        );
+
+        assert_eq!(session.status, 200);
+        let body: serde_json::Value = serde_json::from_slice(&session.body).unwrap();
+        assert_eq!(body["authenticated"], true);
+        assert_eq!(body["account"]["username"], "rms");
+        assert_eq!(body["cubes"][0]["role"], "owner");
+        assert!(body["cubes"][0]["device_id"].as_str().unwrap().len() > 10);
+        let repaired_count: i64 = Connection::open(database.path())
+            .unwrap()
+            .query_row("select count(*) from cube_memberships", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(repaired_count, 1);
     }
 
     #[test]
@@ -5015,6 +3564,33 @@ mod tests {
             serde_json::from_slice(&session_after.body).unwrap();
         assert_eq!(session_after_body["authenticated"], false);
         assert_eq!(session_after_body["bootstrap_required"], true);
+
+        let rebootstrap = route_request(
+            &json_request(
+                "POST",
+                "/api/auth/bootstrap",
+                json!({
+                    "username": "rms",
+                    "display_name": "rms",
+                    "password": "owner-password"
+                }),
+                None,
+            ),
+            &config,
+        );
+        assert_eq!(rebootstrap.status, 200);
+        let rebootstrap_body: serde_json::Value =
+            serde_json::from_slice(&rebootstrap.body).unwrap();
+        assert_eq!(rebootstrap_body["authenticated"], true);
+        assert_eq!(rebootstrap_body["account"]["username"], "rms");
+        assert_eq!(rebootstrap_body["cubes"][0]["role"], "owner");
+        assert!(
+            rebootstrap_body["cubes"][0]["device_id"]
+                .as_str()
+                .unwrap()
+                .len()
+                > 10
+        );
     }
 
     #[test]

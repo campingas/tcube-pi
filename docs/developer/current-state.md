@@ -1,6 +1,6 @@
 # Current Project State
 
-Last updated: 2026-06-29 (+07)
+Last updated: 2026-06-30 (+07)
 
 ## Current Focus
 
@@ -45,7 +45,7 @@ Last updated: 2026-06-29 (+07)
 
 ## Known Issues
 
-- `docs/developer/rust-guide.md` describes the desired future Axum and SQLite boundaries, but the current admin implementation still uses a fallback router with a hand-rolled request dispatcher and colocated SQL in `src/server/handler.rs`.
+- Admin API storage boundaries are now split across focused `src/db/admin/` modules; remaining `content_items` SQL in `src/server/handler.rs` is limited to test fixtures and assertions.
 
 ## Architectural Decisions
 
@@ -237,6 +237,18 @@ Latest settings page implementation on 2026-06-29:
 - Added owner-only `POST /api/pi/v1/setup/factory-reset`, wired to the Settings Danger zone with typed `FACTORY RESET` confirmation, to clear setup, accounts, sessions, content rows, events, sync state, and parent-created `data/audio/{draft,active}/` media before reseeding defaults.
 - Password change and session revocation remain visually present but disabled because the local API contracts do not exist yet.
 - Mobile Playwright coverage now verifies settings layout, save-name, recovery-code, manager-invite, clear-unused-content, factory-reset confirmation, and viewport overflow behavior.
+- The unauthenticated Create local owner page no longer shows a refresh action, and the dashboard Setup incomplete checklist now appears directly below the refreshed-state notice; the Wi-Fi prerequisite opens Settings with Wi-Fi verification expanded.
+- First owner bootstrap now provisions or reuses a local cube identity and creates an owner membership immediately, including after factory reset, so the top bar reports `owner` and owner-only setup actions remain available before the cube name is changed. Existing single-account databases missing that membership self-repair on session read or password login.
+
+Latest admin server boundary refactor on 2026-06-29:
+
+- `tcube-pi-admin` now registers explicit Axum routes for the versioned and legacy admin API paths instead of serving the API through the catch-all fallback dispatcher.
+- Admin SQLite opening, WAL setup, migrations, default seed data, permission tightening, and table-inspection helpers now live under `src/db/admin/schema.rs`; `server::run` initializes the database before binding the listener.
+- Admin account lookup, password hashing/verification, session creation/authentication/revocation, invitation membership helpers, local cube role checks, and first-owner membership repair now live under `src/db/admin/auth.rs`.
+- Setup review reads, cube naming, Wi-Fi verification, button mode persistence, setup completion, and factory reset database clearing/reseeding now live under `src/db/admin/setup.rs`.
+- Content item insertion, active/draft listing, empty-state detection, inventory classification, activation, trashing, media artifact rows, and content order allocation now live under `src/db/admin/content.rs`.
+- Added Axum service coverage for the production route table with versioned status and owner bootstrap requests.
+- Latest validation after the refactor: `cargo fmt --all --check`, `cargo check --workspace --all-targets --all-features`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features`, `just check`, and `just test`.
 
 Latest CI workflow validation on 2026-06-23:
 
