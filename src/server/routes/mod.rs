@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use axum::extract::{Multipart, OriginalUri, Path, Query, State};
+use axum::extract::{DefaultBodyLimit, Multipart, OriginalUri, Path, Query, State};
 use axum::http::header::SET_COOKIE;
 use axum::http::HeaderValue;
 use axum::response::{IntoResponse, Response};
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::AdminConfig;
 
 use super::handler;
-use super::media::media_input_from_axum_multipart;
+use super::media::{media_input_from_axum_multipart, MAX_AUDIO_BYTES};
 
 pub mod auth;
 pub mod content;
@@ -142,6 +142,7 @@ pub(crate) fn router() -> Router<AdminState> {
         .route("/media/{*path}", get(serve_media))
         .route("/content/{*path}", get(serve_content))
         .fallback(get(serve_static))
+        .layer(DefaultBodyLimit::max(MAX_AUDIO_BYTES + 1024 * 1024))
 }
 
 async fn status(State(config): State<AdminState>) -> Json<handler::StatusResponse> {
@@ -488,15 +489,15 @@ async fn recent_button_events(
 }
 
 async fn serve_media(State(config): State<AdminState>, Path(path): Path<String>) -> Response {
-    super::pages::serve_file(&config.media_root, &path)
+    super::pages::serve_file(&config.media_root, &path).await
 }
 
 async fn serve_content(State(config): State<AdminState>, Path(path): Path<String>) -> Response {
-    super::pages::serve_file(&config.content_root, &path)
+    super::pages::serve_file(&config.content_root, &path).await
 }
 
 async fn serve_static(State(config): State<AdminState>, OriginalUri(uri): OriginalUri) -> Response {
-    super::pages::serve_static(&config.ui_dist, uri.path())
+    super::pages::serve_static(&config.ui_dist, uri.path()).await
 }
 
 async fn blocking<T>(

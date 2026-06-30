@@ -230,6 +230,17 @@ pub(crate) fn migrate_admin_database(conn: &Connection, config: &AdminConfig) ->
           used_at text,
           foreign key (account_id) references admin_accounts(id)
         );
+
+        create index if not exists idx_content_items_list_scope
+          on content_items (button_id, content_type, state, language, order_index, id);
+
+        create index if not exists idx_content_items_draft_scope
+          on content_items (button_id, content_type, state, language, source, created_at desc, id)
+          where source in ('recorded', 'uploaded', 'generated');
+
+        create index if not exists idx_content_items_inventory
+          on content_items (state, button_id, content_type, language, order_index, id)
+          where audio_path is not null;
         ",
     )?;
     conn.execute(

@@ -1,6 +1,7 @@
 use std::fs;
 
 use anyhow::{Context, Result};
+use axum::extract::multipart::Field;
 use axum::extract::Multipart;
 use chrono::Utc;
 
@@ -47,12 +48,12 @@ pub(crate) async fn media_input_from_axum_multipart(
     let mut original_filename = None;
     let mut mime_type = None;
 
-    while let Some(field) = multipart.next_field().await? {
+    while let Some(mut field) = multipart.next_field().await? {
         let name = field.name().unwrap_or("").to_string();
         if name == "audio_file" {
             original_filename = field.file_name().map(str::to_string);
             mime_type = field.content_type().map(str::to_string);
-            audio_bytes = Some(field.bytes().await?.to_vec());
+            audio_bytes = Some(read_limited_audio_field(&mut field).await?);
             continue;
         }
         let value = field.text().await?;
@@ -79,6 +80,21 @@ pub(crate) async fn media_input_from_axum_multipart(
         original_filename: original_filename.unwrap_or_else(|| "upload".to_string()),
         mime_type: mime_type.unwrap_or_default(),
     })
+}
+
+async fn read_limited_audio_field(field: &mut Field<'_>) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = field.chunk().await? {
+        let next_len = bytes
+            .len()
+            .checked_add(chunk.len())
+            .context("audio upload is too large")?;
+        if next_len > MAX_AUDIO_BYTES {
+            anyhow::bail!("audio file must be 25 MB or smaller");
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
 }
 
 pub(crate) fn normalize_media_input(

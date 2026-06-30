@@ -1,39 +1,36 @@
-use std::fs;
 use std::path::{Component, Path};
 
 use axum::body::Body;
 use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
-use axum::http::{HeaderValue, StatusCode};
-use axum::response::Response;
+use axum::http::{HeaderValue, Request, StatusCode};
+use axum::response::{IntoResponse, Response};
 use serde_json::json;
+use tower::ServiceExt;
+use tower_http::services::{ServeDir, ServeFile};
 
-pub(crate) fn serve_static(root: &Path, request_path: &str) -> Response {
+pub(crate) async fn serve_static(root: &Path, request_path: &str) -> Response {
     let relative = request_path.trim_start_matches('/');
-    let candidate = if relative.is_empty() {
-        root.join("index.html")
+    let request_path = if is_safe_relative_path(relative) {
+        request_path
     } else {
-        root.join(relative)
+        "/"
     };
 
-    let file = if is_safe_relative_path(relative) && candidate.is_file() {
-        candidate
-    } else {
-        root.join("index.html")
-    };
-    serve_path(&file)
+    let service = ServeDir::new(root).fallback(ServeFile::new(root.join("index.html")));
+    serve_with(service, request_path, Path::new(request_path)).await
 }
 
-pub(crate) fn serve_file(root: &Path, relative: &str) -> Response {
+pub(crate) async fn serve_file(root: &Path, relative: &str) -> Response {
     if !is_safe_relative_path(relative) {
         return error_response(StatusCode::BAD_REQUEST, "invalid path");
     }
-    serve_path(&root.join(relative))
-}
-
-fn serve_path(path: &Path) -> Response {
-    match fs::read(path) {
-        Ok(body) => file_response(path, body),
-        Err(_) => error_response(StatusCode::NOT_FOUND, "not found"),
+    let service = ServeDir::new(root);
+    let request_path = format!("/{relative}");
+    let response = serve_with(service, &request_path, Path::new(relative)).await;
+    if response.status() == StatusCode::NOT_FOUND {
+        error_response(StatusCode::NOT_FOUND, "not found")
+    } else {
+        response
     }
 }
 
@@ -59,14 +56,26 @@ fn content_type(path: &Path) -> &'static str {
     }
 }
 
-fn file_response(path: &Path, body: Vec<u8>) -> Response {
-    let body_len = body.len().to_string();
-    let mut response = Response::new(Body::from(body));
-    *response.status_mut() = StatusCode::OK;
-    let headers = response.headers_mut();
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type(path)));
-    if let Ok(value) = HeaderValue::try_from(body_len) {
-        headers.insert(CONTENT_LENGTH, value);
+async fn serve_with<S>(service: S, request_path: &str, content_path: &Path) -> Response
+where
+    S: tower::Service<Request<Body>, Error = std::convert::Infallible>,
+    S::Response: axum::response::IntoResponse,
+    S::Future: Send + 'static,
+{
+    let request = Request::builder()
+        .uri(request_path)
+        .body(Body::empty())
+        .expect("static file request should be valid");
+    let mut response = service
+        .oneshot(request)
+        .await
+        .expect("static file service should be infallible")
+        .into_response();
+    if response.status() == StatusCode::OK {
+        response.headers_mut().insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static(content_type(content_path)),
+        );
     }
     response
 }

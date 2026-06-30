@@ -183,13 +183,15 @@ pub(crate) fn content_inventory(
 ) -> Result<ContentInventoryResponse> {
     let conn = authenticated_connection(config, token)?;
     let rows = content_storage::content_inventory_rows(&conn)?;
+    let mappings = content_storage::current_button_mappings(&conn)?;
     let mut active_count = 0;
     let mut draft_count = 0;
     let mut unused_count = 0;
     let items = rows
         .into_iter()
         .map(|item| {
-            let (status, reason) = content_storage::inventory_status(&conn, &item)?;
+            let (status, reason) =
+                content_storage::inventory_status_for_mappings(&item, &mappings)?;
             match status {
                 "active" => active_count += 1,
                 "draft" => draft_count += 1,

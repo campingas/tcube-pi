@@ -269,6 +269,15 @@ Latest device sync removal on 2026-06-30:
 - Existing SQLite content package and failure tables remain in place for now; schema cleanup should be handled as a separate migration decision.
 - Validation after removal: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features`, `just check`, and `just test`.
 
+Latest Rust admin optimization pass on 2026-06-30:
+
+- Content inventory classification now loads button mappings once per request instead of re-querying mappings for every inventory row.
+- Authenticated session reads now roll `last_seen_at` and `expires_at` at most once every 10 minutes per active session, while expired, revoked, and disabled-account sessions are still rejected on every request.
+- Static admin UI, media, and bundled content responses now use Tower static file services instead of blocking whole-file reads in async handlers, while preserving existing routes and traversal rejection.
+- Multipart audio uploads now read the audio field in chunks and reject audio larger than 25 MB during field parsing; the route body limit was raised enough to allow valid 25 MB audio plus multipart overhead.
+- Admin schema migration now creates targeted `content_items` indexes for list, draft cleanup, and inventory query paths.
+- Validation after the optimization pass: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features`, `just check`, and `just test`.
+
 Latest admin server boundary refactor on 2026-06-29:
 
 - `tcube-pi-admin` now registers explicit Axum routes for the versioned and legacy admin API paths instead of serving the API through the catch-all fallback dispatcher.

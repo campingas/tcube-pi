@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 use super::schema::{table_count, table_exists};
 
 const SESSION_MAX_AGE_SECONDS: i64 = 90 * 24 * 60 * 60;
+const SESSION_ROLLING_WRITE_INTERVAL_SECONDS: i64 = 10 * 60;
 
 #[derive(Debug)]
 pub(crate) struct AuthAccount {
@@ -288,7 +289,7 @@ pub(crate) fn authenticate_session(
     };
     let Some(row) = conn
         .prepare(
-            "select s.id, s.account_id, s.expires_at, a.username, a.display_name \
+            "select s.id, s.account_id, s.expires_at, s.last_seen_at, a.username, a.display_name \
              from admin_sessions s join admin_accounts a on a.id = s.account_id \
              where s.token_hash = ?1 and s.revoked_at is null and a.disabled_at is null",
         )?
@@ -299,27 +300,32 @@ pub(crate) fn authenticate_session(
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
             ))
         })
         .optional()?
     else {
         return Ok(None);
     };
-    if row.2 <= now() {
+    let now = Utc::now();
+    let now_text = timestamp(now);
+    if row.2 <= now_text {
         return Ok(None);
     }
 
-    let expires_at = session_expires_at();
-    conn.execute(
-        "update admin_sessions set last_seen_at = ?1, expires_at = ?2 where id = ?3",
-        params![now(), expires_at, row.0],
-    )?;
+    if should_roll_session(&row.3, now) {
+        let expires_at = timestamp(now + chrono::Duration::seconds(SESSION_MAX_AGE_SECONDS));
+        conn.execute(
+            "update admin_sessions set last_seen_at = ?1, expires_at = ?2 where id = ?3",
+            params![now_text, expires_at, row.0],
+        )?;
+    }
 
     Ok(Some(AuthSession {
         account: AuthAccount {
             id: row.1,
-            username: row.3,
-            display_name: row.4,
+            username: row.4,
+            display_name: row.5,
         },
     }))
 }
@@ -435,10 +441,108 @@ pub(crate) fn session_expires_at() -> String {
     timestamp(Utc::now() + chrono::Duration::seconds(SESSION_MAX_AGE_SECONDS))
 }
 
+fn should_roll_session(last_seen_at: &str, now: chrono::DateTime<Utc>) -> bool {
+    let Ok(last_seen_at) = chrono::DateTime::parse_from_rfc3339(last_seen_at) else {
+        return true;
+    };
+    now.signed_duration_since(last_seen_at.with_timezone(&Utc))
+        >= chrono::Duration::seconds(SESSION_ROLLING_WRITE_INTERVAL_SECONDS)
+}
+
 pub(crate) fn now() -> String {
     timestamp(Utc::now())
 }
 
 pub(crate) fn timestamp(value: chrono::DateTime<Utc>) -> String {
     value.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn auth_test_connection() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "
+            create table admin_accounts (
+              id text primary key,
+              username text not null unique collate nocase,
+              display_name text not null,
+              password_hash text,
+              created_at text not null,
+              disabled_at text
+            );
+            create table admin_sessions (
+              id text primary key,
+              account_id text not null,
+              token_hash text not null unique,
+              created_at text not null,
+              last_seen_at text not null,
+              expires_at text not null,
+              revoked_at text
+            );
+            ",
+        )
+        .unwrap();
+        conn.execute(
+            "insert into admin_accounts (id, username, display_name, created_at) values ('account-1', 'parent', 'Parent', ?1)",
+            [now()],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_session(conn: &Connection, token: &str, last_seen_at: &str, expires_at: &str) {
+        conn.execute(
+            "insert into admin_sessions \
+             (id, account_id, token_hash, created_at, last_seen_at, expires_at) \
+             values ('session-1', 'account-1', ?1, ?2, ?3, ?4)",
+            params![sha256_hex(token), now(), last_seen_at, expires_at],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn fresh_session_authentication_does_not_roll_session_row() {
+        let conn = auth_test_connection();
+        let token = "fresh-token";
+        let last_seen_at = timestamp(Utc::now());
+        let expires_at = timestamp(Utc::now() + chrono::Duration::days(1));
+        insert_session(&conn, token, &last_seen_at, &expires_at);
+
+        let session = authenticate_session(&conn, Some(token)).unwrap();
+        assert!(session.is_some());
+
+        let row: (String, String) = conn
+            .query_row(
+                "select last_seen_at, expires_at from admin_sessions where id = 'session-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (last_seen_at, expires_at));
+    }
+
+    #[test]
+    fn stale_session_authentication_rolls_session_row() {
+        let conn = auth_test_connection();
+        let token = "stale-token";
+        let last_seen_at = timestamp(Utc::now() - chrono::Duration::minutes(11));
+        let expires_at = timestamp(Utc::now() + chrono::Duration::days(1));
+        insert_session(&conn, token, &last_seen_at, &expires_at);
+
+        let session = authenticate_session(&conn, Some(token)).unwrap();
+        assert!(session.is_some());
+
+        let row: (String, String) = conn
+            .query_row(
+                "select last_seen_at, expires_at from admin_sessions where id = 'session-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_ne!(row.0, last_seen_at);
+        assert!(row.1 > expires_at);
+    }
 }

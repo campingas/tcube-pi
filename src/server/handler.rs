@@ -1776,6 +1776,32 @@ mod tests {
         );
         assert_eq!(recorded_without_spoken_text.status, 400);
 
+        let oversized_upload = axum_request(
+            &multipart_request(
+                "/api/content/uploads",
+                &cookie,
+                vec![
+                    ("content_type", "animals"),
+                    ("button_id", "2"),
+                    ("title", "Too big"),
+                    ("text", ""),
+                    ("language", ""),
+                ],
+                "audio_file",
+                "too-big.wav",
+                "audio/wav",
+                vec![0_u8; MAX_AUDIO_BYTES + 1],
+            ),
+            &config,
+        );
+        assert_eq!(oversized_upload.status, 400);
+        let oversized_body: serde_json::Value =
+            serde_json::from_slice(&oversized_upload.body).unwrap();
+        assert_eq!(
+            oversized_body["detail"],
+            "audio file must be 25 MB or smaller"
+        );
+
         let uploaded = axum_request(
             &multipart_request(
                 "/api/content/uploads",

@@ -51,7 +51,7 @@ pub(crate) struct NewContentItem<'a> {
 }
 
 #[derive(Clone, Debug)]
-struct CurrentButtonMapping {
+pub(crate) struct CurrentButtonMapping {
     mode: String,
     language: Option<String>,
 }
@@ -283,11 +283,10 @@ pub(crate) fn content_inventory_rows(conn: &Connection) -> Result<Vec<ContentInv
     Ok(rows)
 }
 
-pub(crate) fn inventory_status(
-    conn: &Connection,
+pub(crate) fn inventory_status_for_mappings(
     item: &ContentInventoryRow,
+    mappings: &HashMap<i64, CurrentButtonMapping>,
 ) -> Result<(&'static str, String)> {
-    let mappings = current_button_mappings(conn)?;
     Ok(inventory_status_for_mapping(
         item,
         mappings.get(&item.button_id),
@@ -574,7 +573,9 @@ fn content_buttons_for_type(
         .context("failed to read content buttons for type")
 }
 
-fn current_button_mappings(conn: &Connection) -> Result<HashMap<i64, CurrentButtonMapping>> {
+pub(crate) fn current_button_mappings(
+    conn: &Connection,
+) -> Result<HashMap<i64, CurrentButtonMapping>> {
     let mut mappings = default_button_mappings();
     if !table_exists(conn, "button_mappings")? {
         return Ok(mappings);

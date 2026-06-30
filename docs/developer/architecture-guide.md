@@ -82,16 +82,28 @@ The runtime must not wait for AI inference, transcription, dashboard requests, n
 The admin service owns:
 
 - Loopback HTTP service behind Caddy HTTPS
-- Static serving for the admin UI build output under `admin-ui/build/`
-- Static media serving from the configured media and content roots
+- Tower-backed static serving for the admin UI build output under `admin-ui/build/`
+- Tower-backed static media serving from the configured media and content roots
 - All `/api/pi/v1/` endpoints: status, authentication, setup, content management, media upload, and generated speech drafts
 - Local account management: owner bootstrap, password hashing (scrypt), session tokens, invitation codes, recovery codes, and role checks
 
-The admin service shares the SQLite database and filesystem with the runtime. It must never block the button response path. Any write that could contend with runtime reads must use SQLite WAL mode and be structured to resolve in microseconds from the runtime's perspective.
+The admin service shares the SQLite database and filesystem with the runtime. It must never block the button response path. Any write that could contend with runtime reads must use SQLite WAL mode, avoid write amplification on read-heavy paths, and be structured to resolve quickly from the runtime's perspective.
 
 ### `tcube-pi-admin-measure` — latency harness
 
 Records button-handling latency under concurrent admin API load. Reports p50, p95, p99, max latency, and admin request success/failure counts as JSON. Run before any architecture change that touches the I2S audio path, the SQLite schema, or the content activation flow. Provides the evidence that the admin service does not degrade the child-facing runtime.
+
+---
+
+## Admin API Implementation Pattern
+
+The admin API uses Axum routes with typed extractors for state, JSON bodies, path params, query params, multipart uploads, and `tcube_session` cookies. Blocking SQLite work and filesystem mutations stay outside async executor threads through the route-layer blocking helper.
+
+Static admin UI, media, and bundled content responses use Tower static file services. The admin UI route keeps SPA fallback to `index.html`; media and content routes keep path traversal rejection and JSON error bodies.
+
+Multipart audio uploads read the audio field incrementally and reject audio larger than 25 MB before storing the draft. Keep the route body limit high enough for a valid 25 MB audio field plus multipart overhead, but keep the audio-field limit as the product boundary.
+
+Content inventory and list endpoints must avoid N+1 database reads. Load shared lookup state once per request, keep content query paths indexed, and add targeted indexes with any new high-volume content filter or ordering pattern.
 
 ---
 
@@ -209,7 +221,7 @@ Cube-local data areas:
 - Content metadata, media paths, and activation state
 - Admin accounts, role assignments, invitations, recovery codes, and trusted sessions
 - Wi-Fi verification and recovery state
-- Package staging, activation, and failure metadata
+- Future package staging and failure metadata only after external sync requirements are clarified
 - Learning schedule metadata and play-count statistics
 - Optional microphone captures and derived summaries — only after privacy rules are defined and implemented
 
@@ -217,10 +229,9 @@ Cube-local data areas:
 
 The Pi filesystem stores:
 
-- Approved active media (the runtime reads only from this set)
-- Generated or uploaded drafts (staged, never read by the runtime until activated)
+- Approved active media under `data/audio/active/{content_type}/` (the runtime reads only from this set)
+- Recorded, uploaded, and generated drafts under `data/audio/draft/{content_type}/` (staged, never read by the runtime until activated)
 - Runtime content manifests
-- Staged content revisions (atomic activation prevents corrupt or partial writes from reaching the runtime)
 
 ### The Mac (external compute, not state authority)
 
@@ -237,7 +248,7 @@ The runtime reads only the approved local content set. Incomplete downloads, fai
 The admin service uses local accounts identified by unique usernames. Email is not required.
 
 - **Passwords**: scrypt hashing. No plaintext storage, no reversible encryption.
-- **Sessions**: hashed random tokens in secure HTTP-only `SameSite=Strict` cookies with rolling 90-day expiry.
+- **Sessions**: hashed random tokens in secure HTTP-only `SameSite=Strict` cookies with rolling 90-day expiry. Session timestamp writes are throttled to avoid turning repeated dashboard reads into repeated SQLite writes.
 - **Invitation codes and session tokens**: stored only as SHA-256 hashes. Invitation codes are single-use.
 - **Password reset**: using a recovery code revokes every active session for the account.
 - **Roles**: Owner — full access including setup, invitation management, and role-sensitive endpoints. Manager — content administration only, no owner-sensitive setup, no invitation creation.
@@ -272,7 +283,7 @@ just measure-pi-admin        # run the latency harness and report results
 
 Recipes call the underlying tools directly (`cargo`, `caddy`). No wrapper abstractions.
 
-> **Open:** The release artifact format, device authentication, HTTPS trust, and flashing/install workflow are currently being redesigned for GitHub Releases. Tracked in `docs/tasks.md`. Do not add a release recipe until the design is settled.
+> **Open:** Full flashable SD-card images and any future external content sync/update mechanism remain deferred until the hardware deployment path and sync requirements are clarified. Tracked in `docs/tasks.md`.
 
 ---
 
