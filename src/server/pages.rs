@@ -1,7 +1,7 @@
 use std::path::{Component, Path};
 
 use axum::body::Body;
-use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
+use axum::http::header::{CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE};
 use axum::http::{HeaderValue, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
@@ -10,14 +10,14 @@ use tower_http::services::{ServeDir, ServeFile};
 
 pub(crate) async fn serve_static(root: &Path, request_path: &str) -> Response {
     let relative = request_path.trim_start_matches('/');
-    let request_path = if is_safe_relative_path(relative) {
-        request_path
+    let (request_path, content_path) = if is_safe_relative_path(relative) {
+        (request_path, static_content_path(root, relative))
     } else {
-        "/"
+        ("/", root.join("index.html"))
     };
 
     let service = ServeDir::new(root).fallback(ServeFile::new(root.join("index.html")));
-    serve_with(service, request_path, Path::new(request_path)).await
+    serve_with(service, request_path, &content_path).await
 }
 
 pub(crate) async fn serve_file(root: &Path, relative: &str) -> Response {
@@ -56,6 +56,14 @@ fn content_type(path: &Path) -> &'static str {
     }
 }
 
+fn static_content_path(root: &Path, relative: &str) -> std::path::PathBuf {
+    if relative.is_empty() || Path::new(relative).extension().is_none() {
+        root.join("index.html")
+    } else {
+        root.join(relative)
+    }
+}
+
 async fn serve_with<S>(service: S, request_path: &str, content_path: &Path) -> Response
 where
     S: tower::Service<Request<Body>, Error = std::convert::Infallible>,
@@ -76,6 +84,9 @@ where
             CONTENT_TYPE,
             HeaderValue::from_static(content_type(content_path)),
         );
+        response
+            .headers_mut()
+            .insert(CONTENT_DISPOSITION, HeaderValue::from_static("inline"));
     }
     response
 }
@@ -99,12 +110,62 @@ fn error_response(status: StatusCode, detail: &'static str) -> Response {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn validates_relative_paths() {
         assert!(is_safe_relative_path("assets/index.js"));
         assert!(!is_safe_relative_path("../data/tcube.sqlite3"));
         assert!(!is_safe_relative_path("/etc/passwd"));
+    }
+
+    #[tokio::test]
+    async fn serves_html_for_root_fallback() {
+        let root = TempDir::new().unwrap();
+        fs::write(root.path().join("index.html"), "<!doctype html>").unwrap();
+
+        let response = serve_static(root.path(), "/").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers().get(CONTENT_DISPOSITION).unwrap(),
+            "inline"
+        );
+    }
+
+    #[tokio::test]
+    async fn serves_html_for_extensionless_spa_fallback() {
+        let root = TempDir::new().unwrap();
+        fs::write(root.path().join("index.html"), "<!doctype html>").unwrap();
+
+        let response = serve_static(root.path(), "/settings").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers().get(CONTENT_DISPOSITION).unwrap(),
+            "inline"
+        );
+    }
+
+    #[tokio::test]
+    async fn serves_html_for_rejected_static_paths() {
+        let root = TempDir::new().unwrap();
+        fs::write(root.path().join("index.html"), "<!doctype html>").unwrap();
+
+        let response = serve_static(root.path(), "/../tcube.sqlite3").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
     }
 }

@@ -90,15 +90,43 @@
   } from "./api";
   import { blobToWav, canRecordAudio, isSecureRecorderContext } from "./audio";
   import type { RecordedWav } from "./audio";
+  import { buttonViewModels, contentKey, updateDraftFormValue } from "./button-config-controller";
+  import type { ButtonView } from "./button-config-controller";
   import { contentTypeForMode, defaultMode, modeLabel, splitMode } from "./button-mode";
-  import type { ButtonConfig, ContentState, MessageType } from "./types";
-
+  import {
+    generatedSpeechDisabled as generatedSpeechHealthDisabled,
+    generatedSpeechMaxBackoffSeconds,
+    generatedSpeechMinBackoffSeconds,
+    generatedSpeechOfflineStatus,
+    generatedSpeechStatusKey as buildGeneratedSpeechStatusKey,
+    isSpeechProviderOfflineMessage,
+    menuGeneratedSpeechStatusKey,
+    nextGeneratedSpeechBackoff,
+    parseGeneratedSpeechStatusKey
+  } from "./generated-speech-health";
+  import {
+    defaultDraftTitle,
+    initialRecordWaveform,
+    mediaDraftValidationError,
+    recordingStatusAfterRevoke,
+    recordingStatusAfterSave,
+    recordingStatusAfterStop,
+    shouldBlockRecordingStart,
+    validateUploadFile,
+    waveformLevels
+  } from "./recording-controller";
+  import type { RecordingStatus } from "./recording-controller";
+  import type { ButtonConfig, ContentState, DraftForm, InventoryFilter, MessageType } from "./types";
+  import AuthView from "./views/AuthView.svelte";
+  import ButtonConfigView from "./views/ButtonConfigView.svelte";
+  import DashboardView from "./views/DashboardView.svelte";
+  import InventoryView from "./views/InventoryView.svelte";
+  import SettingsView from "./views/SettingsView.svelte";
   type View = "dashboard" | "button-config" | "inventory" | "settings";
   type ContentTab = "record" | "upload" | "generate";
   type ContentListTab = "active" | "draft";
   type ContentListItem = ActiveContentItem | InactiveContentItem;
   type ContentAction = (id: string) => Promise<void>;
-  type RecordingStatus = "idle" | "recording" | "processing" | "ready" | "saving";
 
   const modes: ButtonMode[] = ["language", "animals", "music", "setup_help", "disabled"];
   const languages = [
@@ -115,9 +143,6 @@
   ];
   const providers = ["auto", "voxtral", "vietnamese-vits"];
   const faceNames = ["Top", "Front left", "Front", "Front right", "Back"];
-  const generatedSpeechMinBackoffSeconds = 30;
-  const generatedSpeechMaxBackoffSeconds = 120;
-
   let status: ServiceStatus | null = null;
   let session: AuthSession | null = null;
   let setup: SetupReview | null = null;
@@ -127,6 +152,7 @@
   let loading = true;
   let busy = false;
   let view: View = "dashboard";
+  let inventoryFilter: InventoryFilter = "active";
   let message = "Loading local cube state.";
   let messageType: MessageType = "info";
 
@@ -143,7 +169,7 @@
   let selectedTab: ContentTab = "record";
   let contentListTab: ContentListTab = "active";
   let contentState: Record<string, ContentState> = {};
-  let draftForm = { title: "", text: "", language: "English", provider: "auto", voice: "" };
+  let draftForm: DraftForm = { title: "", text: "", language: "English", provider: "auto", voice: "" };
   let uploadFile: File | null = null;
   let uploadPreviewUrl: string | null = null;
   let recordedWav: RecordedWav | null = null;
@@ -155,7 +181,7 @@
   let recordAudioContext: AudioContext | null = null;
   let recordAnalyser: AnalyserNode | null = null;
   let recordWaveFrame: number | null = null;
-  let recordWaveform = Array.from({ length: 24 }, () => 0.12);
+  let recordWaveform = initialRecordWaveform();
   let draggingUpload = false;
   let previewAudio: HTMLAudioElement | null = null;
   let previewAudioId: string | null = null;
@@ -182,7 +208,7 @@
   let factoryResetPromptOpen = false;
   let factoryResetConfirmation = "";
 
-  $: buttons = buildButtonConfigs(setup);
+  $: buttons = buttonViewModels(buildButtonConfigs(setup), contentState);
   $: selectedButton = buttons.find((button) => button.id === selectedButtonId) ?? buttons[0] ?? null;
   $: selectedContent = selectedButton?.contentType ? contentState[contentKey(selectedButton)] : null;
   $: currentRole = session?.cubes?.[0]?.role ?? "";
@@ -192,10 +218,8 @@
   $: invitationCodeFromUrl = new URLSearchParams(window.location.search).get("invite") ?? "";
   $: loadedActive = inventory?.active_count ?? Object.values(contentState).reduce((sum, state) => sum + state.active.length, 0);
   $: setupActive = Object.values(setup?.active_counts ?? {}).reduce((sum, value) => sum + value, 0);
-  $: generatedSpeechStatusKey = selectedButton?.contentType === "language" && selectedTab === "generate"
-    ? `${draftForm.provider}:${selectedButton.language}`
-    : "";
-  $: menuLlmStatusKey = session?.authenticated ? `auto:${primaryLanguageForTts(buttons)}` : "";
+  $: generatedSpeechStatusKey = buildGeneratedSpeechStatusKey(selectedButton, selectedTab, draftForm);
+  $: menuLlmStatusKey = menuGeneratedSpeechStatusKey(Boolean(session?.authenticated), buttons);
   $: if (generatedSpeechStatusKey && generatedSpeechStatusKey !== lastGeneratedSpeechStatusKey) {
     void checkGeneratedSpeechStatus(generatedSpeechStatusKey, true);
   }
@@ -204,7 +228,7 @@
     lastGeneratedSpeechStatusKey = "";
   }
   $: generatedSpeechOffline = Boolean(generatedSpeechStatusKey && generatedSpeechStatus && !generatedSpeechStatus.online);
-  $: generatedSpeechDisabled = generatedSpeechOffline || (generatedSpeechStatusLoading && !generatedSpeechStatus);
+  $: generatedSpeechDisabled = generatedSpeechHealthDisabled(generatedSpeechStatusKey, generatedSpeechStatus, generatedSpeechStatusLoading);
   $: if (menuLlmStatusKey && menuLlmStatusKey !== lastMenuLlmStatusKey) {
     void checkMenuLlmStatus(menuLlmStatusKey, true);
   }
@@ -253,6 +277,7 @@
       session = nextSession;
       setup = nextSetup;
       cubeName = setup.cube_name || "T-Cube";
+      wifiForm.ssid = setup.wifi_ssid ?? "";
       wifiForm.dashboard_ip = setup.dashboard_ip ?? "";
       await tick();
       await Promise.all([refreshVisibleContent(), refreshEvents(), refreshInventory()]);
@@ -377,66 +402,8 @@
     });
   }
 
-  function contentKey(button: ButtonConfig) {
-    return `${button.id}:${button.contentType ?? "none"}:${button.language}`;
-  }
-
   function activeCount(type: ContentType) {
     return setup?.active_counts?.[type] ?? 0;
-  }
-
-  function buttonActiveCount(button: ButtonConfig, state: Record<string, ContentState>) {
-    if (!button.contentType) return 0;
-    const content = state[contentKey(button)];
-    return content?.active.length ?? 0;
-  }
-
-  function buttonDraftCount(button: ButtonConfig, state: Record<string, ContentState>) {
-    if (!button.contentType) return 0;
-    return state[contentKey(button)]?.inactive.length ?? 0;
-  }
-
-  function playsToday() {
-    const today = new Date().toISOString().slice(0, 10);
-    return events.filter((event) => event.occurred_at.startsWith(today)).length;
-  }
-
-  function fmt(value: unknown) {
-    if (value === null || value === undefined || value === "") return "Not set";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    return String(value);
-  }
-
-  function minutes(seconds: number) {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60).toString().padStart(2, "0");
-    return `${mins}:${secs}`;
-  }
-
-  function formatDuration(seconds: number) {
-    if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
-    return minutes(seconds);
-  }
-
-  function sourceLabel(source: string) {
-    if (source === "generated") return "Generated";
-    if (source === "uploaded") return "Uploaded";
-    if (source === "recorded") return "Recorded";
-    return "Default";
-  }
-
-  function trimAudioTitle(title: string, maxLength = 32) {
-    const clean = title.trim();
-    if (clean.length <= maxLength) return clean;
-    return `${clean.slice(0, maxLength - 1).trimEnd()}…`;
-  }
-
-  function playCountLabel(count: number) {
-    return count === 1 ? "1 play" : `${count} plays`;
-  }
-
-  function contentPlaySummary(item: { id: string; source: string; play_count?: number }) {
-    return `${sourceLabel(item.source)} · ${formatDuration(contentDurations[item.id] ?? 0)} · ${playCountLabel(item.play_count ?? 0)}`;
   }
 
   function openButtonConfig(id: number) {
@@ -463,8 +430,8 @@
     selectedTab = tab;
   }
 
-  function primaryLanguageForTts(currentButtons: ButtonConfig[]) {
-    return currentButtons.find((button) => button.contentType === "language")?.language || "English";
+  function updateDraftForm(patch: Partial<DraftForm>) {
+    draftForm = updateDraftFormValue(draftForm, patch);
   }
 
   async function checkGeneratedSpeechStatus(key: string, immediate = false) {
@@ -476,19 +443,14 @@
       generatedSpeechStatusError = null;
       generatedSpeechBackoffSeconds = generatedSpeechMinBackoffSeconds;
     }
-    const [provider, language] = key.split(":");
+    const { provider, language } = parseGeneratedSpeechStatusKey(key);
     generatedSpeechStatusLoading = true;
     try {
-      const nextStatus = await getGeneratedSpeechStatus(provider || "auto", language || "English");
+      const nextStatus = await getGeneratedSpeechStatus(provider, language);
       if (key !== generatedSpeechStatusKey) return;
       generatedSpeechStatus = nextStatus;
       generatedSpeechStatusError = null;
-      generatedSpeechBackoffSeconds = nextStatus.online
-        ? generatedSpeechMinBackoffSeconds
-        : Math.min(
-            generatedSpeechMaxBackoffSeconds,
-            immediate ? generatedSpeechMinBackoffSeconds : generatedSpeechBackoffSeconds * 2
-          );
+      generatedSpeechBackoffSeconds = nextGeneratedSpeechBackoff(nextStatus.online, generatedSpeechBackoffSeconds, immediate);
       if (!nextStatus.online && key === generatedSpeechStatusKey) {
         scheduleGeneratedSpeechStatusCheck(key, generatedSpeechBackoffSeconds);
       }
@@ -506,27 +468,14 @@
 
   function markGeneratedSpeechOffline(detail: string) {
     if (!generatedSpeechStatusKey) return;
-    const [provider] = generatedSpeechStatusKey.split(":");
-    const message = detail.includes("TTS provider")
-      ? detail
-      : `TTS provider is offline or unreachable: ${detail}`;
-    generatedSpeechStatus = {
-      online: false,
-      provider: provider || "auto",
-      checked_at: new Date().toISOString(),
-      cached: false,
-      cache_ttl_seconds: 20,
-      next_check_after_seconds: generatedSpeechMinBackoffSeconds,
-      message
-    };
+    generatedSpeechStatus = generatedSpeechOfflineStatus(generatedSpeechStatusKey, detail);
     generatedSpeechStatusError = null;
     generatedSpeechBackoffSeconds = generatedSpeechMinBackoffSeconds;
     scheduleGeneratedSpeechStatusCheck(generatedSpeechStatusKey, generatedSpeechBackoffSeconds);
   }
 
   function isSpeechProviderOfflineError(error: unknown) {
-    const text = errorText(error).toLowerCase();
-    return text.includes("failed to connect to speech provider") || text.includes("tts provider is offline");
+    return isSpeechProviderOfflineMessage(errorText(error));
   }
 
   function scheduleGeneratedSpeechStatusCheck(key: string, seconds: number) {
@@ -551,18 +500,13 @@
       menuLlmStatus = null;
       menuLlmBackoffSeconds = generatedSpeechMinBackoffSeconds;
     }
-    const [provider, language] = key.split(":");
+    const { provider, language } = parseGeneratedSpeechStatusKey(key);
     menuLlmStatusLoading = true;
     try {
-      const nextStatus = await getGeneratedSpeechStatus(provider || "auto", language || "English");
+      const nextStatus = await getGeneratedSpeechStatus(provider, language);
       if (key !== menuLlmStatusKey) return;
       menuLlmStatus = nextStatus;
-      menuLlmBackoffSeconds = nextStatus.online
-        ? generatedSpeechMinBackoffSeconds
-        : Math.min(
-            generatedSpeechMaxBackoffSeconds,
-            immediate ? generatedSpeechMinBackoffSeconds : menuLlmBackoffSeconds * 2
-          );
+      menuLlmBackoffSeconds = nextGeneratedSpeechBackoff(nextStatus.online, menuLlmBackoffSeconds, immediate);
       if (!nextStatus.online && key === menuLlmStatusKey) {
         scheduleMenuLlmStatusCheck(key, menuLlmBackoffSeconds);
       }
@@ -570,7 +514,7 @@
       if (key !== menuLlmStatusKey) return;
       menuLlmStatus = {
         online: false,
-        provider: provider || "auto",
+        provider,
         checked_at: new Date().toISOString(),
         cached: false,
         cache_ttl_seconds: 20,
@@ -600,14 +544,15 @@
     }
   }
 
-  function inventoryItems(status: string) {
-    return inventory?.items.filter((item) => item.status === status) ?? [];
-  }
-
   function openInventoryButton(item: ContentInventoryItem) {
     selectedButtonId = item.button_id;
     contentListTab = item.status === "draft" ? "draft" : "active";
     view = "button-config";
+  }
+
+  function openStatDetail(filter: InventoryFilter) {
+    inventoryFilter = filter;
+    view = "inventory";
   }
 
   function selectSetupAction(id: string) {
@@ -763,7 +708,7 @@
   }
 
   async function startRecording() {
-    if (recordingStatus === "processing" || recordingStatus === "saving") return;
+    if (shouldBlockRecordingStart(recordingStatus)) return;
     if (!isSecureRecorderContext()) {
       setError("Recording failed. Open the dashboard over HTTPS or localhost.");
       return;
@@ -814,9 +759,7 @@
   }
 
   function stopRecording() {
-    if (recorder && recorder.state !== "inactive") {
-      recordingStatus = "processing";
-    }
+    recordingStatus = recordingStatusAfterStop(recorder?.state) ?? recordingStatus;
     recorder?.stop();
   }
 
@@ -838,16 +781,7 @@
     if (!recordAnalyser) return;
     const data = new Uint8Array(recordAnalyser.fftSize);
     recordAnalyser.getByteTimeDomainData(data);
-    const segmentSize = Math.floor(data.length / recordWaveform.length);
-    recordWaveform = recordWaveform.map((_, index) => {
-      const start = index * segmentSize;
-      const end = start + segmentSize;
-      let peak = 0;
-      for (let sampleIndex = start; sampleIndex < end; sampleIndex += 1) {
-        peak = Math.max(peak, Math.abs(data[sampleIndex] - 128) / 128);
-      }
-      return Math.max(0.08, Math.min(1, peak * 2.4));
-    });
+    recordWaveform = waveformLevels(data, recordWaveform.length);
     recordWaveFrame = window.requestAnimationFrame(updateRecordWaveform);
   }
 
@@ -862,7 +796,7 @@
       recordAudioContext = null;
       if (context.state !== "closed") await context.close();
     }
-    recordWaveform = Array.from({ length: 24 }, () => 0.12);
+    recordWaveform = initialRecordWaveform();
   }
 
   function stopTimer() {
@@ -877,23 +811,7 @@
     recordedWav = null;
     recordSeconds = 0;
     if (recorder && recorder.state !== "inactive") recorder.stop();
-    if (!recorder) recordingStatus = "idle";
-  }
-
-  function recordingHint(status: RecordingStatus, seconds: number, wav: RecordedWav | null) {
-    if (status === "recording") return `Recording ${minutes(seconds)}. Tap again to stop.`;
-    if (status === "processing") return "Preparing preview...";
-    if (status === "saving") return "Saving recording as draft...";
-    if (wav) return `Preview ${minutes(wav.durationSeconds)}, then save it as a draft.`;
-    return "Tap record, then speak clearly near your phone.";
-  }
-
-  function recordingSaveHint(button: ButtonConfig | null, text: string, wav: RecordedWav | null) {
-    if (!wav) return "After recording, preview the audio here before saving.";
-    if (button?.contentType === "language" && !text.trim()) {
-      return "Enter the text spoken before saving this recording.";
-    }
-    return "Saving creates an inactive draft for review.";
+    recordingStatus = recordingStatusAfterRevoke(Boolean(recorder)) ?? recordingStatus;
   }
 
   function chooseUpload(event: Event) {
@@ -912,13 +830,9 @@
     uploadFile = null;
     uploadPreviewUrl = null;
     if (!file) return;
-    const allowed = file.name.toLowerCase().endsWith(".wav") || file.name.toLowerCase().endsWith(".mp3");
-    if (!allowed) {
-      setError("Upload failed. File must be MP3 or WAV.");
-      return;
-    }
-    if (file.size > 25 * 1024 * 1024) {
-      setError("Upload failed. File must be 25 MB or smaller.");
+    const validation = validateUploadFile(file);
+    if (!validation.ok) {
+      setError(validation.error);
       return;
     }
     uploadFile = file;
@@ -940,11 +854,6 @@
     return form;
   }
 
-  function defaultDraftTitle(filename: string) {
-    if (filename === "recording.wav") return "Recorded audio";
-    return filename.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim() || "Uploaded audio";
-  }
-
   async function submitRecording() {
     if (!recordedWav) {
       setError("Save recording failed. Record and preview audio first.");
@@ -958,7 +867,7 @@
       revokeRecording();
       contentListTab = "draft";
     }, "Recording saved as draft.");
-    recordingStatus = recordedWav ? "ready" : "idle";
+    recordingStatus = recordingStatusAfterSave(Boolean(recordedWav));
   }
 
   async function submitUpload() {
@@ -1008,36 +917,12 @@
   }
 
   function canSaveMediaDraft() {
-    if (!selectedButton?.contentType) {
-      setError("Choose a content button first.");
-      return false;
-    }
-    if (selectedButton.contentType === "language" && !draftForm.text.trim()) {
-      setError("Save draft failed. Enter the text spoken in the recording or upload.");
-      return false;
-    }
-    if (selectedButton.contentType !== "language" && !draftForm.title.trim()) {
-      setError("Save draft failed. Enter a title for this audio.");
+    const error = mediaDraftValidationError(selectedButton, draftForm);
+    if (error) {
+      setError(error);
       return false;
     }
     return true;
-  }
-
-  function footerActionLabel() {
-    if (selectedButton?.contentType && selectedTab === "record" && recordedWav) return "Save recording";
-    if (selectedButton?.contentType && selectedTab === "upload" && uploadFile) return "Save upload";
-    if (selectedButton?.contentType === "language" && selectedTab === "generate" && draftForm.text.trim()) {
-      return "Generate speech";
-    }
-    return "Save mode";
-  }
-
-  function footerActionDisabled() {
-    if (busy || !selectedButton) return true;
-    if (selectedButton.contentType === "language" && selectedTab === "generate" && draftForm.text.trim()) {
-      return generatedSpeechDisabled;
-    }
-    return false;
   }
 
   async function runFooterAction() {
@@ -1176,1061 +1061,155 @@
 
 <main class="shell">
   {#if !session?.authenticated}
-    <nav class="topbar">
-    <div class="topbar-left">
-      <button type="button" class="topbar-logo topbar-logo-btn" aria-label="Go to dashboard" on:click={goHome}>
-        T<span>·</span>Cube
-      </button>
-      <div class="topbar-session">Local parent dashboard</div>
-    </div>
-    </nav>
-
-    <div class="body auth-body">
-      <section class:error={messageType === "error"} class:success={messageType === "success"} class="notice" aria-live="polite">
-        {message}
-      </section>
-
-      {#if invitationCodeFromUrl}
-        <section class="card auth-card">
-          <div class="sec-hdr">
-            <div class="sec-title"><User size={16} strokeWidth={1.5} aria-hidden="true" />Accept manager access</div>
-          </div>
-          <form class="form-stack" on:submit|preventDefault={() => run(async () => (session = await acceptInvitation(inviteForm)), "Manager account created.")}>
-            <label>Invitation code <input bind:value={inviteForm.code} autocomplete="off" /></label>
-            <label>Username <input bind:value={inviteForm.username} autocomplete="username" /></label>
-            <label>Display name <input bind:value={inviteForm.display_name} /></label>
-            <label>Password <input bind:value={inviteForm.password} type="password" autocomplete="new-password" /></label>
-            <button type="submit" class="btn-primary" disabled={busy}>Create manager account</button>
-          </form>
-        </section>
-      {/if}
-
-      {#if session?.bootstrap_required}
-        <section class="card auth-card">
-          <div class="sec-hdr">
-            <div class="sec-title"><ShieldCheck size={16} strokeWidth={1.5} aria-hidden="true" />Create local owner</div>
-          </div>
-          <form class="form-stack" on:submit|preventDefault={() => run(async () => (session = await bootstrapOwner(bootstrapForm)), "Owner account created.")}>
-            <label>Username <input bind:value={bootstrapForm.username} autocomplete="username" /></label>
-            <label>Display name <input bind:value={bootstrapForm.display_name} /></label>
-            <label>Password <input bind:value={bootstrapForm.password} type="password" autocomplete="new-password" /></label>
-            <button type="submit" class="btn-primary" disabled={busy}>Create owner</button>
-          </form>
-        </section>
-      {:else}
-        <section class="card auth-card">
-          <div class="sec-hdr">
-            <div class="sec-title"><LogIn size={16} strokeWidth={1.5} aria-hidden="true" />Log in</div>
-          </div>
-          <form class="form-stack" on:submit|preventDefault={() => run(async () => (session = await loginPassword(loginForm)), "Logged in.")}>
-            <label>Username <input bind:value={loginForm.username} autocomplete="username" /></label>
-            <label>Password <input bind:value={loginForm.password} type="password" autocomplete="current-password" /></label>
-            <button type="submit" class="btn-primary" disabled={busy}>Log in</button>
-          </form>
-        </section>
-
-        <section class="card auth-card">
-          <div class="sec-hdr">
-            <div class="sec-title"><KeyRound size={16} strokeWidth={1.5} aria-hidden="true" />Reset password</div>
-          </div>
-          <form class="form-stack" on:submit|preventDefault={() => run(() => recoverPassword(recoveryForm), "Password updated. Previous sessions were revoked.")}>
-            <label>Recovery code <input bind:value={recoveryForm.code} autocomplete="off" /></label>
-            <label>New password <input bind:value={recoveryForm.password} type="password" autocomplete="new-password" /></label>
-            <button type="submit" class="btn-secondary" disabled={busy}>Reset password</button>
-          </form>
-        </section>
-      {/if}
-    </div>
+    <AuthView
+      state={{ session, invitationCodeFromUrl, message, messageType, bootstrapForm, loginForm, recoveryForm, inviteForm, busy }}
+      actions={{
+        submitInvitation: async () => run(async () => (session = await acceptInvitation(inviteForm)), "Manager account created."),
+        submitBootstrap: async () => run(async () => (session = await bootstrapOwner(bootstrapForm)), "Owner account created."),
+        submitLogin: async () => run(async () => (session = await loginPassword(loginForm)), "Logged in."),
+        submitRecovery: async () => run(() => recoverPassword(recoveryForm), "Password updated. Previous sessions were revoked.")
+      }}
+    />
   {:else if view === "button-config"}
-    {@render ButtonConfigView()}
+    <ButtonConfigView
+      state={{
+        session,
+        setup,
+        message,
+        messageType,
+        buttons,
+        selectedButtonId,
+        selectedButton,
+        selectedContent,
+        selectedTab,
+        contentListTab,
+        draftForm,
+        recorder,
+        recordingStatus,
+        recordSeconds,
+        recordWaveform,
+        recordedWav,
+        uploadFile,
+        uploadPreviewUrl,
+        contentDurations,
+        events,
+        generatedSpeechDisabled,
+        generatedSpeechStatusLoading,
+        generatedSpeechStatusError,
+        trashPrompt,
+        busy
+      }}
+      actions={{
+        goHome,
+        openSettings: () => (view = "settings"),
+        setSelectedButtonId: (id: number) => (selectedButtonId = id),
+        setContentListTab: (tab: "active" | "draft") => (contentListTab = tab),
+        setContentTab,
+        setSelectedMode,
+        setSelectedLanguage,
+        updateDraftForm,
+        saveSelectedButtonMode: () => selectedButton && saveSelectedButtonMode(selectedButton),
+        activateSelectedContent,
+        trashSelectedContent,
+        clearSelectedGenerated,
+        startRecording,
+        stopRecording,
+        revokeRecording,
+        submitRecording,
+        chooseUpload,
+        submitUpload,
+        submitGeneration,
+        runFooterAction,
+        playContentPreview,
+        promptTrashContent,
+        cancelTrashContent,
+        confirmTrashContent
+      }}
+    />
   {:else if view === "inventory"}
-    {@render InventoryView()}
+    <InventoryView
+      state={{ session, message, messageType, inventory, inventoryError, events, filter: inventoryFilter }}
+      actions={{
+        goHome,
+        openSettings: () => (view = "settings"),
+        refreshInventory,
+        openInventoryButton
+      }}
+    />
   {:else if view === "settings"}
-    {@render SettingsView()}
+    <SettingsView
+      state={{
+        session,
+        status,
+        setup,
+        message,
+        messageType,
+        roleLabel,
+        isOwner,
+        busy,
+        cubeName,
+        wifiForm,
+        settingsCubeNameOpen,
+        settingsWifiOpen,
+        settingsRecoveryOpen,
+        recoveryCode,
+        invitation,
+        totalUnused,
+        factoryResetPromptOpen,
+        factoryResetConfirmation
+      }}
+      actions={{
+        goHome,
+        openSettings: () => (view = "settings"),
+        setSettingsCubeNameOpen: (open: boolean) => (settingsCubeNameOpen = open),
+        setSettingsWifiOpen: (open: boolean) => (settingsWifiOpen = open),
+        setSettingsRecoveryOpen: (open: boolean) => (settingsRecoveryOpen = open),
+        saveCubeName: async (value: string) => run(() => saveCubeName(value), "Cube name saved."),
+        verifyWifi: async (ssid: string, dashboardIp: string) => run(() => verifyWifi(ssid, dashboardIp), "Wi-Fi marked verified."),
+        createRecoveryCode: async () => run(async () => (recoveryCode = await createRecoveryCode()), "Recovery code created."),
+        copyText,
+        createManagerInvitation: async () => run(createManagerInvitation, "Manager invitation created."),
+        clearAllUnusedContent: async () => run(clearAllUnusedContent, "Unused content cleared."),
+        openFactoryResetPrompt,
+        logout: () => run(logout, "Logged out."),
+        dismissInvitation: () => (invitation = null),
+        dismissRecoveryCode: () => (recoveryCode = null),
+        setFactoryResetConfirmation: (value: string) => (factoryResetConfirmation = value),
+        cancelFactoryReset,
+        confirmFactoryReset
+      }}
+    />
   {:else}
-    {@render DashboardView()}
+    <DashboardView
+      state={{
+        status,
+        setup,
+        session,
+        message,
+        messageType,
+        buttons,
+        events,
+        prerequisites,
+        setupReady,
+        blockedSetupText,
+        totalActive,
+        totalDrafts,
+        totalUnused,
+        menuLlmOnline,
+        menuLlmStatusLoading,
+        menuLlmLabel
+      }}
+      actions={{
+        goHome,
+        openStatDetail,
+        openSettings: () => (view = "settings"),
+        openButtonConfig,
+        selectSetupAction,
+        completeSetup: async () => {
+          if (!window.confirm("Completing setup switches the cube to child mode. You can still manage content from this dashboard.")) return;
+          await run(completeSetup, "Setup complete. The cube is ready for child mode.");
+        }
+      }}
+    />
   {/if}
 </main>
-
-{#snippet TopBar(showBack = false)}
-  <nav class="topbar">
-    <div class="topbar-left">
-      <button type="button" class="topbar-logo topbar-logo-btn" aria-label="Go to dashboard" on:click={goHome}>
-        T<span>·</span>Cube
-      </button>
-      <div class="topbar-session">
-        <span class="topbar-session-prefix">Signed in as</span>
-        <span class="topbar-session-user">{session?.account?.display_name ?? session?.account?.username}</span>
-        <span class="topbar-session-role role-{roleClass}">{roleLabel}</span>
-      </div>
-    </div>
-    <div class="topbar-right">
-      {#if showBack}
-        <button type="button" class="icon-btn" aria-label="Back to dashboard" on:click={() => (view = "dashboard")}>
-          <ArrowLeft size={18} strokeWidth={1.5} aria-hidden="true" />
-        </button>
-      {/if}
-      <button type="button" class="icon-btn" aria-label="Notifications">
-        <Bell size={18} strokeWidth={1.5} aria-hidden="true" />
-      </button>
-      <button type="button" class="icon-btn" aria-label="Settings" on:click={() => (view = "settings")}>
-        <Settings size={18} strokeWidth={1.5} aria-hidden="true" />
-      </button>
-    </div>
-  </nav>
-{/snippet}
-
-{#snippet StatusBar()}
-  <div class="status-bar" role="status" aria-label="System health">
-    {#if !Boolean(status?.database_present)}
-      <div class="status-item">
-        <span class:sdot-ok={Boolean(status?.database_present)} class:sdot-warn={!Boolean(status?.database_present)} class="sdot"></span>
-        <Database size={14} strokeWidth={1.5} aria-hidden="true" />
-        <span class:status-ok={Boolean(status?.database_present)} class:status-warn={!Boolean(status?.database_present)}>Database</span>
-      </div>
-    {/if}
-    {#if !Boolean(status?.media_root)}
-      <div class="status-item">
-        <span class:sdot-ok={Boolean(status?.media_root)} class:sdot-warn={!Boolean(status?.media_root)} class="sdot"></span>
-        <HardDrive size={14} strokeWidth={1.5} aria-hidden="true" />
-        <span class:status-ok={Boolean(status?.media_root)} class:status-warn={!Boolean(status?.media_root)}>Audio</span>
-      </div>
-    {/if}
-    {#if !Boolean(status?.content_root)}
-      <div class="status-item">
-        <span class:sdot-ok={Boolean(status?.content_root)} class:sdot-warn={!Boolean(status?.content_root)} class="sdot"></span>
-        <Folder size={14} strokeWidth={1.5} aria-hidden="true" />
-        <span class:status-ok={Boolean(status?.content_root)} class:status-warn={!Boolean(status?.content_root)}>Content</span>
-      </div>
-    {/if}
-    {#if !Boolean(setup?.wifi_verified)}
-      <div class="status-item">
-        <span class:sdot-ok={Boolean(setup?.wifi_verified)} class:sdot-warn={!Boolean(setup?.wifi_verified)} class="sdot"></span>
-        <Wifi size={14} strokeWidth={1.5} aria-hidden="true" />
-        <span class:status-ok={Boolean(setup?.wifi_verified)} class:status-warn={!Boolean(setup?.wifi_verified)}>Wi-Fi</span>
-      </div>
-    {/if}
-    <div class="status-item">
-      <span class:sdot-ok={menuLlmOnline} class:sdot-warn={!menuLlmOnline} class="sdot"></span>
-      {#if menuLlmOnline}
-        <CircleCheck class="status-ok" size={14} strokeWidth={1.5} aria-hidden="true" />
-      {:else if menuLlmStatusLoading && !menuLlmStatus}
-        <RefreshCw class="status-warn" size={14} strokeWidth={1.5} aria-hidden="true" />
-      {:else}
-        <AlertTriangle class="status-warn" size={14} strokeWidth={1.5} aria-hidden="true" />
-      {/if}
-      <span class:status-ok={menuLlmOnline} class:status-warn={!menuLlmOnline}>{menuLlmLabel}</span>
-    </div>
-  </div>
-{/snippet}
-
-{#snippet DashboardView()}
-  {@render TopBar()}
-  {@render StatusBar()}
-
-  <div class="body">
-    <section class:error={messageType === "error"} class:success={messageType === "success"} class="notice" aria-live="polite">
-      {message}
-    </section>
-
-    {#if !setupReady}
-      {@render SetupChecklist()}
-    {/if}
-
-    <section class="card" data-testid="dashboard-hero-card">
-      <div class="cube-hero">
-        <div class="cube-avatar" aria-hidden="true">
-          <Cuboid size={28} strokeWidth={1.5} />
-          <div class="cube-online-dot"></div>
-        </div>
-        <div class="cube-info">
-          <div class="cube-name">{fmt(setup?.cube_name)}</div>
-          <div class="cube-sub"><Wifi size={13} strokeWidth={1.5} aria-hidden="true" />{setup?.wifi_verified ? "Home" : "Wi-Fi pending"} · {fmt(setup?.dashboard_ip ?? setup?.dashboard_address)}</div>
-        </div>
-        <div class="cube-badge" aria-label="Cube is reachable">
-          <CircleCheck size={14} strokeWidth={1.5} aria-hidden="true" /> Online
-        </div>
-      </div>
-      <div class="cube-stats" role="list" aria-label="Cube statistics" data-testid="dashboard-stats">
-        <div class="cstat" role="listitem">
-          <div class="cstat-num">{playsToday()}</div>
-          <div class="cstat-lbl">Presses today</div>
-        </div>
-        <div class="cstat" role="listitem">
-          <div class="cstat-num stat-active">{totalActive}</div>
-          <div class="cstat-lbl">Active sounds</div>
-        </div>
-        <div class="cstat" role="listitem">
-          <div class="cstat-num stat-draft">{totalDrafts}</div>
-          <div class="cstat-lbl">Drafts</div>
-        </div>
-        <div class="cstat" role="listitem">
-          <div class="cstat-num stat-unused">{totalUnused}</div>
-          <div class="cstat-lbl">Unused</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="card" data-testid="dashboard-inventory-card">
-      <div class="sec-hdr">
-        <div class="sec-title"><FileAudio size={15} strokeWidth={1.5} aria-hidden="true" />Content inventory</div>
-        <button type="button" class="sec-link" on:click={() => (view = "inventory")}>
-          View all <ArrowRight size={13} strokeWidth={1.5} aria-hidden="true" />
-        </button>
-      </div>
-      <div class="inventory-summary">
-        <div><strong>{totalActive}</strong><span>Active in setup</span></div>
-        <div><strong>{totalDrafts}</strong><span>Drafts</span></div>
-        <div><strong>{totalUnused}</strong><span>Unused audio</span></div>
-      </div>
-      {#if inventoryError}
-        <div class="content-api-error" role="alert">
-          <AlertTriangle size={15} strokeWidth={1.5} aria-hidden="true" />
-          <span>{inventoryError}</span>
-        </div>
-      {/if}
-    </section>
-
-    <section class="card" data-testid="dashboard-buttons-card">
-      <div class="sec-hdr">
-        <div class="sec-title">{@render LayoutGridIcon()}Buttons</div>
-        <button type="button" class="sec-link" on:click={() => openButtonConfig(selectedButtonId)}>
-          Manage all <ArrowRight size={13} strokeWidth={1.5} aria-hidden="true" />
-        </button>
-      </div>
-      <div class="btn-strip-outer">
-        <div class="btn-strip" aria-label="Cube button faces" data-testid="dashboard-button-strip">
-          {#each buttons as button}
-            <button type="button" class="btn-face-card" data-testid={`dashboard-button-${button.id}`} on:click={() => openButtonConfig(button.id)}>
-              <div class="bfc-icon bfc-{modeClass(button.mode)}" data-testid={`dashboard-button-${button.id}-icon`}>
-                {#if button.mode === "language"}
-                  <Languages size={18} strokeWidth={1.5} aria-hidden="true" />
-                {:else if button.mode === "animals"}
-                  <PawPrint size={18} strokeWidth={1.5} aria-hidden="true" />
-                {:else if button.mode === "music"}
-                  <Music size={18} strokeWidth={1.5} aria-hidden="true" />
-                {:else if button.mode === "setup_help"}
-                  <Wrench size={18} strokeWidth={1.5} aria-hidden="true" />
-                {:else}
-                  <Minus size={18} strokeWidth={1.5} aria-hidden="true" />
-                {/if}
-              </div>
-              <div class="bfc-name">{faceName(button)}</div>
-              <div class="bfc-count">{button.contentType ? `${buttonActiveCount(button, contentState)} sounds` : "—"}</div>
-              <div class="bfc-mode bfm-{modeClass(button.mode)}">{contentLabel(button)}</div>
-            </button>
-          {/each}
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="sec-hdr">
-        <div class="sec-title"><Bolt size={15} strokeWidth={1.5} aria-hidden="true" />Quick actions</div>
-      </div>
-      <div class="actions-grid">
-        <button type="button" class="action-card primary-action" disabled>
-          <div class="ac-icon ac-icon-white"><RefreshCw size={20} strokeWidth={1.5} aria-hidden="true" /></div>
-          <div class="ac-body">
-            <div class="ac-title">Run curation</div>
-            <div class="ac-desc">Update schedule with LLM</div>
-          </div>
-          <ArrowRight class="ac-arrow" size={18} strokeWidth={1.5} aria-hidden="true" />
-        </button>
-        <button type="button" class="action-card" disabled>
-          <div class="ac-icon ac-icon-violet"><BarChart3 size={20} strokeWidth={1.5} aria-hidden="true" /></div>
-          <div class="ac-body">
-            <div class="ac-title">Learning stats</div>
-            <div class="ac-desc">Words heard, repetitions</div>
-          </div>
-          <ArrowRight class="ac-arrow" size={18} strokeWidth={1.5} aria-hidden="true" />
-        </button>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="sec-hdr">
-        <div class="sec-title"><Activity size={15} strokeWidth={1.5} aria-hidden="true" />Recent activity</div>
-      </div>
-      {@render EventFeed(events)}
-    </section>
-
-  </div>
-{/snippet}
-
-{#snippet SetupChecklist()}
-  <section class="setup-banner" aria-label="Setup checklist">
-    <div class="setup-banner-hdr">
-      <AlertTriangle size={18} strokeWidth={1.5} aria-hidden="true" />
-      <div class="setup-banner-title">Setup incomplete</div>
-      <div class="setup-pct">{prerequisites.filter((item) => item.complete).length} of {prerequisites.length} done</div>
-    </div>
-    <div class="prereq-list" role="list">
-      {#each prerequisites as item}
-        <button type="button" class:prereq-done={item.complete} class="prereq-item" on:click={() => selectSetupAction(item.id)}>
-          <div class:pc-done={item.complete} class:pc-todo={!item.complete} class="prereq-check">
-            {#if item.complete}<Check size={12} strokeWidth={1.5} aria-hidden="true" />{:else}<Minus size={12} strokeWidth={1.5} aria-hidden="true" />{/if}
-          </div>
-          <div class="prereq-body">
-            <div class="prereq-name">{item.label}</div>
-            <div class="prereq-detail">{item.detail}</div>
-          </div>
-          {#if !item.complete}
-            <div class="prereq-action">{item.action}<ArrowRight size={13} strokeWidth={1.5} aria-hidden="true" /></div>
-          {/if}
-        </button>
-      {/each}
-    </div>
-    <button
-      type="button"
-      class:ready={setupReady}
-      class="setup-complete-btn"
-      title={!setupReady ? `Missing: ${blockedSetupText}` : "Completing setup switches the cube to child mode."}
-      disabled={busy || !isOwner || !setupReady}
-      on:click={() => window.confirm("Completing setup switches the cube to child mode. You can still manage content from this dashboard.") && run(completeSetup, "Setup complete. The cube is ready for child mode.")}
-    >
-      <Play size={16} strokeWidth={1.5} aria-hidden="true" />
-      Complete setup — {prerequisites.filter((item) => !item.complete).length} items remaining
-    </button>
-  </section>
-{/snippet}
-
-{#snippet ButtonConfigView()}
-  {@render TopBar(true)}
-
-  <div class="face-strip-wrap">
-    <p class="face-strip-label">Select a button</p>
-    <div class="face-strip" role="tablist" aria-label="Cube faces" data-testid="button-selector">
-      {#each buttons as button}
-        <button
-          type="button"
-          class:selected={selectedButtonId === button.id}
-          class="face-pill"
-          data-testid={`button-selector-${button.id}`}
-          role="tab"
-          aria-selected={selectedButtonId === button.id}
-          on:click={() => (selectedButtonId = button.id)}
-        >
-          <div class="face-pill-icon fpi-{modeClass(button.mode)}" data-testid={`button-selector-${button.id}-icon`}>
-            {#if button.mode === "language"}
-              <Languages size={16} strokeWidth={1.5} aria-hidden="true" />
-            {:else if button.mode === "animals"}
-              <PawPrint size={16} strokeWidth={1.5} aria-hidden="true" />
-            {:else if button.mode === "music"}
-              <Music size={16} strokeWidth={1.5} aria-hidden="true" />
-            {:else if button.mode === "setup_help"}
-              <Wrench size={16} strokeWidth={1.5} aria-hidden="true" />
-            {:else}
-              <Minus size={16} strokeWidth={1.5} aria-hidden="true" />
-            {/if}
-          </div>
-          <div class="face-pill-name">{faceName(button)}</div>
-          <div class="face-pill-count">{button.contentType ? `${buttonActiveCount(button, contentState)} active` : contentLabel(button)}</div>
-        </button>
-      {/each}
-    </div>
-  </div>
-
-  <div class="body config-body">
-    {#if selectedButton}
-      <section class="section-card">
-        <div class="face-hero">
-          <div class="face-hero-icon fpi-{modeClass(selectedButton.mode)}" data-testid="selected-button-hero-icon">
-            {#if selectedButton.mode === "language"}
-              <Languages size={22} strokeWidth={1.5} aria-hidden="true" />
-            {:else if selectedButton.mode === "animals"}
-              <PawPrint size={22} strokeWidth={1.5} aria-hidden="true" />
-            {:else if selectedButton.mode === "music"}
-              <Music size={22} strokeWidth={1.5} aria-hidden="true" />
-            {:else if selectedButton.mode === "setup_help"}
-              <Wrench size={22} strokeWidth={1.5} aria-hidden="true" />
-            {:else}
-              <Minus size={22} strokeWidth={1.5} aria-hidden="true" />
-            {/if}
-          </div>
-          <div class="face-hero-info">
-            <div class="face-hero-name">{faceName(selectedButton)} · {modeLabel(selectedButton.mode)}</div>
-            <div class="face-hero-sub">{selectedButton.mode === "language" ? `${selectedButton.language} · ` : ""}Button {selectedButton.id}</div>
-          </div>
-          <div class:active-badge={Boolean(selectedButton.contentType)} class:disabled-badge={!selectedButton.contentType}>
-            <span class="active-dot"></span>
-            {selectedButton.contentType ? "Active" : "No content"}
-          </div>
-        </div>
-        <div class="stats-row">
-          <div class="stat-cell">
-            <div class="stat-num stat-active">{buttonActiveCount(selectedButton, contentState)}</div>
-            <div class="stat-lbl">Active</div>
-          </div>
-          <div class="stat-cell">
-            <div class="stat-num stat-draft">{buttonDraftCount(selectedButton, contentState)}</div>
-            <div class="stat-lbl">Draft</div>
-          </div>
-          <div class="stat-cell">
-            <div class="stat-num">{events.filter((event) => event.button_id === selectedButton.id).length}</div>
-            <div class="stat-lbl">Recent plays</div>
-          </div>
-        </div>
-      </section>
-
-      <section class="section-card">
-        <div class="sc-header">
-          <div class="sc-title"><SlidersHorizontal size={16} strokeWidth={1.5} aria-hidden="true" />Mode</div>
-        </div>
-        <div class="mode-grid" role="radiogroup" aria-label="Button mode">
-          {#each modes as mode, index}
-            <button
-              type="button"
-              class:selected-mode={selectedButton.mode === mode}
-              class:mode-cell-5th={index === 4}
-              class:mode-cell={index !== 4}
-              data-testid={`button-mode-${mode}`}
-              role="radio"
-              aria-checked={selectedButton.mode === mode}
-              on:click={() => setSelectedMode(mode)}
-            >
-              {#if mode === "language"}
-                <Languages size={18} strokeWidth={1.5} aria-hidden="true" />
-              {:else if mode === "animals"}
-                <PawPrint size={18} strokeWidth={1.5} aria-hidden="true" />
-              {:else if mode === "music"}
-                <Music size={18} strokeWidth={1.5} aria-hidden="true" />
-              {:else if mode === "setup_help"}
-                <Wrench size={18} strokeWidth={1.5} aria-hidden="true" />
-              {:else}
-                <Minus size={18} strokeWidth={1.5} aria-hidden="true" />
-              {/if}
-              {modeLabel(mode)}
-            </button>
-          {/each}
-        </div>
-        {#if selectedButton.mode === "language"}
-          <div class="lang-pad">
-            <label class="field-label">Language
-              <select class="lang-select" value={selectedButton.language} aria-label="Select language for this button" on:change={(event) => setSelectedLanguage((event.currentTarget as HTMLSelectElement).value)}>
-                {#each languages as language}
-                  <option value={language}>{language}</option>
-                {/each}
-              </select>
-            </label>
-          </div>
-        {/if}
-      </section>
-
-      {#if selectedButton.contentType}
-        <section class="section-card">
-          <div class="content-tabs" role="tablist">
-            <button type="button" class:active-tab={contentListTab === "active"} class="ctab" role="tab" aria-selected={contentListTab === "active"} on:click={() => (contentListTab = "active")}>
-              Active <span class="ctab-count cc-active">{selectedContent?.active.length ?? 0}</span>
-            </button>
-            <button type="button" class:active-tab={contentListTab === "draft"} class="ctab" role="tab" aria-selected={contentListTab === "draft"} on:click={() => (contentListTab = "draft")}>
-              Drafts <span class="ctab-count cc-draft">{selectedContent?.inactive.length ?? 0}</span>
-            </button>
-          </div>
-          {#if selectedContent?.error}
-            <div class="content-api-error" role="alert">
-              <AlertTriangle size={15} strokeWidth={1.5} aria-hidden="true" />
-              <span>{selectedContent.error}</span>
-            </div>
-          {/if}
-          {#if contentListTab === "active"}
-            {@render ContentRows(selectedContent?.active ?? [], Boolean(selectedContent?.loading), selectedContent?.activeEmptyState ?? null, "No active content for this button.", "Move to trash", trashSelectedContent, undefined)}
-          {:else}
-            {@render ContentRows(selectedContent?.inactive ?? [], Boolean(selectedContent?.loading), selectedContent?.inactiveEmptyState ?? null, "No drafts for this button.", "Activate", activateSelectedContent, trashSelectedContent)}
-          {/if}
-        </section>
-
-        <section class="section-card">
-          <div class="sc-header">
-            <div class="sc-title"><Plus size={16} strokeWidth={1.5} aria-hidden="true" />Add content</div>
-            <div class="sc-meta">saves as draft</div>
-          </div>
-          <div class="add-tabs" role="tablist" aria-label="Add content method">
-            <button type="button" class:active-atab={selectedTab === "record"} class="atab" role="tab" aria-selected={selectedTab === "record"} on:click={() => setContentTab("record")}>
-              <Mic size={15} strokeWidth={1.5} aria-hidden="true" />Record
-            </button>
-            <button type="button" class:active-atab={selectedTab === "upload"} class="atab" role="tab" aria-selected={selectedTab === "upload"} on:click={() => setContentTab("upload")}>
-              <Upload size={15} strokeWidth={1.5} aria-hidden="true" />Upload
-            </button>
-            {#if selectedButton.contentType === "language"}
-              <button type="button" class:active-atab={selectedTab === "generate"} class="atab" role="tab" aria-selected={selectedTab === "generate"} on:click={() => setContentTab("generate")}>
-                <WandSparkles size={15} strokeWidth={1.5} aria-hidden="true" />Generate
-              </button>
-            {/if}
-          </div>
-
-          <div class="add-body">
-            {#if selectedButton.contentType === "language"}
-              <div class="gen-field">
-                <label class="field-label">{selectedTab === "generate" ? "Text to speech" : "Text spoken"}
-                  <textarea class="gen-input" rows="3" bind:value={draftForm.text} placeholder="Bonjour tout le monde." disabled={selectedTab === "generate" && generatedSpeechDisabled}></textarea>
-                </label>
-              </div>
-            {:else}
-              <div class="gen-field">
-                <label class="field-label">Title
-                  <input class="gen-input" bind:value={draftForm.title} placeholder={selectedButton.contentType === "music" ? "Song title" : "Animal sound title"} />
-                </label>
-              </div>
-            {/if}
-
-            {#if selectedTab === "record"}
-              <div class:recording-active={recordingStatus === "recording"} class:recording-ready={Boolean(recordedWav)} class="record-zone" data-testid="record-zone">
-                <button
-                  type="button"
-                  class:recording={recordingStatus === "recording"}
-                  class="record-btn-big"
-                  on:click={recorder ? stopRecording : startRecording}
-                  aria-label={recorder ? "Stop recording" : "Start recording"}
-                  disabled={busy || recordingStatus === "processing" || recordingStatus === "saving"}
-                  data-testid="record-toggle"
-                >
-                  {#if recordingStatus === "recording"}
-                    <span class="record-stop-dot" aria-hidden="true"></span>
-                  {:else}
-                    <Mic size={28} strokeWidth={1.5} aria-hidden="true" />
-                  {/if}
-                </button>
-                <div class="record-step" data-testid="record-status">{recordingHint(recordingStatus, recordSeconds, recordedWav)}</div>
-                {#if recordingStatus === "recording"}
-                  <div class="record-wave" aria-label="Live microphone level" data-testid="record-waveform">
-                    {#each recordWaveform as level}
-                      <span style={`height: ${Math.round(8 + level * 28)}px`}></span>
-                    {/each}
-                  </div>
-                {/if}
-                <div class="record-hint">{recordingSaveHint(selectedButton, draftForm.text, recordedWav)}</div>
-                {#if recordedWav}<audio src={recordedWav.url} controls></audio>{/if}
-                <button type="button" class="btn-primary" on:click={submitRecording} disabled={busy || recordingStatus === "saving" || !recordedWav || (selectedButton.contentType === "language" && !draftForm.text.trim())}>
-                  <Save size={16} strokeWidth={1.5} aria-hidden="true" />Save recording
-                </button>
-              </div>
-            {:else if selectedTab === "upload"}
-              <div
-                class:dragging={draggingUpload}
-                class="upload-zone"
-                role="button"
-                tabindex="0"
-                on:dragover|preventDefault={() => (draggingUpload = true)}
-                on:dragleave={() => (draggingUpload = false)}
-                on:drop={dropUpload}
-              >
-                <div class="upload-icon-big"><Upload size={26} strokeWidth={1.5} aria-hidden="true" /></div>
-                <label class="upload-hint">Tap to pick a file<input type="file" accept="audio/mpeg,audio/mp3,audio/wav,.mp3,.wav" on:change={chooseUpload} /></label>
-                <div class="upload-formats">{uploadFile ? uploadFile.name : "MP3 or WAV · max 25 MB"}</div>
-                {#if uploadPreviewUrl}<audio src={uploadPreviewUrl} controls></audio>{/if}
-                <button type="button" class="btn-primary" on:click={submitUpload} disabled={busy || !uploadFile || (selectedButton.contentType === "language" && !draftForm.text.trim())}>
-                  <Upload size={16} strokeWidth={1.5} aria-hidden="true" />Save upload
-                </button>
-              </div>
-            {:else if selectedButton.contentType === "language"}
-              {#if generatedSpeechOffline}
-                <div class="content-api-error" role="alert" data-testid="tts-offline-notice">
-                  <AlertTriangle size={15} strokeWidth={1.5} aria-hidden="true" />
-                  <span>{generatedSpeechStatus?.message ?? "TTS is offline. Start the local TTS service to generate speech."}</span>
-                </div>
-              {:else if generatedSpeechStatusLoading}
-                <div class="content-api-error" role="status" data-testid="tts-status-loading">
-                  <RefreshCw size={15} strokeWidth={1.5} aria-hidden="true" />
-                  <span>Checking local TTS availability...</span>
-                </div>
-              {:else if generatedSpeechStatusError}
-                <div class="content-api-error" role="status" data-testid="tts-status-error">
-                  <AlertTriangle size={15} strokeWidth={1.5} aria-hidden="true" />
-                  <span>Could not check TTS status: {generatedSpeechStatusError}</span>
-                </div>
-              {/if}
-              <div class="gen-row">
-                <label class="field-label">Provider
-                  <select class="lang-select" bind:value={draftForm.provider} disabled={generatedSpeechDisabled}>
-                    {#each providers as provider}
-                      <option value={provider}>{provider}</option>
-                    {/each}
-                  </select>
-                </label>
-                <label class="field-label">Voice
-                  <input class="gen-input" bind:value={draftForm.voice} placeholder="Optional" disabled={generatedSpeechDisabled} />
-                </label>
-              </div>
-              <button type="button" class="btn-primary" on:click={submitGeneration} disabled={busy || !draftForm.text.trim() || generatedSpeechDisabled}>
-                <WandSparkles size={16} strokeWidth={1.5} aria-hidden="true" />Generate speech
-              </button>
-            {/if}
-
-            {#if selectedButton.contentType === "language"}
-              <button type="button" class="btn-secondary" on:click={clearSelectedGenerated} disabled={busy || (selectedTab === "generate" && generatedSpeechDisabled)}>Clear generated drafts</button>
-            {/if}
-          </div>
-        </section>
-      {:else}
-        <section class="section-card empty-state">
-          <Minus size={24} strokeWidth={1.5} aria-hidden="true" />
-          <strong>No content lane</strong>
-          <p>Set this button to Language, Animals, or Music before adding active content or drafts.</p>
-        </section>
-      {/if}
-    {/if}
-  </div>
-
-  {#if selectedButton}
-    <div class="save-bar">
-      <div class="save-note">{footerActionLabel() === "Save mode" ? "Changes apply on the next button press" : "Drafts stay inactive until activated"}</div>
-      <button type="button" class="save-btn" on:click={runFooterAction} disabled={footerActionDisabled()}>
-        <Check size={16} strokeWidth={1.5} aria-hidden="true" />{footerActionLabel()}
-      </button>
-    </div>
-  {/if}
-{/snippet}
-
-{#snippet SettingsView()}
-  <nav class="settings-topbar">
-    <button type="button" class="settings-back-btn" aria-label="Back to dashboard" on:click={() => (view = "dashboard")}>
-      <ArrowLeft size={18} strokeWidth={1.5} aria-hidden="true" />
-    </button>
-    <div class="settings-topbar-title">Settings</div>
-    <div class="settings-topbar-sub">{fmt(setup?.cube_name)}</div>
-  </nav>
-
-  <div class="body settings-body">
-    <section class:error={messageType === "error"} class:success={messageType === "success"} class="notice" aria-live="polite">
-      {message}
-    </section>
-
-    <section class="settings-group">
-      <div class="settings-group-label">Cube</div>
-      <div class="settings-group-card">
-        <button
-          type="button"
-          class:expanded={settingsCubeNameOpen}
-          class="settings-row"
-          on:click={() => (settingsCubeNameOpen = !settingsCubeNameOpen)}
-          disabled={!isOwner}
-        >
-          <div class="settings-row-icon si-coral"><Cuboid size={17} strokeWidth={1.5} aria-hidden="true" /></div>
-          <div class="settings-row-body">
-            <div class="settings-row-title">Cube name</div>
-          </div>
-          <div class="settings-row-right">
-            <span class="settings-row-value">{fmt(setup?.cube_name)}</span>
-            {#if settingsCubeNameOpen}<ChevronUp size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
-          </div>
-        </button>
-        {#if settingsCubeNameOpen}
-          <form class="settings-edit" on:submit|preventDefault={() => run(() => saveCubeName(cubeName), "Cube name saved.")}>
-            <label class="field-label">Display name
-              <input class="settings-input" bind:value={cubeName} maxlength="32" disabled={!isOwner} />
-            </label>
-            <div class="settings-hint">Shown in this dashboard and in the activity log.</div>
-            <div class="settings-row-actions">
-              <button type="button" class="settings-cancel-btn" on:click={() => (cubeName = setup?.cube_name || "T-Cube")} disabled={busy}>Cancel</button>
-              <button type="submit" class="settings-save-btn" disabled={busy || !isOwner}>Save name</button>
-            </div>
-          </form>
-        {/if}
-
-        <button
-          type="button"
-          class:expanded={settingsWifiOpen}
-          class="settings-row"
-          on:click={() => (settingsWifiOpen = !settingsWifiOpen)}
-          disabled={!isOwner}
-        >
-          <div class="settings-row-icon si-teal"><Wifi size={17} strokeWidth={1.5} aria-hidden="true" /></div>
-          <div class="settings-row-body">
-            <div class="settings-row-title">Wi-Fi</div>
-            <div class="settings-row-desc">{wifiForm.ssid || "Home"} · {fmt(wifiForm.dashboard_ip || setup?.dashboard_address)}</div>
-          </div>
-          <div class="settings-row-right">
-            <span class:bs-teal={Boolean(setup?.wifi_verified)} class:bs-amber={!Boolean(setup?.wifi_verified)} class="settings-badge">{setup?.wifi_verified ? "Verified" : "Pending"}</span>
-            {#if settingsWifiOpen}<ChevronUp size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
-          </div>
-        </button>
-        {#if settingsWifiOpen}
-          <form class="settings-edit" on:submit|preventDefault={() => run(() => verifyWifi(wifiForm.ssid, wifiForm.dashboard_ip), "Wi-Fi marked verified.")}>
-            <label class="field-label">Wi-Fi SSID
-              <input class="settings-input" bind:value={wifiForm.ssid} placeholder="Home Wi-Fi" disabled={!isOwner} />
-            </label>
-            <label class="field-label">Dashboard IP
-              <input class="settings-input" bind:value={wifiForm.dashboard_ip} placeholder="192.168.1.10" disabled={!isOwner} />
-            </label>
-            <div class="settings-row-actions">
-              <button type="button" class="settings-cancel-btn" on:click={() => (settingsWifiOpen = false)} disabled={busy}>Cancel</button>
-              <button type="submit" class="settings-save-btn" disabled={busy || !isOwner}>Mark verified</button>
-            </div>
-          </form>
-        {/if}
-
-        <div class="settings-row no-tap">
-          <div class="settings-row-icon si-muted"><Usb size={17} strokeWidth={1.5} aria-hidden="true" /></div>
-          <div class="settings-row-body">
-            <div class="settings-row-title">USB address</div>
-            <div class="settings-row-desc">Available when connected via USB-C OTG</div>
-          </div>
-          <div class="settings-row-right">
-            <span class="settings-row-value">{status?.usb_address ?? "Not connected"}</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="settings-group">
-      <div class="settings-group-label">Account</div>
-      <div class="settings-group-card">
-        <div class="settings-row no-tap">
-          <div class="settings-row-icon si-sage"><User size={17} strokeWidth={1.5} aria-hidden="true" /></div>
-          <div class="settings-row-body">
-            <div class="settings-row-title">{session?.account?.display_name || session?.account?.username}</div>
-            <div class="settings-row-desc">Signed in</div>
-          </div>
-          <div class="settings-row-right">
-            <span class="settings-badge bs-teal">{roleLabel}</span>
-          </div>
-        </div>
-
-        <button type="button" class="settings-row" disabled title="Password changes are not exposed by the local API yet.">
-          <div class="settings-row-icon si-muted"><Lock size={17} strokeWidth={1.5} aria-hidden="true" /></div>
-          <div class="settings-row-body">
-            <div class="settings-row-title">Change password</div>
-            <div class="settings-row-desc">Use a recovery code from the login screen for now.</div>
-          </div>
-          <div class="settings-row-right">
-            <span class="settings-badge bs-muted">Soon</span>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          class:expanded={settingsRecoveryOpen}
-          class="settings-row"
-          on:click={() => (settingsRecoveryOpen = !settingsRecoveryOpen)}
-        >
-          <div class="settings-row-icon si-amber"><KeyRound size={17} strokeWidth={1.5} aria-hidden="true" /></div>
-          <div class="settings-row-body">
-            <div class="settings-row-title">Recovery code</div>
-          </div>
-          <div class="settings-row-right">
-            {#if recoveryCode}<span class="settings-badge bs-amber">Created</span>{/if}
-            {#if settingsRecoveryOpen}<ChevronUp size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
-          </div>
-        </button>
-        {#if settingsRecoveryOpen}
-          <div class="settings-recovery-block">
-            {#if recoveryCode}
-              <div class="settings-secret-code">{recoveryCode.code}</div>
-              <div class="settings-warning"><AlertTriangle size={14} strokeWidth={1.5} aria-hidden="true" />Store this once. It expires {recoveryCode.expires_at} and can reset the account password.</div>
-              <button type="button" class="settings-copy-btn" on:click={() => copyText(recoveryCode?.code ?? "", "Recovery code")}>
-                <Copy size={15} strokeWidth={1.5} aria-hidden="true" />Copy recovery code
-              </button>
-            {:else}
-              <button type="button" class="settings-copy-btn" on:click={() => run(async () => (recoveryCode = await createRecoveryCode()), "Recovery code created.")} disabled={busy}>
-                <Copy size={15} strokeWidth={1.5} aria-hidden="true" />Create recovery code
-              </button>
-            {/if}
-          </div>
-        {/if}
-      </div>
-    </section>
-
-    <section class="settings-group">
-      <div class="settings-group-label">Manager invitations · Owner only</div>
-      <div class="settings-group-card">
-        <div class="settings-row no-tap">
-          <div class="settings-row-icon si-violet"><Users size={17} strokeWidth={1.5} aria-hidden="true" /></div>
-          <div class="settings-row-body">
-            <div class="settings-row-title">Invite a manager</div>
-            <div class="settings-row-desc">Managers can add and manage content but cannot change setup or invite others.</div>
-          </div>
-        </div>
-
-        {#if invitation}
-          <div class="settings-invite-item">
-            <div class="settings-invite-icon"><Link size={17} strokeWidth={1.5} aria-hidden="true" /></div>
-            <div class="settings-invite-body">
-              <div class="settings-invite-code">{invitation.code}</div>
-              <div class="settings-invite-meta">Expires {invitation.expires_at} · single use</div>
-            </div>
-            <div class="settings-row-right">
-              <button type="button" class="settings-square-btn violet" aria-label="Copy invite link" on:click={() => copyText(invitationUrl(invitation?.code ?? ""), "Invitation link")}>
-                <Copy size={15} strokeWidth={1.5} aria-hidden="true" />
-              </button>
-              <button type="button" class="settings-square-btn" aria-label="Dismiss invitation" on:click={() => (invitation = null)}>
-                <X size={15} strokeWidth={1.5} aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        {/if}
-
-        <button type="button" class="settings-new-invite-btn" on:click={() => run(createManagerInvitation, "Manager invitation created.")} disabled={busy || !isOwner || !setup?.device_id}>
-          <Plus size={16} strokeWidth={1.5} aria-hidden="true" />Create new invitation link
-        </button>
-      </div>
-    </section>
-
-    <section class="settings-group">
-      <div class="settings-group-label">Danger zone</div>
-      <div class="settings-danger-card">
-        <div class="settings-danger-header">
-          <AlertTriangle size={16} strokeWidth={1.5} aria-hidden="true" />
-          <div>Irreversible actions</div>
-        </div>
-        <div class="settings-danger-row">
-          <div class="settings-danger-body">
-            <div class="settings-danger-title">Clear all unused content</div>
-            <div class="settings-danger-desc">Removes audio no longer used by the current button setup. Active setup content and drafts stay available.</div>
-          </div>
-          <button type="button" class="settings-danger-btn" on:click={clearAllUnusedContent} disabled={busy || !isOwner || totalUnused === 0}>
-            Clear unused content
-          </button>
-        </div>
-        <div class="settings-danger-row">
-          <div class="settings-danger-body">
-            <div class="settings-danger-title">Factory reset</div>
-            <div class="settings-danger-desc">Reset setup, accounts, and content back to defaults.</div>
-          </div>
-          <button type="button" class="settings-danger-btn" on:click={openFactoryResetPrompt} disabled={busy || !isOwner}>
-            Factory reset
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <div class="settings-logout-row">
-      <button type="button" class="settings-logout-btn" on:click={() => run(logout, "Logged out.")} disabled={busy}>
-        <LogOut size={17} strokeWidth={1.5} aria-hidden="true" />Sign out of this device
-      </button>
-    </div>
-
-    <div class="settings-version-footer">
-      tcube-pi · {status?.service ?? "admin"}<br />
-      <span>{status?.hostname ?? "host pending"} · {status?.mode ?? "local"}</span>
-    </div>
-  </div>
-{/snippet}
-
-{#snippet InventoryView()}
-  {@render TopBar(true)}
-  <div class="body">
-    <section class:error={messageType === "error"} class:success={messageType === "success"} class="notice" aria-live="polite">
-      {message}
-    </section>
-    <section class="card">
-      <div class="sec-hdr">
-        <div class="sec-title"><FileAudio size={16} strokeWidth={1.5} aria-hidden="true" />Content inventory</div>
-        <button type="button" class="sec-link" on:click={refreshInventory}>
-          Refresh <RefreshCw size={13} strokeWidth={1.5} aria-hidden="true" />
-        </button>
-      </div>
-      <div class="inventory-summary">
-        <div><strong>{inventory?.active_count ?? 0}</strong><span>Active in setup</span></div>
-        <div><strong>{inventory?.draft_count ?? 0}</strong><span>Drafts</span></div>
-        <div><strong>{inventory?.unused_count ?? 0}</strong><span>Unused audio</span></div>
-      </div>
-      {#if inventoryError}
-        <div class="content-api-error" role="alert">
-          <AlertTriangle size={15} strokeWidth={1.5} aria-hidden="true" />
-          <span>{inventoryError}</span>
-        </div>
-      {/if}
-    </section>
-
-    {@render InventoryGroup("Unused audio", "Active files hidden by the current button mode or language.", inventoryItems("unused"))}
-    {@render InventoryGroup("Draft audio", "Inactive files waiting for review.", inventoryItems("draft"))}
-    {@render InventoryGroup("Active audio", "Files playable in the current button setup.", inventoryItems("active"))}
-  </div>
-{/snippet}
-
-{#snippet InventoryGroup(title: string, detail: string, items: ContentInventoryItem[])}
-  <section class="card inventory-card">
-    <div class="sec-hdr">
-      <div>
-        <div class="sec-title"><FileAudio size={15} strokeWidth={1.5} aria-hidden="true" />{title}</div>
-        <div class="inventory-detail">{detail}</div>
-      </div>
-      <span class="inventory-count">{items.length}</span>
-    </div>
-    {#if items.length === 0}
-      <div class="empty-state">
-        <FileAudio size={24} strokeWidth={1.5} aria-hidden="true" />
-        <strong>No {title.toLowerCase()}</strong>
-        <p>This inventory group is empty.</p>
-      </div>
-    {:else}
-      <div class="content-list" role="list">
-        {#each items as item}
-          <div class="ci inventory-row" role="listitem">
-            <div class="ci-icon {item.status === 'unused' ? 'ci-uploaded' : item.status === 'draft' ? 'ci-generated' : 'ci-recorded'}">
-              <FileAudio size={16} strokeWidth={1.5} aria-hidden="true" />
-            </div>
-            <div class="ci-meta">
-              <div class="ci-name">{item.title}</div>
-              <div class="ci-detail">{faceNames[item.button_id - 1] ?? `Button ${item.button_id}`} · {item.content_type}{item.language ? ` · ${item.language}` : ""} · {item.source}</div>
-              <div class="inventory-reason">{item.reason}</div>
-              {#if item.preview_url}<audio src={item.preview_url} controls></audio>{/if}
-            </div>
-            <div class="ci-actions">
-              <button type="button" class="cia" on:click={() => openInventoryButton(item)} aria-label="Open button">
-                <ArrowRight size={16} strokeWidth={1.5} aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        {/each}
-      </div>
-    {/if}
-  </section>
-{/snippet}
-
-{#snippet EventFeed(items: RecentButtonEvent[])}
-  {#if items.length === 0}
-    <div class="empty-state">
-      <Activity size={24} strokeWidth={1.5} aria-hidden="true" />
-      <strong>No button events yet</strong>
-      <p>The feed appears after the child presses a button and the runtime logs the event.</p>
-    </div>
-  {:else}
-    <div class="feed" role="list" aria-label="Recent activity feed">
-      {#each items as event}
-        <div class="feed-item" role="listitem">
-          <div class="feed-icon fi-press"><Hand size={14} strokeWidth={1.5} aria-hidden="true" /></div>
-          <div class="feed-body">
-            <div class="feed-text"><strong>{faceNames[event.button_id - 1] ?? `Button ${event.button_id}`}</strong> pressed — played <strong>{event.response_text || event.response_id}</strong></div>
-            <div class="feed-time">{relativeTime(event.occurred_at)}</div>
-          </div>
-          <span class="feed-badge fb-teal">Play</span>
-        </div>
-      {/each}
-    </div>
-  {/if}
-{/snippet}
-
-{#snippet ContentRows(items: ContentListItem[], loadingContent: boolean, emptyState: ContentEmptyState | null, empty: string, actionLabel: string, action: ContentAction, secondaryAction: ContentAction | undefined)}
-  {#if loadingContent}
-    <div class="content-list">
-      <div class="skeleton"></div>
-      <div class="skeleton short"></div>
-    </div>
-  {:else if items.length === 0}
-    <div class="empty-state">
-      <FileAudio size={24} strokeWidth={1.5} aria-hidden="true" />
-      <strong>{emptyState?.title ?? empty}</strong>
-      <p>{emptyState?.detail ?? (contentListTab === "active" ? "Activate a draft before the child can hear it." : "Record, upload, or generate content to create a draft.")}</p>
-    </div>
-  {:else}
-    <div class="content-list" role="list">
-      {#each items as item}
-        {#if actionLabel === "Move to trash" && !secondaryAction}
-          <div
-            class="ci ci-playable"
-            role="button"
-            tabindex="0"
-            aria-label={`Play ${item.title}`}
-            on:click={() => void playContentPreview(item)}
-            on:keydown={(event) => onContentRowKeydown(event, item)}
-          >
-            <div class="ci-icon {item.source === 'generated' ? 'ci-generated' : item.source === 'uploaded' ? 'ci-uploaded' : 'ci-recorded'}">
-              {#if item.source === "generated"}<WandSparkles size={16} strokeWidth={1.5} aria-hidden="true" />{:else if item.source === "uploaded"}<Upload size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<Mic size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
-            </div>
-            <div class="ci-meta">
-              <div class="ci-name" title={item.title}>{trimAudioTitle(item.title)}</div>
-              <div class="ci-detail">{contentPlaySummary(item)}</div>
-            </div>
-            <div class="ci-actions">
-              <button type="button" class="cia del" on:click|stopPropagation={() => promptTrashContent(item)} aria-label="Move to trash">
-                <Trash2 size={16} strokeWidth={1.5} aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        {:else}
-          <div class="ci" role="listitem">
-            <div class="ci-icon {item.source === 'generated' ? 'ci-generated' : item.source === 'uploaded' ? 'ci-uploaded' : 'ci-recorded'}">
-              {#if item.source === "generated"}<WandSparkles size={16} strokeWidth={1.5} aria-hidden="true" />{:else if item.source === "uploaded"}<Upload size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<Mic size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
-            </div>
-            <div class="ci-meta">
-              <div class="ci-name">{item.title}</div>
-              <div class="ci-detail">{item.source} · {item.content_type}</div>
-              {#if item.preview_url}<audio src={item.preview_url} controls></audio>{/if}
-            </div>
-            <div class="ci-actions">
-              <button type="button" class="cia" on:click={() => action(item.id)} aria-label={actionLabel}>
-                {#if actionLabel === "Activate"}<Check size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<Trash2 size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
-              </button>
-              {#if secondaryAction}
-                <button type="button" class="cia del" on:click={() => secondaryAction(item.id)} aria-label="Move to trash"><Trash2 size={16} strokeWidth={1.5} aria-hidden="true" /></button>
-              {/if}
-            </div>
-          </div>
-        {/if}
-      {/each}
-    </div>
-  {/if}
-{/snippet}
-
-{#if trashPrompt}
-  <div class="trash-backdrop" role="presentation" on:click={cancelTrashContent}>
-    <div
-      class="trash-dialog"
-      role="dialog"
-      tabindex="-1"
-      aria-modal="true"
-      aria-labelledby="trash-dialog-title"
-      aria-describedby="trash-dialog-desc"
-      on:click|stopPropagation
-      on:keydown={(event) => {
-        if (event.key === "Escape") cancelTrashContent();
-      }}
-    >
-      <div class="trash-dialog-icon"><AlertTriangle size={22} strokeWidth={1.5} aria-hidden="true" /></div>
-      <div class="trash-dialog-body">
-        <div id="trash-dialog-title" class="trash-dialog-title">Move audio to trash?</div>
-        <div id="trash-dialog-desc" class="trash-dialog-desc">{trashPrompt.title} will be removed from the active list and deleted from disk.</div>
-      </div>
-      <div class="trash-dialog-actions">
-        <button type="button" class="btn-secondary" on:click={cancelTrashContent}>Cancel</button>
-        <button type="button" class="btn-primary trash-confirm" on:click={confirmTrashContent}>
-          <Trash2 size={16} strokeWidth={1.5} aria-hidden="true" />Move to trash
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-{#if factoryResetPromptOpen}
-  <div class="trash-backdrop" role="presentation" on:click={cancelFactoryReset}>
-    <div
-      class="trash-dialog"
-      role="dialog"
-      tabindex="-1"
-      aria-modal="true"
-      aria-labelledby="factory-reset-dialog-title"
-      aria-describedby="factory-reset-dialog-desc"
-      on:click|stopPropagation
-      on:keydown={(event) => {
-        if (event.key === "Escape") cancelFactoryReset();
-      }}
-    >
-      <div class="trash-dialog-icon"><AlertTriangle size={22} strokeWidth={1.5} aria-hidden="true" /></div>
-      <div class="trash-dialog-body">
-        <div id="factory-reset-dialog-title" class="trash-dialog-title">Factory reset this cube?</div>
-        <div id="factory-reset-dialog-desc" class="trash-dialog-desc">This deletes setup, accounts, sessions, activity, drafts, and parent-created audio. Type FACTORY RESET to continue.</div>
-        <label class="field-label factory-reset-label">Confirmation
-          <input
-            class="settings-input"
-            aria-label="Factory reset confirmation"
-            bind:value={factoryResetConfirmation}
-            autocomplete="off"
-            placeholder="FACTORY RESET"
-          />
-        </label>
-      </div>
-      <div class="trash-dialog-actions">
-        <button type="button" class="btn-secondary" on:click={cancelFactoryReset} disabled={busy}>Cancel</button>
-        <button type="button" class="btn-primary trash-confirm" on:click={confirmFactoryReset} disabled={busy || factoryResetConfirmation !== "FACTORY RESET"}>
-          <Trash2 size={16} strokeWidth={1.5} aria-hidden="true" />Factory reset
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-{#snippet LayoutGridIcon()}
-  <SlidersHorizontal size={15} strokeWidth={1.5} aria-hidden="true" />
-{/snippet}

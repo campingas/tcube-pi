@@ -1,6 +1,6 @@
 # Current Project State
 
-Last updated: 2026-06-30 (+07)
+Last updated: 2026-07-01 (+07)
 
 ## Current Focus
 
@@ -9,7 +9,7 @@ Last updated: 2026-06-30 (+07)
 - The repository owns the child-facing runtime, keyboard simulator, local SQLite state, Pi-hosted admin API, checked-in static admin UI, Caddy deployment files, default content assets, and Pi hardware smoke payloads.
 - `docs/developer/FEATURES.md` documents the currently implemented Rust features and the admin UI capabilities.
 - The Mac-hosted TTS workers are intentionally not part of this repository. The checked-in `admin-ui/build/` is the static build output from the Svelte + Vite source in `admin-ui/` and is served by `tcube-pi-admin`; generated speech may call external HTTPS speech services for drafts.
-- The admin UI has been rebuilt as a dark-mode-only, mobile-first parent dashboard aligned with `VISION.md` and `docs/developer/branding-guide.md`: compact top bar, horizontal status strip, cube hero, button strip, quick actions, recent activity, setup checklist, full-screen button configuration drilldown, active/draft content review, record/upload/generate draft flows, owner tools, and local runtime boundary copy.
+- The admin UI has been rebuilt as a dark-mode-only, mobile-first parent dashboard aligned with `VISION.md` and `docs/developer/branding-guide.md`: compact top bar, horizontal status strip, cube hero with Wi-Fi and USB detail lines, button strip, quick actions, recent activity, setup checklist, full-screen button configuration drilldown, active/draft content review, record/upload/generate draft flows, owner tools, and local runtime boundary copy.
 - The Pi admin HTTPS boundary remains Caddy in front of loopback-only `tcube-pi-admin`: Rust listens on `127.0.0.1:8080`, and Caddy serves `https://tcube.local/` and `https://10.55.0.1/` with `tls internal`.
 
 ## Implemented
@@ -23,6 +23,7 @@ Last updated: 2026-06-30 (+07)
 - Parent-created audio drafts are stored under `data/audio/draft/{content_type}/` and activation moves them to `data/audio/active/{content_type}/`; legacy `data/media/...` preview paths remain readable for existing rows.
 - Svelte + Vite + Tailwind admin UI source under `admin-ui/`, with checked-in static build output under `admin-ui/build/`.
 - Local account, session, recovery-code, and manager-invitation primitives.
+- The cube hero now renders a verified Wi-Fi SSID and dashboard IP on separate lines, uses a default `wi-fi · 192.168.0.1` fallback before verification, and shows an explicit USB connection state from the admin status payload.
 - Caddy deployment sketch and one-button Pi Zero bench smoke payload.
 - Rust formatting, linting, and test workflows through `just`.
 - GitHub Actions CI under `.github/workflows/ci.yml` runs Rust formatting, check, Clippy, tests, and admin UI pnpm install/check/build gates.
@@ -113,6 +114,18 @@ Latest admin UI rebuild validation on 2026-06-28:
 - `just test`
 - Static admin UI build output regenerated under `admin-ui/build/`.
 - Added authenticated `/api/pi/v1/events/recent` support for the dashboard activity feed.
+
+Latest admin UI hero/status refresh on 2026-07-01:
+
+- `just build-admin-ui`
+- `just check-admin-ui`
+- `just test-admin-ui-unit`
+- `just test-admin-ui-mobile`
+- `just check`
+- `just test`
+- The dashboard hero now shows separate Wi-Fi and USB subtitle lines, removes the old reachability badge and dot, and uses icon color to reflect verified Wi-Fi and USB connection state.
+- The setup review payload now includes `wifi_ssid`, and the admin status payload now includes an explicit `usb_connected` flag.
+- The buttons section action is now icon-only, with the visible `Manage all` label removed.
 
 Latest mobile-first admin UI draft replication on 2026-06-28:
 
@@ -369,3 +382,53 @@ Latest admin route extraction completion on 2026-06-30:
 - Admin status response construction now lives in `src/server/routes/status.rs`, and recent button-event reads now live in `src/server/routes/events.rs`.
 - Production server code no longer imports or calls `src/server/handler.rs`; that module is compiled only for legacy route test coverage.
 - Validation after the extraction: `cargo test multipart_recording_and_upload_create_inactive_drafts --all-features`, `cargo test generated_language_filename_includes_model_language_and_text --all-features`, `cargo test versioned_admin_api_aliases_support_session_setup_and_events --all-features`, `cargo test content_lifecycle_lists_activates_trashes_and_cleans_generated_drafts --all-features`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features`, `just check`, and `just test`.
+
+Latest admin UI route/component split on 2026-06-30:
+
+- `admin-ui/src/App.svelte` now delegates authenticated dashboard, button configuration, inventory, settings, and auth flows to focused typed view components instead of a single inline render tree.
+- Shared content and status presentation moved into `admin-ui/src/components/` and `admin-ui/src/view-utils.ts`, and stale prototype components were removed.
+- The mobile recording flow keeps the draft-text footer enablement in sync with the live input, and the generated-speech footer no longer duplicates the form submit label.
+- Validation after the split: `just check-admin-ui`, `just build-admin-ui`, and `just test-admin-ui-mobile`.
+
+Latest admin UI split follow-up on 2026-06-30:
+
+- Auth submit buttons again respect the shared busy state to prevent duplicate login, bootstrap, recovery, and invitation submissions.
+- Button content draft form edits now flow through an explicit `updateDraftForm` patch action owned by `App.svelte`, so generated-speech status checks react to provider/text changes without hidden child prop mutation.
+- Button configuration footer label and disabled-state decisions now use named helper functions and the canonical draft form state instead of a local draft-text sync bridge.
+- Validation after the follow-up: `just check-admin-ui`, `just build-admin-ui`, and `just test-admin-ui-mobile`.
+
+Latest admin UI controller extraction on 2026-06-30:
+
+- Button configuration view-model helpers, content keys/counts, immutable draft-form patching, and footer action decisions now live in a typed `button-config-controller.ts` module.
+- Generated-speech health keys, menu status keys, disabled-state calculation, provider-key parsing, offline status creation, and backoff transitions now live in a typed `generated-speech-health.ts` module.
+- Added dependency-free Node TypeScript unit coverage for footer action states, draft-form patching, generated-speech keys, disabled states, offline status, and backoff transitions, with `just test-admin-ui-unit` and a matching CI step.
+- Validation after the extraction: `just test-admin-ui-unit`, `just check-admin-ui`, `just build-admin-ui`, and `just test-admin-ui-mobile`.
+
+Latest admin UI recording controller extraction on 2026-06-30:
+
+- Recording/upload decision logic now lives in a typed `recording-controller.ts` module: upload type/size validation, recording status transitions, recording guidance copy, media draft validation, waveform level normalization, default waveform state, and generated draft title fallback.
+- Browser-owned objects remain in `App.svelte` for now: `MediaRecorder`, `AudioContext`, timers, object URLs, and stream cleanup still stay next to the lifecycle code that creates them.
+- Node unit coverage now verifies upload limits, recording status transitions, recording/save guidance, language versus music draft requirements, default titles, and waveform normalization.
+- Validation after the extraction: `just test-admin-ui-unit`, `just check-admin-ui`, `just build-admin-ui`, and `just test-admin-ui-mobile`.
+
+Latest localhost admin UI fix on 2026-06-30:
+
+- Static SPA fallback responses now serve `index.html` as `text/html` with `Content-Disposition: inline`, so opening `https://localhost/` renders the 449-byte admin HTML shell instead of downloading it.
+- Static fallback MIME selection now uses the normalized safe path, so extensionless SPA routes and rejected static paths also fall back to inline HTML consistently.
+- Added regression coverage for root fallback, extensionless fallback, rejected-path fallback, and the real Axum router `/` fallback.
+- HTTPS Caddy smoke on `https://localhost:18443/` returned `content-type: text/html; charset=utf-8`, `content-disposition: inline`, and `content-length: 449`.
+- Validation after the fix: `cargo test serves_html_for --all-features`, `cargo test router_serves_admin_index_as_inline_html --all-features`, `cargo fmt --all --check`, `just check`, and `just test`.
+
+Latest dashboard audio drilldown update on 2026-06-30:
+
+- The dashboard no longer shows the duplicate `Content inventory` card or `View all` link; active, draft, and unused counts remain visible in the cube hero stats.
+- The cube hero stats are now clickable: `Presses today` opens today's recent play events, while `Active sounds`, `Drafts`, and `Unused` open filtered audio lists from the existing content inventory API.
+- Button-configuration active rows and dashboard audio detail rows now share `AudioContentRow`, keeping future audio-row styling changes centralized.
+- Mobile Playwright coverage now verifies the removed inventory card, filtered stat detail navigation, and the preserved button-configuration active-row behavior.
+- Validation after the update: `just check-admin-ui`, `just test-admin-ui-unit`, `just test-admin-ui-mobile`, and `just build-admin-ui`.
+
+Latest Add content UI restoration on 2026-07-01:
+
+- Button configuration `Add content` now uses the richer mobile-first composer again: icon tabs, large record/stop control, waveform/status panel, framed upload zone, and structured generated-speech fields.
+- Existing recording, upload, generated-speech health, draft validation, and sticky footer behavior were preserved.
+- Mobile Playwright coverage now checks the restored Add-content tab styling, record control, upload zone, and recording save state.

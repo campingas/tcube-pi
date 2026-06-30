@@ -54,6 +54,7 @@ mod tests {
             content_root: config.content_root.clone(),
             hostname: config.hostname.clone(),
             usb_address: config.usb_address.clone(),
+            usb_connected: config.usb_connected,
         });
         let app = crate::server::routes::router().with_state(config);
         let uri = request_uri(request);
@@ -191,12 +192,14 @@ mod tests {
             content_root: PathBuf::from("content"),
             hostname: "tcube-a7f3.local".to_string(),
             usb_address: "10.55.0.1".to_string(),
+            usb_connected: true,
         };
 
         let review = setup_review(&config).unwrap();
 
         assert_eq!(review.cube_name, "T-Cube");
         assert_eq!(review.dashboard_address, "https://tcube-a7f3.local/");
+        assert!(review.wifi_ssid.is_none());
         assert_eq!(review.button_modes["1"], "language:English");
     }
 
@@ -731,6 +734,7 @@ mod tests {
         let review = setup_review(&config).unwrap();
         assert_eq!(review.cube_name, "Nursery Cube");
         assert!(review.wifi_verified);
+        assert_eq!(review.wifi_ssid.as_deref(), Some("Home WiFi"));
         assert_eq!(review.dashboard_ip.as_deref(), Some("192.168.50.20"));
     }
 
@@ -1689,6 +1693,7 @@ mod tests {
             content_root: database.parent().unwrap().join("content"),
             hostname: "tcube-a7f3.local".to_string(),
             usb_address: "10.55.0.1".to_string(),
+            usb_connected: true,
         }
     }
 

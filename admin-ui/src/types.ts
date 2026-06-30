@@ -16,4 +16,14 @@ export type ContentState = {
   error: string | null;
 };
 
+export type DraftForm = {
+  title: string;
+  text: string;
+  language: string;
+  provider: string;
+  voice: string;
+};
+
 export type MessageType = "info" | "success" | "error";
+
+export type InventoryFilter = "presses_today" | "active" | "draft" | "unused";

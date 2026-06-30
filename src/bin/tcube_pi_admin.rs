@@ -26,6 +26,9 @@ struct Cli {
 
     #[arg(long, default_value = "10.55.0.1")]
     usb_address: String,
+
+    #[arg(long, default_value_t = true)]
+    usb_connected: bool,
 }
 
 #[tokio::main]
@@ -39,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
         content_root: cli.content_root,
         hostname: cli.hostname,
         usb_address: cli.usb_address,
+        usb_connected: cli.usb_connected,
     })
     .await
 }

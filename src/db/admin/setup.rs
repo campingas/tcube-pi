@@ -33,6 +33,7 @@ pub(crate) struct SetupReview {
     pub(crate) device_id: Option<String>,
     pub(crate) admin_created: bool,
     pub(crate) wifi_verified: bool,
+    pub(crate) wifi_ssid: Option<String>,
     pub(crate) dashboard_ip: Option<String>,
     pub(crate) dashboard_address: String,
     pub(crate) button_modes: HashMap<String, String>,
@@ -55,7 +56,7 @@ pub(crate) fn setup_review_from_conn(
 
     let setup = conn
         .prepare(
-            "select cube_name, device_id, wifi_verified_at, dashboard_host, dashboard_ip \
+            "select cube_name, device_id, wifi_verified_at, wifi_ssid, dashboard_host, dashboard_ip \
              from device_setup where id = 1",
         )?
         .query_row([], |row| {
@@ -63,14 +64,16 @@ pub(crate) fn setup_review_from_conn(
                 row.get::<_, Option<String>>(0)?,
                 row.get::<_, Option<String>>(1)?,
                 row.get::<_, Option<String>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
             ))
         });
-    let (cube_name, device_id, wifi_verified_at, dashboard_host, dashboard_ip) = setup
+    let (cube_name, device_id, wifi_verified_at, wifi_ssid, dashboard_host, dashboard_ip) = setup
         .unwrap_or_else(|_| {
             (
                 Some("T-Cube".to_string()),
+                None,
                 None,
                 None,
                 config.hostname.clone(),
@@ -83,6 +86,7 @@ pub(crate) fn setup_review_from_conn(
         device_id,
         admin_created: table_count(conn, "admin_accounts")? > 0,
         wifi_verified: wifi_verified_at.is_some(),
+        wifi_ssid,
         dashboard_ip,
         dashboard_address: format!("https://{dashboard_host}/"),
         button_modes: button_modes(conn)?,
@@ -103,6 +107,7 @@ pub(crate) fn default_setup_review(config: &AdminConfig) -> SetupReview {
         device_id: None,
         admin_created: false,
         wifi_verified: false,
+        wifi_ssid: None,
         dashboard_ip: None,
         dashboard_address: format!("https://{}/", config.hostname),
         button_modes,

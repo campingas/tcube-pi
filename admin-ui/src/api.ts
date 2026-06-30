@@ -8,6 +8,7 @@ export type ServiceStatus = {
   content_root: string;
   hostname: string;
   usb_address: string;
+  usb_connected: boolean;
   contract_note: string;
 };
 
@@ -35,6 +36,7 @@ export type SetupReview = {
   device_id: string | null;
   admin_created: boolean;
   wifi_verified: boolean;
+  wifi_ssid: string | null;
   dashboard_ip: string | null;
   dashboard_address: string;
   button_modes: Record<string, string>;

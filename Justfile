@@ -119,6 +119,9 @@ build-admin-ui:
 check-admin-ui:
     pnpm --dir admin-ui run check
 
+test-admin-ui-unit:
+    pnpm --dir admin-ui run test:unit
+
 test-admin-ui-mobile:
     pnpm --dir admin-ui run test:e2e --project=mobile
 

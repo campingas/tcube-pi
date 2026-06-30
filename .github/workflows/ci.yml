@@ -63,6 +63,8 @@ jobs:
       - name: Check admin UI
         run: pnpm --dir admin-ui run check
 
+      - name: Test admin UI unit controllers
+        run: pnpm --dir admin-ui run test:unit
+
       - name: Build admin UI
         run: pnpm --dir admin-ui run build
-

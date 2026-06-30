@@ -9,6 +9,7 @@ pub struct AdminConfig {
     pub content_root: PathBuf,
     pub hostname: String,
     pub usb_address: String,
+    pub usb_connected: bool,
 }
 
 #[derive(Debug)]

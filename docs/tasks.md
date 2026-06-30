@@ -13,7 +13,7 @@ This file tracks only the next useful work, ordered by product impact and implem
 - [x] Harden audio upload and recording validation: add malformed WAV tests for short or truncated `fmt ` chunks, return clean API errors instead of panics, and keep the 25 MB and duration/quietness checks covered.
 - [x] Add real per-content play statistics to the backend and admin UI so active content rows show actual play counts instead of the current `x plays` placeholder.
 - [x] Finish moving admin media and generated-speech orchestration out of `src/server/handler.rs` into native typed Axum route modules, then keep `handler.rs` limited to status/recent-event helpers or remove it entirely.
-- [ ] Split `admin-ui/src/App.svelte` into focused route/state components for dashboard, button configuration, inventory, settings, recording, generated speech health, and setup/auth flows; remove stale unused component prototypes while preserving mobile Playwright coverage.
+- [x] Split `admin-ui/src/App.svelte` into focused route/state components for dashboard, button configuration, inventory, settings, recording, generated speech health, and setup/auth flows; remove stale unused component prototypes while preserving mobile Playwright coverage.
 - [ ] Wire Learning stats and Run curation only after local API contracts exist, keeping disabled UI actions visually distinct until the backend is real.
 - [ ] Define microphone capture privacy rules before implementation: capture lifetime, retention, deletion, upload boundaries, Mac-only processing, physical indicator behavior, and parent consent.
 - [ ] Implement and validate mini USB microphone capture through the Pi Zero 2 W OTG port only after the privacy and LED indicator rules are documented.
@@ -26,4 +26,4 @@ This file tracks only the next useful work, ordered by product impact and implem
 
 - [ ] Keep `docs/developer/current-state.md` updated after significant implementation or validation work.
 - [ ] For Rust changes, run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace --all-features` before handoff.
-- [ ] For admin UI changes, run `just build-admin-ui`, `just check-admin-ui`, and `just test-admin-ui-mobile` before handoff.
+- [ ] For admin UI changes, run `just build-admin-ui`, `just check-admin-ui`, `just test-admin-ui-unit`, and `just test-admin-ui-mobile` before handoff.

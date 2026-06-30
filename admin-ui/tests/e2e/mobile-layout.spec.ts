@@ -9,23 +9,26 @@ test("mobile dashboard stacks primary cards and keeps stats within the viewport"
   await page.goto("/");
 
   const hero = page.getByTestId("dashboard-hero-card");
-  const inventory = page.getByTestId("dashboard-inventory-card");
   const buttons = page.getByTestId("dashboard-buttons-card");
   await expect(hero).toBeVisible();
-  await expect(inventory).toBeVisible();
+  await expect(page.getByTestId("hero-wifi-line")).toHaveText(/Home · 192\.168\.50\.159/);
+  await expect(page.getByTestId("hero-usb-line")).toHaveText(/USB · 10\.55\.0\.1/);
+  await expect(page.getByTestId("hero-wifi-icon")).toHaveClass(/hero-icon-ok/);
+  await expect(page.getByTestId("hero-usb-icon")).toHaveClass(/hero-icon-ok/);
+  await expect(hero.locator(".cube-online-dot")).toHaveCount(0);
+  await expect(hero.locator(".cube-badge")).toHaveCount(0);
+  await expect(page.getByTestId("dashboard-inventory-card")).toHaveCount(0);
   await expect(buttons).toBeVisible();
 
-  const boxes = await Promise.all([hero.boundingBox(), inventory.boundingBox(), buttons.boundingBox()]);
+  const boxes = await Promise.all([hero.boundingBox(), buttons.boundingBox()]);
   expect(boxes.every(Boolean)).toBe(true);
-  const [heroBox, inventoryBox, buttonsBox] = boxes as NonNullable<(typeof boxes)[number]>[];
+  const [heroBox, buttonsBox] = boxes as NonNullable<(typeof boxes)[number]>[];
 
-  expect(inventoryBox.y).toBeGreaterThan(heroBox.y + heroBox.height - 1);
-  expect(buttonsBox.y).toBeGreaterThan(inventoryBox.y + inventoryBox.height - 1);
-  expect(Math.abs(heroBox.x - inventoryBox.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(inventoryBox.x - buttonsBox.x)).toBeLessThanOrEqual(1);
+  expect(buttonsBox.y).toBeGreaterThan(heroBox.y + heroBox.height - 1);
+  expect(Math.abs(heroBox.x - buttonsBox.x)).toBeLessThanOrEqual(1);
   expect(heroBox.width).toBeLessThanOrEqual(390);
 
-  const statBoxes = await page.getByTestId("dashboard-stats").getByRole("listitem").evaluateAll((items) =>
+  const statBoxes = await page.getByTestId("dashboard-stats").locator(".cstat").evaluateAll((items) =>
     items.map((item) => {
       const rect = item.getBoundingClientRect();
       return { left: rect.left, right: rect.right, width: rect.width };
@@ -40,6 +43,34 @@ test("mobile dashboard stacks primary cards and keeps stats within the viewport"
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test("dashboard stat cards open focused detail views", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByTestId("dashboard-stat-active").click();
+  await expect(page.getByTestId("stat-detail-view")).toBeVisible();
+  await expect(page.getByText("Active sounds")).toBeVisible();
+  await expect(page.getByText("Morning greeting")).toBeVisible();
+  await expect(page.getByText("Top · Language · English · Generated")).toBeVisible();
+
+  await page.getByRole("button", { name: /go to dashboard/i }).click();
+  await page.getByTestId("dashboard-stat-draft").click();
+  await expect(page.getByText("Drafts")).toBeVisible();
+  await expect(page.getByText("Ready to review")).toBeVisible();
+  await expect(page.getByText("Inactive files waiting for review.")).toBeVisible();
+
+  await page.getByRole("button", { name: /go to dashboard/i }).click();
+  await page.getByTestId("dashboard-stat-unused").click();
+  await expect(page.getByText("Unused audio")).toBeVisible();
+  await expect(page.getByText("Old animal sound")).toBeVisible();
+  await expect(page.getByText("Hidden by current setup")).toBeVisible();
+
+  await page.getByRole("button", { name: /go to dashboard/i }).click();
+  await page.getByTestId("dashboard-stat-presses").click();
+  await expect(page.getByText("Presses today")).toBeVisible();
+  await expect(page.getByText("Hello")).toBeVisible();
+  await expect(page.getByText(/Top · language ·/)).toBeVisible();
 });
 
 test("top bar shows manager role as manager while keeping manager styling", async ({ page }) => {
@@ -80,7 +111,7 @@ test("create owner screen does not show a refresh action", async ({ page }) => {
 
 test("mobile button selector keeps five fixed-size button pills horizontally usable", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: /Manage all/i }).click();
+  await page.getByTestId("dashboard-button-1").click();
 
   const selector = page.getByTestId("button-selector");
   await expect(selector).toBeVisible();
@@ -168,12 +199,15 @@ test("recording flow shows live microphone feedback and draft guidance", async (
   });
   await page.getByTestId("dashboard-button-1").click();
 
+  await expect(page.getByRole("tab", { name: /Record/i })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: /Record/i })).toHaveClass(/active-atab/);
   await expect(page.getByTestId("record-zone")).toBeVisible();
+  await expect(page.locator(".record-btn-big")).toBeVisible();
   await expect(page.getByTestId("record-status")).toHaveText("Tap record, then speak clearly near your phone.");
   await expect(page.getByText("After recording, preview the audio here before saving.")).toBeVisible();
 
-  const saveButton = page.getByRole("button", { name: "Save recording" });
-  await expect(saveButton).toBeDisabled();
+  const footerSaveButton = page.locator(".save-bar").getByRole("button", { name: "Save recording" });
+  await expect(footerSaveButton).toBeDisabled();
 
   await page.getByTestId("record-toggle").click();
   expect(await page.evaluate(() => (window as Window & { __getUserMediaCalls?: number }).__getUserMediaCalls ?? 0)).toBe(1);
@@ -185,10 +219,16 @@ test("recording flow shows live microphone feedback and draft guidance", async (
   await expect(page.getByTestId("record-status")).toContainText("Preview");
   await expect(page.locator(".record-zone audio")).toBeVisible();
   await expect(page.getByText("Enter the text spoken before saving this recording.")).toBeVisible();
-  await expect(saveButton).toBeDisabled();
+  await expect(footerSaveButton).toBeDisabled();
 
   await page.getByLabel("Text spoken").fill("Bonjour tout le monde.");
-  await expect(saveButton).toBeEnabled();
+  await expect(footerSaveButton).toBeEnabled();
+  await expect(page.getByTestId("record-zone").getByRole("button", { name: "Save recording" })).toBeEnabled();
+
+  await page.getByRole("tab", { name: /Upload/i }).click();
+  await expect(page.getByRole("tab", { name: /Upload/i })).toHaveClass(/active-atab/);
+  await expect(page.getByTestId("upload-zone")).toBeVisible();
+  await expect(page.getByText("Choose an MP3 or WAV file to stage as a draft.")).toBeVisible();
 });
 
 test("generated speech disables only generate controls while TTS is offline", async ({ page }) => {
@@ -219,6 +259,23 @@ test("generated speech disables only generate controls while TTS is offline", as
 });
 
 test("setup checklist sits below the notice and Wi-Fi action opens settings verification", async ({ page }) => {
+  await page.route("**/api/pi/v1/status", async (route) => {
+    await route.fulfill({
+      json: {
+        status: "ok",
+        service: "tcube-pi-admin",
+        mode: "admin",
+        database_present: true,
+        ui_dist_present: true,
+        media_root: "data/audio",
+        content_root: "content",
+        hostname: "tcube.local",
+        usb_address: "",
+        usb_connected: false,
+        contract_note: "test"
+      }
+    });
+  });
   await page.route("**/api/pi/v1/setup/review", async (route) => {
     await route.fulfill({
       json: {
@@ -226,6 +283,7 @@ test("setup checklist sits below the notice and Wi-Fi action opens settings veri
         device_id: "cube-1",
         admin_created: true,
         wifi_verified: false,
+        wifi_ssid: null,
         dashboard_ip: "",
         dashboard_address: "https://tcube.local/",
         button_modes: {
@@ -249,6 +307,10 @@ test("setup checklist sits below the notice and Wi-Fi action opens settings veri
   const setupChecklist = page.getByLabel("Setup checklist");
   const hero = page.getByTestId("dashboard-hero-card");
   await expect(setupChecklist).toBeVisible();
+  await expect(page.getByTestId("hero-wifi-line")).toHaveText(/wi-fi · 192\.168\.0\.1/);
+  await expect(page.getByTestId("hero-usb-line")).toHaveText(/USB · Not connected/);
+  await expect(page.getByTestId("hero-wifi-icon")).toHaveClass(/hero-icon-warn/);
+  await expect(page.getByTestId("hero-usb-icon")).toHaveClass(/hero-icon-muted/);
   const [noticeBox, setupBox, heroBox] = await Promise.all([
     notice.boundingBox(),
     setupChecklist.boundingBox(),
@@ -351,6 +413,7 @@ async function mockAdminApi(page: Page) {
           content_root: "content",
           hostname: "tcube.local",
           usb_address: "10.55.0.1",
+          usb_connected: true,
           contract_note: "test"
         }
       });
@@ -376,6 +439,7 @@ async function mockAdminApi(page: Page) {
           device_id: "cube-1",
           admin_created: true,
           wifi_verified: true,
+          wifi_ssid: "Home",
           dashboard_ip: "192.168.50.159",
           dashboard_address: "https://tcube.local/",
           button_modes: {
@@ -416,7 +480,50 @@ async function mockAdminApi(page: Page) {
           active_count: 4,
           draft_count: 1,
           unused_count: 1,
-          items: []
+          items: [
+            {
+              id: "active-1",
+              status: "active",
+              button_id: 1,
+              content_type: "language",
+              language: "English",
+              title: "Morning greeting",
+              text: "Good morning",
+              source: "generated",
+              state: "active",
+              audio_path: "active/language/morning-greeting.wav",
+              preview_url: "/api/media/active/language/morning-greeting.wav",
+              reason: "Playable by the current setup"
+            },
+            {
+              id: "draft-1",
+              status: "draft",
+              button_id: 1,
+              content_type: "language",
+              language: "English",
+              title: "Ready to review",
+              text: "Review me",
+              source: "recorded",
+              state: "archived",
+              audio_path: "draft/language/ready-to-review.wav",
+              preview_url: "/api/media/draft/language/ready-to-review.wav",
+              reason: "Inactive draft waiting for activation"
+            },
+            {
+              id: "unused-1",
+              status: "unused",
+              button_id: 2,
+              content_type: "animals",
+              language: null,
+              title: "Old animal sound",
+              text: null,
+              source: "uploaded",
+              state: "active",
+              audio_path: "active/animals/old-animal-sound.wav",
+              preview_url: "/api/media/active/animals/old-animal-sound.wav",
+              reason: "Hidden by current setup"
+            }
+          ]
         }
       });
       return;

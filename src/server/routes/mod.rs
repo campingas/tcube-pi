@@ -535,6 +535,7 @@ mod tests {
     use std::sync::Arc;
 
     use axum::body::{to_bytes, Body};
+    use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
     use axum::http::{Request, StatusCode};
     use serde_json::json;
     use tempfile::TempDir;
@@ -551,6 +552,7 @@ mod tests {
             content_root: PathBuf::from("content"),
             hostname: "tcube.local".to_string(),
             usb_address: "10.55.0.1".to_string(),
+            usb_connected: true,
         }
     }
 
@@ -596,5 +598,30 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["authenticated"], true);
         assert_eq!(body["cubes"][0]["role"], "owner");
+    }
+
+    #[tokio::test]
+    async fn router_serves_admin_index_as_inline_html() {
+        let root = TempDir::new().unwrap();
+        let ui_dist = root.path().join("admin-ui");
+        std::fs::create_dir_all(&ui_dist).unwrap();
+        std::fs::write(ui_dist.join("index.html"), "<!doctype html>").unwrap();
+
+        let config = Arc::new(test_config(&root));
+        let response = super::router()
+            .with_state(config)
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers().get(CONTENT_DISPOSITION).unwrap(),
+            "inline"
+        );
     }
 }

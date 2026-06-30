@@ -18,10 +18,12 @@ For admin UI source changes, run:
 ```sh
 just build-admin-ui
 just check-admin-ui
+just test-admin-ui-unit
 just test-admin-ui-mobile
 ```
 
 `just build-admin-ui` emits static assets into `admin-ui/build/`, which is the directory served by `tcube-pi-admin` and copied into Pi packages. `just check-admin-ui` runs Svelte and TypeScript checks against `admin-ui/`.
+`just test-admin-ui-unit` runs Node's built-in test runner against pure TypeScript admin UI controller logic.
 `just test-admin-ui-mobile` runs the Playwright mobile viewport checks against the admin UI with a mobile Chromium project and mocked Pi API responses.
 
 Use `pnpm` for every direct admin UI and JavaScript command. Prefer the `just` recipes above for normal workflows.
@@ -94,6 +96,6 @@ When changing speech-provider integration, verify the configured provider health
 ## Maintenance Matrix
 
 * Changes under `src/`: run `just fmt-check`, `just lint`, `just test`, then the relevant simulator or Pi smoke test.
-* Changes under `admin-ui/`: run `just build-admin-ui` and `just check-admin-ui`, then smoke the Rust-served `/` route when practical.
+* Changes under `admin-ui/`: run `just build-admin-ui`, `just check-admin-ui`, and `just test-admin-ui-unit`, then smoke the Rust-served `/` route when practical.
 * Changes under `deploy/pi-admin-caddy/`: run `just validate-pi-admin-caddy` and both direct and HTTPS status checks.
 * Cross-boundary changes: run `just check`, `just test`, and every affected smoke path above.

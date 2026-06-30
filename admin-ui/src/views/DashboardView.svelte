@@ -1,0 +1,324 @@
+<script lang="ts">
+  import {
+    Activity,
+    AlertTriangle,
+    ArrowRight,
+    BarChart3,
+    Bolt,
+    Check,
+    CircleCheck,
+    Cuboid,
+    Database,
+    Folder,
+    Hand,
+    HardDrive,
+    Languages,
+    Minus,
+    Music,
+    PawPrint,
+    Play,
+    RefreshCw,
+    Settings,
+    Usb,
+    Wifi,
+    Wrench
+  } from "@lucide/svelte";
+  import type { AuthSession, RecentButtonEvent, ServiceStatus, SetupReview } from "../api";
+  import type { ButtonMode, ContentType } from "../api";
+  import type { InventoryFilter, MessageType } from "../types";
+  import TopBar from "../components/TopBar.svelte";
+  import { contentLabel, faceName, modeClass, relativeTime } from "../view-utils";
+
+  type DashboardButton = {
+    id: number;
+    mode: ButtonMode;
+    language: string;
+    contentType: ContentType | null;
+    activeCount: number;
+  };
+
+  type Prerequisite = {
+    id: string;
+    label: string;
+    detail: string;
+    complete: boolean;
+    action: string;
+  };
+
+  export let state: {
+    status: ServiceStatus | null;
+    setup: SetupReview | null;
+    session: AuthSession | null;
+    message: string;
+    messageType: MessageType;
+    buttons: DashboardButton[];
+    events: RecentButtonEvent[];
+    prerequisites: Prerequisite[];
+    setupReady: boolean;
+    blockedSetupText: string;
+    totalActive: number;
+    totalDrafts: number;
+    totalUnused: number;
+    menuLlmOnline: boolean;
+    menuLlmStatusLoading: boolean;
+    menuLlmLabel: string;
+  };
+
+  export let actions: {
+    goHome: () => void;
+    openStatDetail: (filter: InventoryFilter) => void;
+    openSettings: () => void;
+    openButtonConfig: (id: number) => void;
+    selectSetupAction: (id: string) => void;
+    completeSetup: () => void | Promise<void>;
+  };
+
+  function playsToday(events: RecentButtonEvent[]) {
+    const today = new Date().toISOString().slice(0, 10);
+    return events.filter((event) => event.occurred_at.startsWith(today)).length;
+  }
+
+  let wifiVerified = false;
+  let wifiSsid = "wi-fi";
+  let wifiAddress = "192.168.0.1";
+  let usbConnected = false;
+  let usbAddress = "Not connected";
+  $: wifiVerified = Boolean(state.setup?.wifi_verified);
+  $: wifiSsid = wifiVerified ? state.setup?.wifi_ssid?.trim() || "wi-fi" : "wi-fi";
+  $: wifiAddress = wifiVerified ? state.setup?.dashboard_ip?.trim() || "192.168.0.1" : "192.168.0.1";
+  $: usbConnected = Boolean(state.status?.usb_connected);
+  $: usbAddress = state.status?.usb_address?.trim() || "Not connected";
+</script>
+
+<TopBar
+  session={state.session}
+  roleLabel={state.session?.cubes?.[0]?.role === "owner" ? "owner" : state.session?.cubes?.[0]?.role === "manager" ? "manager" : state.session?.cubes?.[0]?.role || "member"}
+  roleClass={state.session?.cubes?.[0]?.role === "owner" ? "owner" : state.session?.cubes?.[0]?.role === "manager" ? "admin" : "member"}
+  goHome={actions.goHome}
+  goBack={actions.goHome}
+  openSettings={actions.openSettings}
+/>
+
+<div class="status-bar" role="status" aria-label="System health">
+  {#if !Boolean(state.status?.database_present)}
+    <div class="status-item">
+      <span class:sdot-ok={Boolean(state.status?.database_present)} class:sdot-warn={!Boolean(state.status?.database_present)} class="sdot"></span>
+      <Database size={14} strokeWidth={1.5} aria-hidden="true" />
+      <span class:status-ok={Boolean(state.status?.database_present)} class:status-warn={!Boolean(state.status?.database_present)}>Database</span>
+    </div>
+  {/if}
+  {#if !Boolean(state.status?.media_root)}
+    <div class="status-item">
+      <span class:sdot-ok={Boolean(state.status?.media_root)} class:sdot-warn={!Boolean(state.status?.media_root)} class="sdot"></span>
+      <HardDrive size={14} strokeWidth={1.5} aria-hidden="true" />
+      <span class:status-ok={Boolean(state.status?.media_root)} class:status-warn={!Boolean(state.status?.media_root)}>Audio</span>
+    </div>
+  {/if}
+  {#if !Boolean(state.status?.content_root)}
+    <div class="status-item">
+      <span class:sdot-ok={Boolean(state.status?.content_root)} class:sdot-warn={!Boolean(state.status?.content_root)} class="sdot"></span>
+      <Folder size={14} strokeWidth={1.5} aria-hidden="true" />
+      <span class:status-ok={Boolean(state.status?.content_root)} class:status-warn={!Boolean(state.status?.content_root)}>Content</span>
+    </div>
+  {/if}
+  {#if !Boolean(state.setup?.wifi_verified)}
+    <div class="status-item">
+      <span class:sdot-ok={Boolean(state.setup?.wifi_verified)} class:sdot-warn={!Boolean(state.setup?.wifi_verified)} class="sdot"></span>
+      <Wifi size={14} strokeWidth={1.5} aria-hidden="true" />
+      <span class:status-ok={Boolean(state.setup?.wifi_verified)} class:status-warn={!Boolean(state.setup?.wifi_verified)}>Wi-Fi</span>
+    </div>
+  {/if}
+  <div class="status-item">
+    <span class:sdot-ok={state.menuLlmOnline} class:sdot-warn={!state.menuLlmOnline} class="sdot"></span>
+    {#if state.menuLlmOnline}
+      <CircleCheck class="status-ok" size={14} strokeWidth={1.5} aria-hidden="true" />
+    {:else if state.menuLlmStatusLoading}
+      <RefreshCw class="status-warn" size={14} strokeWidth={1.5} aria-hidden="true" />
+    {:else}
+      <AlertTriangle class="status-warn" size={14} strokeWidth={1.5} aria-hidden="true" />
+    {/if}
+    <span class:status-ok={state.menuLlmOnline} class:status-warn={!state.menuLlmOnline}>{state.menuLlmLabel}</span>
+  </div>
+</div>
+
+<div class="body">
+  <section class:error={state.messageType === "error"} class:success={state.messageType === "success"} class="notice" aria-live="polite">
+    {state.message}
+  </section>
+
+  {#if !state.setupReady}
+    <section class="setup-banner" aria-label="Setup checklist">
+      <div class="setup-banner-hdr">
+        <AlertTriangle size={18} strokeWidth={1.5} aria-hidden="true" />
+        <div class="setup-banner-title">Setup incomplete</div>
+        <div class="setup-pct">{state.prerequisites.filter((item) => item.complete).length} of {state.prerequisites.length} done</div>
+      </div>
+      <div class="prereq-list" role="list">
+        {#each state.prerequisites as item}
+          <button type="button" class:prereq-done={item.complete} class="prereq-item" on:click={() => actions.selectSetupAction(item.id)}>
+            <div class:pc-done={item.complete} class:pc-todo={!item.complete} class="prereq-check">
+              {#if item.complete}<Check size={12} strokeWidth={1.5} aria-hidden="true" />{:else}<Minus size={12} strokeWidth={1.5} aria-hidden="true" />{/if}
+            </div>
+            <div class="prereq-body">
+              <div class="prereq-name">{item.label}</div>
+              <div class="prereq-detail">{item.detail}</div>
+            </div>
+            {#if !item.complete}
+              <div class="prereq-action">{item.action}<ArrowRight size={13} strokeWidth={1.5} aria-hidden="true" /></div>
+            {/if}
+          </button>
+        {/each}
+      </div>
+      <button
+        type="button"
+        class:ready={state.setupReady}
+        class="setup-complete-btn"
+        title={!state.setupReady ? `Missing: ${state.blockedSetupText}` : "Completing setup switches the cube to child mode."}
+        disabled={!state.setupReady}
+        on:click={actions.completeSetup}
+      >
+        <Play size={16} strokeWidth={1.5} aria-hidden="true" />
+        Complete setup — {state.prerequisites.filter((item) => !item.complete).length} items remaining
+      </button>
+    </section>
+  {/if}
+
+  <section class="card" data-testid="dashboard-hero-card">
+    <div class="cube-hero">
+      <div class="cube-avatar" aria-hidden="true">
+        <Cuboid size={28} strokeWidth={1.5} />
+      </div>
+      <div class="cube-info">
+        <div class="cube-name">{state.setup?.cube_name || "Not set"}</div>
+        <div class="cube-sub" data-testid="hero-wifi-line">
+          <span
+            class:hero-icon-ok={wifiVerified}
+            class:hero-icon-warn={!wifiVerified}
+            class="cube-sub-icon"
+            data-testid="hero-wifi-icon"
+          >
+            <Wifi size={13} strokeWidth={1.5} aria-hidden="true" />
+          </span>
+          <span class="cube-sub-text">
+            <span class="cube-sub-label">{wifiSsid}</span>
+            <span class="cube-sub-sep">·</span>
+            <span class="cube-sub-value">{wifiAddress}</span>
+          </span>
+        </div>
+        <div class="cube-sub" data-testid="hero-usb-line">
+          <span
+            class:hero-icon-ok={usbConnected}
+            class:hero-icon-muted={!usbConnected}
+            class="cube-sub-icon"
+            data-testid="hero-usb-icon"
+          >
+            <Usb size={13} strokeWidth={1.5} aria-hidden="true" />
+          </span>
+          <span class="cube-sub-text">
+            <span class="cube-sub-label">USB</span>
+            <span class="cube-sub-sep">·</span>
+            <span class="cube-sub-value">{usbAddress}</span>
+          </span>
+        </div>
+      </div>
+    </div>
+    <div class="cube-stats" aria-label="Cube statistics" data-testid="dashboard-stats">
+      <button type="button" class="cstat" data-testid="dashboard-stat-presses" on:click={() => actions.openStatDetail("presses_today")}>
+        <div class="cstat-num">{playsToday(state.events)}</div>
+        <div class="cstat-lbl">Presses today</div>
+      </button>
+      <button type="button" class="cstat" data-testid="dashboard-stat-active" on:click={() => actions.openStatDetail("active")}>
+        <div class="cstat-num stat-active">{state.totalActive}</div>
+        <div class="cstat-lbl">Active sounds</div>
+      </button>
+      <button type="button" class="cstat" data-testid="dashboard-stat-draft" on:click={() => actions.openStatDetail("draft")}>
+        <div class="cstat-num stat-draft">{state.totalDrafts}</div>
+        <div class="cstat-lbl">Drafts</div>
+      </button>
+      <button type="button" class="cstat" data-testid="dashboard-stat-unused" on:click={() => actions.openStatDetail("unused")}>
+        <div class="cstat-num stat-unused">{state.totalUnused}</div>
+        <div class="cstat-lbl">Unused</div>
+      </button>
+    </div>
+  </section>
+
+  <section class="card" data-testid="dashboard-buttons-card">
+    <div class="sec-hdr">
+      <div class="sec-title"><Settings size={15} strokeWidth={1.5} aria-hidden="true" />Buttons</div>
+    </div>
+    <div class="btn-strip-outer">
+      <div class="btn-strip" aria-label="Cube button faces" data-testid="dashboard-button-strip">
+        {#each state.buttons as button}
+          <button type="button" class="btn-face-card" data-testid={`dashboard-button-${button.id}`} on:click={() => actions.openButtonConfig(button.id)}>
+            <div class="bfc-icon bfc-{modeClass(button.mode)}" data-testid={`dashboard-button-${button.id}-icon`}>
+              {#if button.mode === "language"}
+                <Languages size={18} strokeWidth={1.5} aria-hidden="true" />
+              {:else if button.mode === "animals"}
+                <PawPrint size={18} strokeWidth={1.5} aria-hidden="true" />
+              {:else if button.mode === "music"}
+                <Music size={18} strokeWidth={1.5} aria-hidden="true" />
+              {:else if button.mode === "setup_help"}
+                <Wrench size={18} strokeWidth={1.5} aria-hidden="true" />
+              {:else}
+                <Minus size={18} strokeWidth={1.5} aria-hidden="true" />
+              {/if}
+            </div>
+            <div class="bfc-name">{faceName(button.id)}</div>
+            <div class="bfc-count">{button.contentType ? `${button.activeCount} sounds` : "—"}</div>
+            <div class="bfc-mode bfm-{modeClass(button.mode)}">{contentLabel(button.mode, button.language)}</div>
+          </button>
+        {/each}
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="sec-hdr">
+      <div class="sec-title"><Bolt size={15} strokeWidth={1.5} aria-hidden="true" />Quick actions</div>
+    </div>
+    <div class="actions-grid">
+      <button type="button" class="action-card primary-action" disabled>
+        <div class="ac-icon ac-icon-white"><RefreshCw size={20} strokeWidth={1.5} aria-hidden="true" /></div>
+        <div class="ac-body">
+          <div class="ac-title">Run curation</div>
+          <div class="ac-desc">Update schedule with LLM</div>
+        </div>
+        <ArrowRight class="ac-arrow" size={18} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+      <button type="button" class="action-card" disabled>
+        <div class="ac-icon ac-icon-violet"><BarChart3 size={20} strokeWidth={1.5} aria-hidden="true" /></div>
+        <div class="ac-body">
+          <div class="ac-title">Learning stats</div>
+          <div class="ac-desc">Words heard, repetitions</div>
+        </div>
+        <ArrowRight class="ac-arrow" size={18} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="sec-hdr">
+      <div class="sec-title"><Activity size={15} strokeWidth={1.5} aria-hidden="true" />Recent activity</div>
+    </div>
+    {#if state.events.length === 0}
+      <div class="empty-state">
+        <Activity size={24} strokeWidth={1.5} aria-hidden="true" />
+        <strong>No button events yet</strong>
+        <p>The feed appears after the child presses a button and the runtime logs the event.</p>
+      </div>
+    {:else}
+      <div class="feed" role="list" aria-label="Recent activity feed">
+        {#each state.events as event}
+          <div class="feed-item" role="listitem">
+            <div class="feed-icon fi-press"><Hand size={14} strokeWidth={1.5} aria-hidden="true" /></div>
+            <div class="feed-body">
+              <div class="feed-text"><strong>{faceName(event.button_id)}</strong> pressed — played <strong>{event.response_text || event.response_id}</strong></div>
+              <div class="feed-time">{relativeTime(event.occurred_at)}</div>
+            </div>
+            <span class="feed-badge fb-teal">Play</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </section>
+</div>

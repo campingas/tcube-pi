@@ -1,11 +1,14 @@
 <script lang="ts">
+  import { FileAudio, Mic, Play, Square, Upload, WandSparkles, X } from "@lucide/svelte";
   import type { RecordedWav } from "../audio";
-  import type { ButtonConfig } from "../types";
+  import { recordingHint, recordingSaveHint } from "../recording-controller";
+  import type { ButtonConfig, DraftForm } from "../types";
 
   export let selectedTab: "record" | "upload" | "generate";
   export let setTab: (tab: "record" | "upload" | "generate") => void;
   export let selectedButton: ButtonConfig;
-  export let draftForm: { title: string; text: string; language: string; provider: string; voice: string };
+  export let draftForm: DraftForm;
+  export let updateDraftForm: (patch: Partial<DraftForm>) => void;
   export let languages: string[] = [];
   export let providers: string[] = [];
   export let busy = false;
@@ -22,45 +25,57 @@
   export let submitUpload: () => void | Promise<void>;
   export let submitGeneration: () => void | Promise<void>;
   export let minutes: (seconds: number) => string;
+  export let recordingStatus: "idle" | "recording" | "processing" | "ready" | "saving";
+  export let recordWaveform: number[] = [];
+  export let generatedSpeechDisabled = false;
+  export let generatedSpeechStatusLoading = false;
+  export let generatedSpeechStatusError: string | null = null;
 </script>
 
 <section class="content-input-surface">
-  <div class="content-input-tabs" role="tablist" aria-label="Add content">
+  <div class="add-tabs" role="tablist" aria-label="Add content">
     <button
       type="button"
       role="tab"
-      class="content-input-tab"
+      class:active-atab={selectedTab === "record"}
+      class="atab"
       aria-selected={selectedTab === "record"}
       on:click={() => setTab("record")}
     >
+      <Mic size={15} strokeWidth={1.5} aria-hidden="true" />
       Record
     </button>
     <button
       type="button"
       role="tab"
-      class="content-input-tab"
+      class:active-atab={selectedTab === "upload"}
+      class="atab"
       aria-selected={selectedTab === "upload"}
       on:click={() => setTab("upload")}
     >
+      <Upload size={15} strokeWidth={1.5} aria-hidden="true" />
       Upload
     </button>
     <button
       type="button"
       role="tab"
-      class="content-input-tab"
+      class:active-atab={selectedTab === "generate"}
+      class="atab"
       aria-selected={selectedTab === "generate"}
       on:click={() => setTab("generate")}
       disabled={selectedButton.contentType !== "language"}
     >
+      <WandSparkles size={15} strokeWidth={1.5} aria-hidden="true" />
       Generate
     </button>
   </div>
 
-  <div class="composer-fields">
-    <label>Title or label <input class="neo-field" bind:value={draftForm.title} placeholder="Hello baby" /></label>
-    <label>Text <input class="neo-field" bind:value={draftForm.text} placeholder={selectedButton.contentType === "music" ? "Optional" : "Short phrase"} /></label>
+  <div class="add-body add-meta-grid">
+    <label>Title or label
+      <input class="neo-field" value={draftForm.title} placeholder="Hello baby" on:input={(event) => updateDraftForm({ title: (event.currentTarget as HTMLInputElement).value })} />
+    </label>
     <label>Language
-      <select class="neo-field" bind:value={draftForm.language} disabled={selectedButton.contentType === "language"}>
+      <select class="neo-field" value={draftForm.language} disabled={selectedButton.contentType === "language"} on:change={(event) => updateDraftForm({ language: (event.currentTarget as HTMLSelectElement).value })}>
         {#each languages as language}
           <option value={language}>{language}</option>
         {/each}
@@ -69,39 +84,88 @@
   </div>
 
   {#if selectedTab === "record"}
-    <div class="record-box">
-      <p class="muted">Microphone input is converted to WAV before upload. Recording requires HTTPS or localhost.</p>
-      <div class="button-row">
-        <button type="button" class="neo-button" on:click={startRecording} disabled={Boolean(recorder) || busy}>Start</button>
-        <button type="button" class="neo-button secondary" on:click={stopRecording} disabled={!recorder}>Stop {recordSeconds ? minutes(recordSeconds) : ""}</button>
-        <button type="button" class="neo-button secondary" on:click={revokeRecording} disabled={!recordedWav}>Discard</button>
-      </div>
+    <div class:recording-active={recordingStatus === "recording"} class:recording-ready={Boolean(recordedWav)} class="record-zone" data-testid="record-zone">
+      <button type="button" class:recording={recordingStatus === "recording"} class="record-btn-big" data-testid="record-toggle" on:click={() => (recorder ? stopRecording() : startRecording())} disabled={busy || recordingStatus === "processing" || recordingStatus === "saving"} aria-label={recorder ? "Stop recording" : "Start recording"}>
+        {#if recorder}
+          <span class="record-stop-dot" aria-hidden="true"></span>
+        {:else}
+          <Mic size={24} strokeWidth={1.5} aria-hidden="true" />
+        {/if}
+      </button>
+      <label class="field-label">Text spoken
+        <input class="neo-field" value={draftForm.text} placeholder={selectedButton.contentType === "music" ? "Optional" : "Short phrase"} on:input={(event) => updateDraftForm({ text: (event.currentTarget as HTMLInputElement).value })} />
+      </label>
+      <div class="record-step" data-testid="record-status">{recordingHint(recordingStatus, recordSeconds, Boolean(recordedWav))}</div>
+      {#if recordWaveform.length}
+        <div class="record-wave" aria-label="Live microphone level" data-testid="record-waveform">
+          {#each recordWaveform as level}
+            <span style={`height: ${Math.max(8, Math.round(level * 100))}%`}></span>
+          {/each}
+        </div>
+      {/if}
+      <p class="record-hint">Microphone input is converted to WAV before upload. Recording requires HTTPS or localhost.</p>
+      <p class="record-hint">After recording, preview the audio here before saving.</p>
       {#if recordedWav}
         <audio controls src={recordedWav.url}></audio>
         <p class="hint">Duration {minutes(recordedWav.durationSeconds)}</p>
-        <button type="button" class="neo-button" on:click={submitRecording} disabled={busy}>Upload recording</button>
+        <p class="muted">{recordingSaveHint(selectedButton.contentType, draftForm.text, Boolean(recordedWav))}</p>
+        <div class="add-action-row">
+          <button type="button" class="btn-secondary" on:click={revokeRecording} disabled={busy}>
+            <X size={15} strokeWidth={1.5} aria-hidden="true" />
+            Discard
+          </button>
+          <button type="button" class="btn-primary" on:click={submitRecording} disabled={busy}>
+            <Play size={15} strokeWidth={1.5} aria-hidden="true" />
+            Save recording
+          </button>
+        </div>
       {/if}
     </div>
   {:else if selectedTab === "upload"}
-    <div class="record-box">
-      <input class="neo-field file-field" type="file" accept="audio/mpeg,audio/mp3,audio/wav,.mp3,.wav" on:change={chooseUpload} />
+    <div class="upload-zone" data-testid="upload-zone">
+      <div class="upload-icon-big">
+        <FileAudio size={24} strokeWidth={1.5} aria-hidden="true" />
+      </div>
+      <label class="upload-hint">Choose an MP3 or WAV file to stage as a draft.
+        <input class="neo-field file-field" type="file" accept="audio/mpeg,audio/mp3,audio/wav,.mp3,.wav" on:change={chooseUpload} />
+      </label>
       {#if uploadPreviewUrl}
         <audio controls src={uploadPreviewUrl}></audio>
       {/if}
-      <button type="button" class="neo-button" on:click={submitUpload} disabled={busy || !uploadFile}>Upload draft</button>
+      <button type="button" class="btn-primary" on:click={submitUpload} disabled={busy || !uploadFile}>
+        <Upload size={15} strokeWidth={1.5} aria-hidden="true" />
+        Upload draft
+      </button>
     </div>
   {:else}
-    <form class="composer-fields" on:submit|preventDefault={submitGeneration}>
-      <label>Provider
-        <select class="neo-field" bind:value={draftForm.provider}>
-          {#each providers as provider}
-            <option value={provider}>{provider}</option>
-          {/each}
-        </select>
+    <form class="add-body" on:submit|preventDefault={submitGeneration}>
+      <label class="gen-field">Text to speech
+        <input class="neo-field" value={draftForm.text} placeholder="Short phrase" disabled={generatedSpeechDisabled} on:input={(event) => updateDraftForm({ text: (event.currentTarget as HTMLInputElement).value })} />
       </label>
-      <label>Voice <input class="neo-field" bind:value={draftForm.voice} placeholder="Optional" /></label>
+      <div class="gen-row">
+        <label class="gen-field">Provider
+          <select class="neo-field" value={draftForm.provider} disabled={generatedSpeechDisabled} on:change={(event) => updateDraftForm({ provider: (event.currentTarget as HTMLSelectElement).value })}>
+            {#each providers as provider}
+              <option value={provider}>{provider}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="gen-field">Voice
+          <input class="neo-field" value={draftForm.voice} placeholder="Optional" disabled={generatedSpeechDisabled} on:input={(event) => updateDraftForm({ voice: (event.currentTarget as HTMLInputElement).value })} />
+        </label>
+      </div>
+      {#if generatedSpeechStatusError}
+        <div class="content-api-error" role="status" data-testid="tts-status-error">{generatedSpeechStatusError}</div>
+      {:else if generatedSpeechStatusLoading}
+        <div class="content-api-error" role="status" data-testid="tts-status-loading">Checking generated speech service...</div>
+      {:else if generatedSpeechDisabled}
+        <div class="content-api-error" role="alert" data-testid="tts-offline-notice">TTS provider is offline or unreachable. Start the local TTS service before generating speech.</div>
+      {/if}
       <p class="muted composer-note">Generated audio is saved as an inactive draft. Review and activate it before the cube can play it.</p>
-      <button type="submit" class="neo-button" disabled={busy || selectedButton.contentType !== "language"}>Generate draft</button>
+      <button type="submit" class="btn-primary" disabled={busy || selectedButton.contentType !== "language" || generatedSpeechDisabled}>
+        <WandSparkles size={15} strokeWidth={1.5} aria-hidden="true" />
+        Generate speech
+      </button>
     </form>
   {/if}
 </section>

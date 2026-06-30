@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Check, Trash2 } from "@lucide/svelte";
   import type { InactiveContentItem } from "../api";
 
   export let items: InactiveContentItem[] = [];
@@ -31,7 +32,10 @@
   {:else if items.length}
     <div class="content-list">
       {#each items as item}
-        <article class="content-row draft">
+        <div class="ci" role="listitem">
+          <div class="ci-icon {item.source === 'generated' ? 'ci-generated' : item.source === 'uploaded' ? 'ci-uploaded' : 'ci-recorded'}">
+            <Check size={16} strokeWidth={1.5} aria-hidden="true" />
+          </div>
           <div>
             <strong>{item.title}</strong>
             <p>{item.text || item.audio_path}</p>
@@ -48,11 +52,10 @@
               Trash
             </button>
           </div>
-        </article>
+        </div>
       {/each}
     </div>
   {:else}
     <p class="muted">No inactive drafts waiting for review.</p>
   {/if}
 </section>
-
