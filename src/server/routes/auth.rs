@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::config::AdminConfig;
+use crate::db::admin::activity::{record_activity_event, NewActivityEvent};
 use crate::db::admin::auth::{
     account_by_username, account_password_hash, authenticate_session, create_session,
     ensure_first_account_owner_membership, first_cube_identity, generate_uuid_v4, hash_password,
@@ -162,6 +163,7 @@ pub(crate) fn login_password(
         anyhow::bail!("invalid username or password");
     }
     let token = create_session(&conn, &account.id)?;
+    record_sign_in(&conn, &account.id, &account.username)?;
     ensure_first_account_owner_membership(&conn, &account.id)?;
     let cubes = local_cubes(&conn, &account.id)?
         .into_iter()
@@ -240,6 +242,7 @@ pub(crate) fn bootstrap_owner(
     )?;
 
     let token = create_session(&conn, &account_id)?;
+    record_sign_in(&conn, &account_id, &username)?;
     let cubes = local_cubes(&conn, &account_id)?
         .into_iter()
         .map(Into::into)
@@ -439,6 +442,7 @@ pub(crate) fn accept_invitation(
         params![now(), account_id, invitation.0],
     )?;
     let token = create_session(&conn, &account_id)?;
+    record_sign_in(&conn, &account_id, &username)?;
     let cubes = local_cubes(&conn, &account_id)?
         .into_iter()
         .map(Into::into)
@@ -482,4 +486,22 @@ pub(crate) fn session_cookie(token: &str) -> String {
 
 pub(crate) fn clear_session_cookie() -> String {
     format!("{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0")
+}
+
+fn record_sign_in(conn: &Connection, account_id: &str, username: &str) -> Result<()> {
+    record_activity_event(
+        conn,
+        &NewActivityEvent {
+            kind: "signed_in",
+            occurred_at: &now(),
+            account_id: Some(account_id),
+            button_id: None,
+            content_id: None,
+            content_type: None,
+            content_title: None,
+            audio_path: None,
+            source: None,
+            detail: Some(username),
+        },
+    )
 }

@@ -84,7 +84,7 @@
     ContentInventoryItem,
     ContentType,
     InactiveContentItem,
-    RecentButtonEvent,
+    RecentActivityEvent,
     ServiceStatus,
     SetupReview
   } from "./api";
@@ -146,7 +146,7 @@
   let status: ServiceStatus | null = null;
   let session: AuthSession | null = null;
   let setup: SetupReview | null = null;
-  let events: RecentButtonEvent[] = [];
+  let events: RecentActivityEvent[] = [];
   let inventory: ContentInventory | null = null;
   let inventoryError: string | null = null;
   let loading = true;

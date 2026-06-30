@@ -358,7 +358,7 @@ mod tests {
             method: "GET".to_string(),
             path: "/api/auth/session".to_string(),
             query: HashMap::new(),
-            headers: HashMap::from([("cookie".to_string(), cookie)]),
+            headers: HashMap::from([("cookie".to_string(), cookie.clone())]),
             body: Vec::new(),
         };
         let session_response = axum_request(&session_request, &config);
@@ -367,6 +367,21 @@ mod tests {
         assert_eq!(session_response.status, 200);
         assert_eq!(body["authenticated"], true);
         assert_eq!(body["account"]["username"], "admin");
+
+        let events_response = axum_request(
+            &TestRequest {
+                method: "GET".to_string(),
+                path: "/api/pi/v1/events/recent".to_string(),
+                query: HashMap::new(),
+                headers: HashMap::from([("cookie".to_string(), cookie)]),
+                body: Vec::new(),
+            },
+            &config,
+        );
+        assert_eq!(events_response.status, 200);
+        let events_body: serde_json::Value = serde_json::from_slice(&events_response.body).unwrap();
+        assert_eq!(events_body[0]["kind"], "signed_in");
+        assert_eq!(events_body[0]["text"], "admin");
     }
 
     #[test]
@@ -470,7 +485,9 @@ mod tests {
         );
         assert_eq!(events.status, 200);
         let body: serde_json::Value = serde_json::from_slice(&events.body).unwrap();
+        assert_eq!(body[0]["kind"], "button_pressed");
         assert_eq!(body[0]["button_id"], 1);
+        assert_eq!(body[0]["button_label"], "Top");
         assert_eq!(body[0]["response_text"], "Hello");
     }
 
@@ -1141,7 +1158,7 @@ mod tests {
                 method: "DELETE".to_string(),
                 path: "/api/content/items/language-one".to_string(),
                 query: HashMap::new(),
-                headers: HashMap::from([("cookie".to_string(), cookie)]),
+                headers: HashMap::from([("cookie".to_string(), cookie.clone())]),
                 body: Vec::new(),
             },
             &config,
@@ -1156,6 +1173,30 @@ mod tests {
             )
             .unwrap();
         assert_eq!(trashed_state, "trash");
+
+        let events = axum_request(
+            &TestRequest {
+                method: "GET".to_string(),
+                path: "/api/pi/v1/events/recent".to_string(),
+                query: HashMap::new(),
+                headers: HashMap::from([("cookie".to_string(), cookie)]),
+                body: Vec::new(),
+            },
+            &config,
+        );
+        assert_eq!(events.status, 200);
+        let events_body: serde_json::Value = serde_json::from_slice(&events.body).unwrap();
+        let kinds = events_body
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|event| event["kind"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(kinds.contains(&"content_activated"));
+        assert!(kinds.contains(&"content_deleted"));
+        assert!(events_body.as_array().unwrap().iter().any(|event| {
+            event["kind"] == "content_activated" && event["audio_filename"] == "roar.wav"
+        }));
     }
 
     #[test]
@@ -1850,6 +1891,19 @@ mod tests {
                 created_at text not null,
                 expires_at text not null,
                 used_at text
+            );
+            create table admin_activity_events (
+                id integer primary key autoincrement,
+                occurred_at text not null,
+                kind text not null,
+                account_id text,
+                button_id integer,
+                content_id text,
+                content_type text,
+                content_title text,
+                audio_path text,
+                source text,
+                detail text
             );
             create table device_setup (
                 id integer primary key check (id = 1),

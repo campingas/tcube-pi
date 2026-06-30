@@ -135,12 +135,29 @@ export type GeneratedSpeechStatus = {
   message: string;
 };
 
-export type RecentButtonEvent = {
+export type RecentActivityEvent = {
+  id: string;
+  kind:
+    | "signed_in"
+    | "button_pressed"
+    | "content_recorded"
+    | "content_uploaded"
+    | "content_generated"
+    | "content_activated"
+    | "content_deleted"
+    | string;
   occurred_at: string;
-  button_id: number;
-  mode: string;
-  response_id: string;
-  response_text: string;
+  button_id: number | null;
+  button_label: string | null;
+  mode: string | null;
+  response_id: string | null;
+  response_text: string | null;
+  content_id: string | null;
+  content_type: string | null;
+  content_title: string | null;
+  audio_filename: string | null;
+  source: string | null;
+  text: string | null;
 };
 
 type RequestOptions = RequestInit & {
@@ -233,7 +250,7 @@ export function getSetupReview() {
 }
 
 export function listRecentEvents() {
-  return api<RecentButtonEvent[]>(`${API_ROOT}/events/recent`);
+  return api<RecentActivityEvent[]>(`${API_ROOT}/events/recent`);
 }
 
 export function getContentInventory() {

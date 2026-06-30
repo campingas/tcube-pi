@@ -19,6 +19,9 @@ test("mobile dashboard stacks primary cards and keeps stats within the viewport"
   await expect(hero.locator(".cube-badge")).toHaveCount(0);
   await expect(page.getByTestId("dashboard-inventory-card")).toHaveCount(0);
   await expect(buttons).toBeVisible();
+  await expect(page.getByText("Signed in as campingas")).toBeVisible();
+  await expect(page.getByText("Top button pressed — played apple_en_recorded.wav")).toBeVisible();
+  await expect(page.getByText("bird_en_voxtral.wav activated on Top button")).toBeVisible();
 
   const boxes = await Promise.all([hero.boundingBox(), buttons.boundingBox()]);
   expect(boxes.every(Boolean)).toBe(true);
@@ -86,7 +89,7 @@ test("top bar shows manager role as manager while keeping manager styling", asyn
   });
   await page.goto("/");
 
-  await expect(page.getByText("Signed in as")).toBeVisible();
+  await expect(page.locator(".topbar-session-prefix")).toHaveText("Signed in as");
   await expect(page.locator(".topbar-session-user")).toHaveText("bob43");
   await expect(page.locator(".topbar-session-role")).toHaveText("manager");
   await expect(page.locator(".topbar-session-role")).toHaveClass(/role-admin/);
@@ -463,11 +466,52 @@ async function mockAdminApi(page: Page) {
       await route.fulfill({
         json: [
           {
+            id: "activity-1",
+            kind: "signed_in",
+            occurred_at: new Date().toISOString(),
+            button_id: null,
+            button_label: null,
+            mode: null,
+            response_id: null,
+            response_text: null,
+            content_id: null,
+            content_type: null,
+            content_title: null,
+            audio_filename: null,
+            source: null,
+            text: "campingas"
+          },
+          {
+            id: "button-1",
+            kind: "button_pressed",
             occurred_at: new Date().toISOString(),
             button_id: 1,
+            button_label: "Top",
             mode: "language",
             response_id: "hello",
-            response_text: "Hello"
+            response_text: "Hello",
+            content_id: null,
+            content_type: null,
+            content_title: null,
+            audio_filename: "apple_en_recorded.wav",
+            source: null,
+            text: "Hello"
+          },
+          {
+            id: "activity-2",
+            kind: "content_activated",
+            occurred_at: new Date().toISOString(),
+            button_id: 1,
+            button_label: "Top",
+            mode: null,
+            response_id: null,
+            response_text: null,
+            content_id: "bird",
+            content_type: "language",
+            content_title: "Bird",
+            audio_filename: "bird_en_voxtral.wav",
+            source: "generated",
+            text: "bird"
           }
         ]
       });

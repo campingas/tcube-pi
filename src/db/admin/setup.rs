@@ -19,6 +19,7 @@ const FACTORY_RESET_TABLES: &[&str] = &[
     "media_artifacts",
     "content_jobs",
     "content_items",
+    "admin_activity_events",
     "button_events",
     "setup_debug_events",
     "trusted_sessions",
@@ -204,7 +205,7 @@ pub(crate) fn factory_reset_database(conn: &mut Connection, config: &AdminConfig
             .with_context(|| format!("failed to clear {table} during factory reset"))?;
     }
     tx.execute(
-        "delete from sqlite_sequence where name in ('setup_debug_events', 'button_events', 'content_package_failures')",
+        "delete from sqlite_sequence where name in ('setup_debug_events', 'button_events', 'content_package_failures', 'admin_activity_events')",
         [],
     )
     .context("failed to reset factory reset sequences")?;

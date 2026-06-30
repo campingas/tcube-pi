@@ -860,10 +860,46 @@ audio {
   border-radius: 8px;
 }
 
-.fi-press,
-.fb-teal {
+.fi-button_pressed,
+.fb-button_pressed {
   background: var(--glow-teal);
   color: var(--accent-teal);
+}
+
+.fi-signed_in,
+.fb-signed_in {
+  background: var(--surface-2);
+  color: var(--accent-sage);
+}
+
+.fi-content_recorded,
+.fb-content_recorded {
+  background: var(--glow-sage);
+  color: var(--accent-sage);
+}
+
+.fi-content_uploaded,
+.fb-content_uploaded {
+  background: var(--glow-coral);
+  color: var(--accent-coral);
+}
+
+.fi-content_generated,
+.fb-content_generated {
+  background: var(--glow-violet);
+  color: var(--accent-violet);
+}
+
+.fi-content_activated,
+.fb-content_activated {
+  background: var(--glow-teal);
+  color: var(--accent-teal);
+}
+
+.fi-content_deleted,
+.fb-content_deleted {
+  background: var(--glow-amber);
+  color: var(--accent-amber);
 }
 
 .feed-body {

@@ -19,6 +19,7 @@ Last updated: 2026-07-01 (+07)
 - SQLite event logging and setup/debug event separation.
 - Pi-hosted Rust admin API with setup, authentication, content, media, generated speech, recent button events, and local static/media serving endpoints.
 - Versioned admin API aliases under `/api/pi/v1/*` are supported for auth, setup, content, media, and recent events while legacy unversioned paths remain available.
+- The recent activity API now returns a unified feed from runtime button events plus admin activity events for successful sign-in, recording, upload, generated speech, activation, and delete/trash operations.
 - Language button content listing falls back from the selected language to existing active/draft content attached to the same button, so admin review does not appear empty after a button language change.
 - Parent-created audio drafts are stored under `data/audio/draft/{content_type}/` and activation moves them to `data/audio/active/{content_type}/`; legacy `data/media/...` preview paths remain readable for existing rows.
 - Svelte + Vite + Tailwind admin UI source under `admin-ui/`, with checked-in static build output under `admin-ui/build/`.
@@ -126,6 +127,13 @@ Latest admin UI hero/status refresh on 2026-07-01:
 - The dashboard hero now shows separate Wi-Fi and USB subtitle lines, removes the old reachability badge and dot, and uses icon color to reflect verified Wi-Fi and USB connection state.
 - The setup review payload now includes `wifi_ssid`, and the admin status payload now includes an explicit `usb_connected` flag.
 - The buttons section action is now icon-only, with the visible `Manage all` label removed.
+
+Latest recent activity feed update on 2026-07-01:
+
+- Added `admin_activity_events` to SQLite so successful admin sign-in and content mutations are recorded separately from runtime-owned `button_events`.
+- `/api/pi/v1/events/recent` now returns normalized mixed activity rows with event kind, button label, content metadata, audio filename, and elapsed-time-ready timestamps.
+- The dashboard Recent activity card now renders dedicated icons, action text, and relative time for sign-in, button press, recorded, uploaded, generated, activated, and deleted activity.
+- Validation: `just check`, `just test`, `just check-admin-ui`, `just build-admin-ui`, `just test-admin-ui-unit`, and `just test-admin-ui-mobile`.
 
 Latest mobile-first admin UI draft replication on 2026-06-28:
 

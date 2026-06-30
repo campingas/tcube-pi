@@ -56,7 +56,7 @@ The Pi-hosted admin service currently supports:
 - Activation of inactive content items.
 - Moving content items to trash.
 - Cleanup of unused generated speech for a selected button and language.
-- Authenticated recent button event listing from the local SQLite event log for parent monitoring.
+- Authenticated recent activity listing from local SQLite button and admin activity logs for parent monitoring.
 
 ## Admin UI Features Right Now
 
@@ -65,7 +65,7 @@ The admin UI is a Svelte and Vite dashboard served as same-origin static files b
 It currently can:
 
 - Load service status, session state, setup review data, and visible content state from the Pi admin API.
-- Load recent button events from the Pi admin API activity feed.
+- Load recent signed-in, content, and button-play events from the Pi admin API activity feed.
 - Show whether the backend database, UI distribution, dashboard address, and USB address are configured.
 - Create the first local owner account when bootstrap is required.
 - Log in and log out with local cube accounts.

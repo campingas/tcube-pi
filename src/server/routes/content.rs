@@ -4,6 +4,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::config::AdminConfig;
+use crate::db::admin::activity::{record_activity_event, NewActivityEvent};
 use crate::db::admin::auth::{
     authenticate_session, now, random_token, require_local_cube_role, timestamp, RoleRequirement,
 };
@@ -108,6 +109,17 @@ pub(crate) struct GeneratedSpeechRequest {
     text: String,
     provider: Option<String>,
     voice: Option<String>,
+}
+
+struct ContentActivity<'a> {
+    kind: &'a str,
+    button_id: Option<i64>,
+    content_id: Option<&'a str>,
+    content_type: Option<&'a str>,
+    content_title: Option<&'a str>,
+    audio_path: Option<&'a str>,
+    source: Option<&'a str>,
+    detail: Option<&'a str>,
 }
 
 pub(crate) fn list_active_content(
@@ -255,6 +267,22 @@ pub(crate) fn trash_unused_content(
     let trashed_at = now();
     let purge_after_at = purge_after();
     content_storage::trash_content_items(&conn, &unused, &trashed_at, &purge_after_at)?;
+    if !unused.is_empty() {
+        let detail = format!("{} unused audio item(s)", unused.len());
+        record_content_activity(
+            &conn,
+            ContentActivity {
+                kind: "content_deleted",
+                button_id: None,
+                content_id: None,
+                content_type: None,
+                content_title: None,
+                audio_path: None,
+                source: None,
+                detail: Some(&detail),
+            },
+        )?;
+    }
     Ok(CleanupResponse {
         status: "ok",
         deleted_count: unused.len(),
@@ -337,6 +365,23 @@ pub(crate) fn save_multipart_media(
         &relative_path,
         None,
     )?;
+    record_content_activity(
+        &conn,
+        ContentActivity {
+            kind: if source == "recorded" {
+                "content_recorded"
+            } else {
+                "content_uploaded"
+            },
+            button_id: Some(normalized.button_id),
+            content_id: Some(&item_id),
+            content_type: Some(&normalized.content_type),
+            content_title: Some(&title),
+            audio_path: Some(&relative_path),
+            source: Some(source),
+            detail: None,
+        },
+    )?;
     inactive_response_for_item(&conn, &item_id)
 }
 
@@ -400,6 +445,19 @@ pub(crate) fn save_generated_speech(
         &relative_path,
         Some(text),
     )?;
+    record_content_activity(
+        &conn,
+        ContentActivity {
+            kind: "content_generated",
+            button_id: Some(body.button_id),
+            content_id: Some(&item_id),
+            content_type: Some("language"),
+            content_title: Some(&filename),
+            audio_path: Some(&relative_path),
+            source: Some("generated"),
+            detail: Some(text),
+        },
+    )?;
     inactive_response_for_item(&conn, &item_id)
 }
 
@@ -429,17 +487,32 @@ pub(crate) fn activate_content_item(
     if item.state != "archived" {
         anyhow::bail!("content is not inactive");
     }
+    let title = item.title.clone().unwrap_or_else(|| item_id.to_string());
+    let text = item.text.clone();
     let audio_path = item.audio_path.clone().unwrap_or_default();
     let next_audio_path = activate_audio_file(config, &audio_path)?;
     content_storage::activate_content_item(&conn, &item.id, &next_audio_path)?;
+    record_content_activity(
+        &conn,
+        ContentActivity {
+            kind: "content_activated",
+            button_id: Some(item.button_id),
+            content_id: Some(&item.id),
+            content_type: Some(&item.content_type),
+            content_title: Some(&title),
+            audio_path: Some(&next_audio_path),
+            source: Some(&item.source),
+            detail: text.as_deref(),
+        },
+    )?;
     Ok(InactiveContentResponse {
         id: item.id,
         content_type: item.content_type.clone(),
-        title: item.title.unwrap_or_else(|| item_id.to_string()),
+        title: title.clone(),
         text: if item.content_type == "music" {
             None
         } else {
-            item.text.or_else(|| Some(item_id.to_string()))
+            text.or_else(|| Some(item_id.to_string()))
         },
         language: item.language,
         state: "active",
@@ -457,12 +530,28 @@ pub(crate) fn trash_content_item(
     let conn = authenticated_connection(config, token)?;
     let item =
         content_storage::content_item_by_id(&conn, item_id)?.context("content item not found")?;
+    let title = item.title.clone().unwrap_or_else(|| item_id.to_string());
+    let audio_path = item.audio_path.clone();
+    let detail = item.text.clone();
     delete_draft_audio_file(config, item.audio_path.as_deref())?;
     let trashed_at = now();
     let changes = content_storage::trash_content_item(&conn, item_id, &trashed_at, &purge_after())?;
     if changes == 0 {
         anyhow::bail!("content item not found: {item_id}");
     }
+    record_content_activity(
+        &conn,
+        ContentActivity {
+            kind: "content_deleted",
+            button_id: Some(item.button_id),
+            content_id: Some(&item.id),
+            content_type: Some(&item.content_type),
+            content_title: Some(&title),
+            audio_path: audio_path.as_deref(),
+            source: Some(&item.source),
+            detail: detail.as_deref(),
+        },
+    )?;
     Ok(())
 }
 
@@ -490,6 +579,22 @@ pub(crate) fn trash_unused_generated_speech(
         &trashed_at,
         &purge_after(),
     )?;
+    if deleted_count > 0 {
+        let detail = format!("{deleted_count} draft(s) for {language}");
+        record_content_activity(
+            &conn,
+            ContentActivity {
+                kind: "content_deleted",
+                button_id: Some(body.button_id),
+                content_id: None,
+                content_type: Some("language"),
+                content_title: Some("Generated drafts"),
+                audio_path: None,
+                source: Some("generated"),
+                detail: Some(&detail),
+            },
+        )?;
+    }
     Ok(CleanupResponse {
         status: "ok",
         deleted_count,
@@ -563,6 +668,24 @@ fn validate_content_scope(button_id: i64, content_type: &str) -> Result<()> {
 
 fn purge_after() -> String {
     timestamp(Utc::now() + chrono::Duration::days(15))
+}
+
+fn record_content_activity(conn: &Connection, event: ContentActivity<'_>) -> Result<()> {
+    record_activity_event(
+        conn,
+        &NewActivityEvent {
+            kind: event.kind,
+            occurred_at: &now(),
+            account_id: None,
+            button_id: event.button_id,
+            content_id: event.content_id,
+            content_type: event.content_type,
+            content_title: event.content_title,
+            audio_path: event.audio_path,
+            source: event.source,
+            detail: event.detail,
+        },
+    )
 }
 
 fn empty_to_null(value: &str) -> Option<&str> {

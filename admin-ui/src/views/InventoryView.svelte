@@ -1,6 +1,6 @@
 <script lang="ts">
   import { AlertTriangle, FileAudio, Hand, RefreshCw } from "@lucide/svelte";
-  import type { AuthSession, ContentInventory, ContentInventoryItem, RecentButtonEvent } from "../api";
+  import type { AuthSession, ContentInventory, ContentInventoryItem, RecentActivityEvent } from "../api";
   import type { InventoryFilter, MessageType } from "../types";
   import TopBar from "../components/TopBar.svelte";
   import AudioContentRow from "../components/AudioContentRow.svelte";
@@ -12,7 +12,7 @@
     messageType: MessageType;
     inventory: ContentInventory | null;
     inventoryError: string | null;
-    events: RecentButtonEvent[];
+    events: RecentActivityEvent[];
     filter: InventoryFilter;
   };
 
@@ -23,9 +23,9 @@
     openInventoryButton: (item: ContentInventoryItem) => void;
   };
 
-  function todayEvents(events: RecentButtonEvent[]) {
+  function todayEvents(events: RecentActivityEvent[]) {
     const today = new Date().toISOString().slice(0, 10);
-    return events.filter((event) => event.occurred_at.startsWith(today));
+    return events.filter((event) => event.kind === "button_pressed" && event.occurred_at.startsWith(today));
   }
 
   function inventoryItems(status: InventoryFilter) {
@@ -123,8 +123,8 @@
               <Hand size={16} strokeWidth={1.5} aria-hidden="true" />
             </div>
             <div class="ci-meta">
-              <strong class="ci-name">{event.response_text || event.response_id}</strong>
-              <p class="ci-detail">{faceName(event.button_id)} · {event.mode} · {relativeTime(event.occurred_at)}</p>
+              <strong class="ci-name">{event.response_text || event.response_id || "Played audio"}</strong>
+              <p class="ci-detail">{event.button_label || faceName(event.button_id ?? 0)} · {event.mode || "button"} · {relativeTime(event.occurred_at)}</p>
             </div>
           </div>
         {/each}

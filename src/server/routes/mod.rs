@@ -480,7 +480,7 @@ async fn trash_content_item(
 async fn recent_button_events(
     State(config): State<AdminState>,
     SessionCookie(token): SessionCookie,
-) -> Result<Json<Vec<events::RecentButtonEventResponse>>, ApiError> {
+) -> Result<Json<Vec<events::RecentActivityEventResponse>>, ApiError> {
     blocking(config, move |config| {
         events::recent_button_events(config, token.as_deref())
     })

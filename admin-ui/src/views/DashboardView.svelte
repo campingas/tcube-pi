@@ -9,21 +9,27 @@
     CircleCheck,
     Cuboid,
     Database,
+    FileAudio,
     Folder,
     Hand,
     HardDrive,
     Languages,
+    LogIn,
+    Mic,
     Minus,
     Music,
     PawPrint,
     Play,
     RefreshCw,
     Settings,
+    Trash2,
+    Upload,
     Usb,
+    WandSparkles,
     Wifi,
     Wrench
   } from "@lucide/svelte";
-  import type { AuthSession, RecentButtonEvent, ServiceStatus, SetupReview } from "../api";
+  import type { AuthSession, RecentActivityEvent, ServiceStatus, SetupReview } from "../api";
   import type { ButtonMode, ContentType } from "../api";
   import type { InventoryFilter, MessageType } from "../types";
   import TopBar from "../components/TopBar.svelte";
@@ -52,7 +58,7 @@
     message: string;
     messageType: MessageType;
     buttons: DashboardButton[];
-    events: RecentButtonEvent[];
+    events: RecentActivityEvent[];
     prerequisites: Prerequisite[];
     setupReady: boolean;
     blockedSetupText: string;
@@ -73,9 +79,42 @@
     completeSetup: () => void | Promise<void>;
   };
 
-  function playsToday(events: RecentButtonEvent[]) {
+  function playsToday(events: RecentActivityEvent[]) {
     const today = new Date().toISOString().slice(0, 10);
-    return events.filter((event) => event.occurred_at.startsWith(today)).length;
+    return events.filter((event) => event.kind === "button_pressed" && event.occurred_at.startsWith(today)).length;
+  }
+
+  function activityButtonText(event: RecentActivityEvent) {
+    if (!event.button_id && !event.button_label) return "";
+    return `${event.button_label || faceName(event.button_id ?? 0)} button`;
+  }
+
+  function activityAudioName(event: RecentActivityEvent) {
+    return event.audio_filename || event.content_title || event.response_text || event.response_id || event.content_id || "audio";
+  }
+
+  function activityText(event: RecentActivityEvent) {
+    const button = activityButtonText(event);
+    const audio = activityAudioName(event);
+    if (event.kind === "signed_in") return event.text ? `Signed in as ${event.text}` : "Signed in";
+    if (event.kind === "button_pressed") return `${button || "Button"} pressed — played ${audio}`;
+    if (event.kind === "content_recorded") return `${audio} recorded${button ? ` for ${button}` : ""}`;
+    if (event.kind === "content_uploaded") return `${audio} uploaded${button ? ` for ${button}` : ""}`;
+    if (event.kind === "content_generated") return `${audio} generated${button ? ` for ${button}` : ""}`;
+    if (event.kind === "content_activated") return `${audio} activated${button ? ` on ${button}` : ""}`;
+    if (event.kind === "content_deleted") return `${audio} deleted${button ? ` from ${button}` : ""}`;
+    return event.text || audio;
+  }
+
+  function activityBadge(event: RecentActivityEvent) {
+    if (event.kind === "signed_in") return "Auth";
+    if (event.kind === "button_pressed") return "Play";
+    if (event.kind === "content_recorded") return "Record";
+    if (event.kind === "content_uploaded") return "Upload";
+    if (event.kind === "content_generated") return "Generate";
+    if (event.kind === "content_activated") return "Active";
+    if (event.kind === "content_deleted") return "Trash";
+    return "Event";
   }
 
   let wifiVerified = false;
@@ -310,12 +349,30 @@
       <div class="feed" role="list" aria-label="Recent activity feed">
         {#each state.events as event}
           <div class="feed-item" role="listitem">
-            <div class="feed-icon fi-press"><Hand size={14} strokeWidth={1.5} aria-hidden="true" /></div>
+            <div class="feed-icon fi-{event.kind}">
+              {#if event.kind === "signed_in"}
+                <LogIn size={14} strokeWidth={1.5} aria-hidden="true" />
+              {:else if event.kind === "button_pressed"}
+                <Hand size={14} strokeWidth={1.5} aria-hidden="true" />
+              {:else if event.kind === "content_recorded"}
+                <Mic size={14} strokeWidth={1.5} aria-hidden="true" />
+              {:else if event.kind === "content_uploaded"}
+                <Upload size={14} strokeWidth={1.5} aria-hidden="true" />
+              {:else if event.kind === "content_generated"}
+                <WandSparkles size={14} strokeWidth={1.5} aria-hidden="true" />
+              {:else if event.kind === "content_activated"}
+                <Play size={14} strokeWidth={1.5} aria-hidden="true" />
+              {:else if event.kind === "content_deleted"}
+                <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" />
+              {:else}
+                <FileAudio size={14} strokeWidth={1.5} aria-hidden="true" />
+              {/if}
+            </div>
             <div class="feed-body">
-              <div class="feed-text"><strong>{faceName(event.button_id)}</strong> pressed — played <strong>{event.response_text || event.response_id}</strong></div>
+              <div class="feed-text">{activityText(event)}</div>
               <div class="feed-time">{relativeTime(event.occurred_at)}</div>
             </div>
-            <span class="feed-badge fb-teal">Play</span>
+            <span class="feed-badge fb-{event.kind}">{activityBadge(event)}</span>
           </div>
         {/each}
       </div>

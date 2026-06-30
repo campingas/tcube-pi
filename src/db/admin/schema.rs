@@ -130,6 +130,28 @@ pub(crate) fn migrate_admin_database(conn: &Connection, config: &AdminConfig) ->
           details text
         );
 
+        create table if not exists admin_activity_events (
+          id integer primary key autoincrement,
+          occurred_at text not null,
+          kind text not null check (kind in (
+            'signed_in',
+            'content_recorded',
+            'content_uploaded',
+            'content_generated',
+            'content_activated',
+            'content_deleted'
+          )),
+          account_id text,
+          button_id integer,
+          content_id text,
+          content_type text,
+          content_title text,
+          audio_path text,
+          source text,
+          detail text,
+          foreign key (account_id) references admin_accounts(id)
+        );
+
         create table if not exists button_events (
           id integer primary key autoincrement,
           occurred_at text not null,
@@ -244,10 +266,16 @@ pub(crate) fn migrate_admin_database(conn: &Connection, config: &AdminConfig) ->
 
         create index if not exists idx_button_events_response_id
           on button_events (response_id);
+
+        create index if not exists idx_button_events_recent
+          on button_events (occurred_at desc, id desc);
+
+        create index if not exists idx_admin_activity_events_recent
+          on admin_activity_events (occurred_at desc, id desc);
         ",
     )?;
     conn.execute(
-        "insert or ignore into schema_migrations (version) values (1), (2), (3)",
+        "insert or ignore into schema_migrations (version) values (1), (2), (3), (4)",
         [],
     )?;
     seed_admin_defaults(conn, config)?;

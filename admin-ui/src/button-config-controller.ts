@@ -1,4 +1,4 @@
-import type { ActiveContentItem, ContentEmptyState, InactiveContentItem, RecentButtonEvent, SetupReview } from "./api";
+import type { ActiveContentItem, ContentEmptyState, InactiveContentItem, RecentActivityEvent, SetupReview } from "./api";
 import type { ButtonConfig, ContentState, DraftForm, MessageType } from "./types";
 
 export type ButtonView = ButtonConfig & { activeCount: number; draftCount: number };
@@ -26,7 +26,7 @@ export type ButtonConfigViewModel = {
   recordedWav: unknown | null;
   uploadFile: File | null;
   contentDurations: Record<string, number>;
-  events: RecentButtonEvent[];
+  events: RecentActivityEvent[];
   generatedSpeechDisabled: boolean;
   busy: boolean;
 };
