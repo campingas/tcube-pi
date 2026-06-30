@@ -53,6 +53,7 @@ export type ActiveContentItem = {
   state: "active";
   audio_path: string | null;
   preview_url: string | null;
+  play_count: number;
 };
 
 export type InactiveContentItem = {

@@ -431,8 +431,12 @@
     return `${clean.slice(0, maxLength - 1).trimEnd()}…`;
   }
 
-  function contentPlaySummary(item: { id: string; source: string }) {
-    return `${sourceLabel(item.source)} · ${formatDuration(contentDurations[item.id] ?? 0)} · x plays`;
+  function playCountLabel(count: number) {
+    return count === 1 ? "1 play" : `${count} plays`;
+  }
+
+  function contentPlaySummary(item: { id: string; source: string; play_count?: number }) {
+    return `${sourceLabel(item.source)} · ${formatDuration(contentDurations[item.id] ?? 0)} · ${playCountLabel(item.play_count ?? 0)}`;
   }
 
   function openButtonConfig(id: number) {

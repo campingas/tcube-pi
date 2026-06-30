@@ -1,284 +1,3 @@
-use anyhow::{Context, Result};
-use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
-
-use crate::config::AdminConfig;
-#[cfg(test)]
-use crate::db::admin::auth::{
-    add_cube_membership, create_session, hash_password, now, session_expires_at, sha256_hex,
-    CubeRole,
-};
-use crate::db::admin::auth::{
-    authenticate_session, random_token, require_local_cube_role, RoleRequirement,
-};
-use crate::db::admin::content::{self as content_storage, NewContentItem};
-use crate::db::admin::schema::table_exists;
-#[cfg(test)]
-use crate::db::admin::schema::{migrate_admin_database, table_count};
-use crate::server::media::{
-    draft_audio_path, generated_filename, inspect_wav, media_filename, normalize_media_input,
-    uploaded_audio_extension, validate_wav, write_draft_audio_file, MediaInput, MAX_AUDIO_BYTES,
-};
-use crate::server::routes::content::{inactive_response_for_item, InactiveContentResponse};
-use crate::server::speech::{
-    generate_speech_audio, generated_speech_status_response, GeneratedSpeechStatusResponse,
-};
-
-#[derive(Debug, Serialize)]
-pub(crate) struct StatusResponse {
-    status: &'static str,
-    service: &'static str,
-    mode: &'static str,
-    database_present: bool,
-    ui_dist_present: bool,
-    media_root: String,
-    content_root: String,
-    hostname: String,
-    usb_address: String,
-    contract_note: &'static str,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct RecentButtonEventResponse {
-    occurred_at: String,
-    button_id: i64,
-    mode: String,
-    response_id: String,
-    response_text: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct GeneratedSpeechRequest {
-    button_id: i64,
-    language: String,
-    text: String,
-    provider: Option<String>,
-    voice: Option<String>,
-}
-
-pub(crate) fn pi_status(config: &AdminConfig) -> StatusResponse {
-    StatusResponse {
-        status: "ok",
-        service: "tcube-pi-admin",
-        mode: "pi_hosted_admin_spike",
-        database_present: config.database.exists(),
-        ui_dist_present: config.ui_dist.join("index.html").exists(),
-        media_root: config.media_root.display().to_string(),
-        content_root: config.content_root.display().to_string(),
-        hostname: config.hostname.clone(),
-        usb_address: config.usb_address.clone(),
-        contract_note: "Serves the static admin UI and compatible auth, setup, content, media, and status APIs behind the selected Caddy HTTPS boundary.",
-    }
-}
-
-pub(crate) fn save_multipart_media(
-    config: &AdminConfig,
-    token: Option<&str>,
-    input: MediaInput,
-    source: &str,
-) -> Result<InactiveContentResponse> {
-    let conn = authenticated_connection(config, token)?;
-    let normalized = normalize_media_input(&input, source)?;
-    if input.audio_bytes.len() > MAX_AUDIO_BYTES {
-        anyhow::bail!("{source} audio must be 25 MB or smaller");
-    }
-    let extension = if source == "recorded" {
-        let wav = inspect_wav(&input.audio_bytes)?;
-        validate_wav(&wav, &normalized.content_type)?;
-        "wav"
-    } else {
-        let extension = uploaded_audio_extension(&input.original_filename, &input.mime_type)?;
-        if extension == "wav" {
-            let wav = inspect_wav(&input.audio_bytes)?;
-            validate_wav(&wav, &normalized.content_type)?;
-        }
-        extension
-    };
-    let filename = media_filename(
-        source,
-        &normalized.content_type,
-        &normalized.language,
-        if normalized.content_type == "language" {
-            &normalized.text
-        } else {
-            &normalized.title
-        },
-        extension,
-    );
-    let title = if normalized.content_type == "language" {
-        filename.clone()
-    } else {
-        normalized.title.clone()
-    };
-    let relative_path = draft_audio_path(&normalized.content_type, &filename);
-    write_draft_audio_file(
-        config,
-        &normalized.content_type,
-        &filename,
-        &input.audio_bytes,
-    )?;
-
-    let item_id = format!("{source}-{}-{}", normalized.content_type, random_token(12)?);
-    let order_index =
-        content_storage::next_order_index(&conn, &normalized.content_type, normalized.button_id)?;
-    let text = if normalized.content_type == "language" {
-        normalized.text.clone()
-    } else {
-        normalized.title.clone()
-    };
-    content_storage::insert_content_item(
-        &conn,
-        &NewContentItem {
-            id: &item_id,
-            content_type: &normalized.content_type,
-            button_id: normalized.button_id,
-            language: empty_to_null(&normalized.language),
-            title: &title,
-            text: &text,
-            audio_path: &relative_path,
-            source,
-            order_index,
-        },
-    )?;
-    content_storage::insert_media_artifact_if_present(
-        &conn,
-        &item_id,
-        source,
-        &relative_path,
-        None,
-    )?;
-    inactive_response_for_item(&conn, &item_id)
-}
-
-pub(crate) fn save_generated_speech(
-    config: &AdminConfig,
-    token: Option<&str>,
-    body: GeneratedSpeechRequest,
-) -> Result<InactiveContentResponse> {
-    let conn = authenticated_connection(config, token)?;
-    let text = body.text.trim();
-    let language = body.language.trim();
-    if !(1..=5).contains(&body.button_id) {
-        anyhow::bail!("button id must be between 1 and 5");
-    }
-    if text.is_empty() {
-        anyhow::bail!("generated speech text is required");
-    }
-    if text.len() > 240 {
-        anyhow::bail!("generated speech text must be 240 characters or fewer");
-    }
-    if language.is_empty() {
-        anyhow::bail!("language is required");
-    }
-    let generated = generate_speech_audio(
-        body.provider.as_deref().unwrap_or("auto"),
-        language,
-        text,
-        body.voice.as_deref(),
-    )?;
-    if generated.bytes.len() > MAX_AUDIO_BYTES {
-        anyhow::bail!("generated audio must be 25 MB or smaller");
-    }
-    if generated.extension == "wav" {
-        let wav = inspect_wav(&generated.bytes)?;
-        validate_wav(&wav, "language")?;
-    }
-    let filename = generated_filename(&generated.model, language, text, generated.extension);
-    let relative_path = draft_audio_path("language", &filename);
-    write_draft_audio_file(config, "language", &filename, &generated.bytes)?;
-
-    let item_id = format!("generated-language-{}", random_token(12)?);
-    let order_index = content_storage::next_order_index(&conn, "language", body.button_id)?;
-    content_storage::insert_content_item(
-        &conn,
-        &NewContentItem {
-            id: &item_id,
-            content_type: "language",
-            button_id: body.button_id,
-            language: Some(language),
-            title: &filename,
-            text,
-            audio_path: &relative_path,
-            source: "generated",
-            order_index,
-        },
-    )?;
-    content_storage::insert_media_artifact_if_present(
-        &conn,
-        &item_id,
-        "generated",
-        &relative_path,
-        Some(text),
-    )?;
-    inactive_response_for_item(&conn, &item_id)
-}
-
-pub(crate) fn generated_speech_status(
-    config: &AdminConfig,
-    token: Option<&str>,
-    provider: &str,
-    language: &str,
-) -> Result<GeneratedSpeechStatusResponse> {
-    let _conn = authenticated_connection(config, token)?;
-    generated_speech_status_response(provider.trim(), language.trim())
-}
-
-pub(crate) fn recent_button_events(
-    config: &AdminConfig,
-    token: Option<&str>,
-) -> Result<Vec<RecentButtonEventResponse>> {
-    let conn = authenticated_connection(config, token)?;
-    if !table_exists(&conn, "button_events")? {
-        return Ok(Vec::new());
-    }
-    let mut stmt = conn.prepare(
-        "select occurred_at, button_id, mode, response_id, response_text \
-         from button_events order by id desc limit 20",
-    )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(RecentButtonEventResponse {
-            occurred_at: row.get(0)?,
-            button_id: row.get(1)?,
-            mode: row.get(2)?,
-            response_id: row.get(3)?,
-            response_text: row.get(4)?,
-        })
-    })?;
-
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Into::into)
-}
-
-fn authenticated_connection(config: &AdminConfig, token: Option<&str>) -> Result<Connection> {
-    role_authorized_connection(config, token, RoleRequirement::Member)
-}
-
-fn role_authorized_connection(
-    config: &AdminConfig,
-    token: Option<&str>,
-    requirement: RoleRequirement,
-) -> Result<Connection> {
-    let conn = Connection::open(&config.database).with_context(|| {
-        format!(
-            "failed to open SQLite database {}",
-            config.database.display()
-        )
-    })?;
-    let Some(session) = authenticate_session(&conn, token)? else {
-        anyhow::bail!("authentication required");
-    };
-    require_local_cube_role(&conn, &session.account.id, requirement)?;
-    Ok(conn)
-}
-
-fn empty_to_null(value: &str) -> Option<&str> {
-    if value.trim().is_empty() {
-        None
-    } else {
-        Some(value)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -287,7 +6,16 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use super::*;
+    use anyhow::Result;
+    use rusqlite::{params, Connection};
+
+    use crate::config::AdminConfig;
+    use crate::db::admin::auth::{
+        add_cube_membership, create_session, hash_password, now, random_token, session_expires_at,
+        sha256_hex, CubeRole,
+    };
+    use crate::db::admin::schema::{migrate_admin_database, table_count};
+    use crate::server::media::{generated_filename, MAX_AUDIO_BYTES};
     use crate::server::routes::auth::session_cookie;
     use crate::server::routes::setup::setup_review;
     use crate::server::speech::{
@@ -296,7 +24,6 @@ mod tests {
     };
     use axum::body::{to_bytes, Body};
     use axum::http::Request;
-    use rusqlite::params;
     use serde_json::json;
     use tempfile::TempDir;
     use tower::ServiceExt;
@@ -1194,6 +921,38 @@ mod tests {
         );
         let conn = Connection::open(database.path()).unwrap();
         seed_active_content(&conn).unwrap();
+        conn.execute_batch(
+            "create table if not exists button_events (
+                id integer primary key autoincrement,
+                occurred_at text not null,
+                button_id integer not null,
+                mode text not null,
+                response_id text not null,
+                response_text text not null
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "insert into button_events \
+             (occurred_at, button_id, mode, response_id, response_text) \
+             values (?1, 1, 'language', 'language-one', 'Hello')",
+            [now()],
+        )
+        .unwrap();
+        conn.execute(
+            "insert into button_events \
+             (occurred_at, button_id, mode, response_id, response_text) \
+             values (?1, 2, 'animals', 'language-one', 'Hello')",
+            [now()],
+        )
+        .unwrap();
+        conn.execute(
+            "insert into button_events \
+             (occurred_at, button_id, mode, response_id, response_text) \
+             values (?1, 1, 'language', 'other-response', 'Other')",
+            [now()],
+        )
+        .unwrap();
         conn.execute(
             "insert into content_items \
              (id, content_type, button_id, language, title, text, audio_path, source, state, order_index) \
@@ -1228,11 +987,26 @@ mod tests {
         assert_eq!(active.status, 200);
         let active_body: serde_json::Value = serde_json::from_slice(&active.body).unwrap();
         assert_eq!(active_body["items"].as_array().unwrap().len(), 1);
+        assert_eq!(active_body["items"][0]["play_count"], 2);
         assert_eq!(
             active_body["items"][0]["preview_url"],
             serde_json::Value::Null
         );
         assert_eq!(active_body["empty_state"], serde_json::Value::Null);
+
+        let active_animals = axum_request(
+            &authed_get(
+                "/api/content/buttons/2/animals/active",
+                HashMap::new(),
+                &cookie,
+            ),
+            &config,
+        );
+        assert_eq!(active_animals.status, 200);
+        let active_animals_body: serde_json::Value =
+            serde_json::from_slice(&active_animals.body).unwrap();
+        assert_eq!(active_animals_body["items"][0]["id"], "animal-one");
+        assert_eq!(active_animals_body["items"][0]["play_count"], 0);
 
         let active_language_mismatch = axum_request(
             &authed_get(
@@ -1802,6 +1576,58 @@ mod tests {
             "audio file must be 25 MB or smaller"
         );
 
+        let malformed_recording = axum_request(
+            &multipart_request(
+                "/api/content/recordings",
+                &cookie,
+                vec![
+                    ("content_type", "language"),
+                    ("button_id", "1"),
+                    ("title", ""),
+                    ("text", "Broken audio"),
+                    ("language", "English"),
+                ],
+                "audio_file",
+                "broken-recording.wav",
+                "audio/wav",
+                malformed_short_fmt_wav(),
+            ),
+            &config,
+        );
+        assert_eq!(malformed_recording.status, 400);
+        let malformed_recording_body: serde_json::Value =
+            serde_json::from_slice(&malformed_recording.body).unwrap();
+        assert_eq!(
+            malformed_recording_body["detail"],
+            "recorded WAV file is malformed"
+        );
+
+        let malformed_upload = axum_request(
+            &multipart_request(
+                "/api/content/uploads",
+                &cookie,
+                vec![
+                    ("content_type", "animals"),
+                    ("button_id", "2"),
+                    ("title", "Broken upload"),
+                    ("text", ""),
+                    ("language", ""),
+                ],
+                "audio_file",
+                "broken-upload.wav",
+                "audio/wav",
+                malformed_short_fmt_wav(),
+            ),
+            &config,
+        );
+        assert_eq!(malformed_upload.status, 400);
+        let malformed_upload_body: serde_json::Value =
+            serde_json::from_slice(&malformed_upload.body).unwrap();
+        assert_eq!(
+            malformed_upload_body["detail"],
+            "recorded WAV file is malformed"
+        );
+
         let uploaded = axum_request(
             &multipart_request(
                 "/api/content/uploads",
@@ -2185,6 +2011,21 @@ mod tests {
             };
             bytes.extend_from_slice(&value.to_le_bytes());
         }
+        bytes
+    }
+
+    fn malformed_short_fmt_wav() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(b"WAVE");
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&4_u32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 0, 1, 0]);
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&2_u32.to_le_bytes());
+        bytes.extend_from_slice(&10_000_i16.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
         bytes
     }
 }

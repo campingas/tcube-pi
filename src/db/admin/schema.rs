@@ -241,6 +241,9 @@ pub(crate) fn migrate_admin_database(conn: &Connection, config: &AdminConfig) ->
         create index if not exists idx_content_items_inventory
           on content_items (state, button_id, content_type, language, order_index, id)
           where audio_path is not null;
+
+        create index if not exists idx_button_events_response_id
+          on button_events (response_id);
         ",
     )?;
     conn.execute(

@@ -12,13 +12,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::AdminConfig;
 
-use super::handler;
 use super::media::{media_input_from_axum_multipart, MAX_AUDIO_BYTES};
 
 pub mod auth;
 pub mod content;
 pub mod error;
+pub mod events;
 pub mod setup;
+pub mod status;
 
 type AdminState = Arc<AdminConfig>;
 
@@ -145,8 +146,8 @@ pub(crate) fn router() -> Router<AdminState> {
         .layer(DefaultBodyLimit::max(MAX_AUDIO_BYTES + 1024 * 1024))
 }
 
-async fn status(State(config): State<AdminState>) -> Json<handler::StatusResponse> {
-    Json(handler::pi_status(&config))
+async fn status(State(config): State<AdminState>) -> Json<status::StatusResponse> {
+    Json(status::pi_status(&config))
 }
 
 async fn auth_session(
@@ -322,7 +323,7 @@ async fn save_recording(
         .await
         .map_err(ApiError::bad_request)?;
     blocking(config, move |config| {
-        handler::save_multipart_media(config, token.as_deref(), input, "recorded")
+        content::save_multipart_media(config, token.as_deref(), input, "recorded")
     })
     .await
     .map(Json)
@@ -338,7 +339,7 @@ async fn save_upload(
         .await
         .map_err(ApiError::bad_request)?;
     blocking(config, move |config| {
-        handler::save_multipart_media(config, token.as_deref(), input, "uploaded")
+        content::save_multipart_media(config, token.as_deref(), input, "uploaded")
     })
     .await
     .map(Json)
@@ -348,10 +349,10 @@ async fn save_upload(
 async fn save_generated_speech(
     State(config): State<AdminState>,
     SessionCookie(token): SessionCookie,
-    Json(body): Json<handler::GeneratedSpeechRequest>,
+    Json(body): Json<content::GeneratedSpeechRequest>,
 ) -> Result<Json<content::InactiveContentResponse>, ApiError> {
     blocking(config, move |config| {
-        handler::save_generated_speech(config, token.as_deref(), body)
+        content::save_generated_speech(config, token.as_deref(), body)
     })
     .await
     .map(Json)
@@ -366,7 +367,7 @@ async fn generated_speech_status(
     let language = query.language.unwrap_or_else(|| "English".to_string());
     let provider = query.provider.unwrap_or_else(|| "auto".to_string());
     blocking(config, move |config| {
-        handler::generated_speech_status(config, token.as_deref(), &provider, &language)
+        content::generated_speech_status(config, token.as_deref(), &provider, &language)
     })
     .await
     .map(Json)
@@ -479,9 +480,9 @@ async fn trash_content_item(
 async fn recent_button_events(
     State(config): State<AdminState>,
     SessionCookie(token): SessionCookie,
-) -> Result<Json<Vec<handler::RecentButtonEventResponse>>, ApiError> {
+) -> Result<Json<Vec<events::RecentButtonEventResponse>>, ApiError> {
     blocking(config, move |config| {
-        handler::recent_button_events(config, token.as_deref())
+        events::recent_button_events(config, token.as_deref())
     })
     .await
     .map(Json)

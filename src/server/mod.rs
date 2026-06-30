@@ -8,6 +8,7 @@ use tower_http::trace::TraceLayer;
 use crate::config::AdminConfig;
 use crate::db::admin::schema;
 
+#[cfg(test)]
 pub mod handler;
 pub mod media;
 pub mod pages;

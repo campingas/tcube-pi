@@ -136,8 +136,8 @@ test("button config active rows trim long titles, show summaries, and open the t
 
   await expect(page.getByTitle("This file name is intentionally long enough to trim nicely.wav")).toBeVisible();
   await expect(page.getByText("This file name is intentionally…")).toBeVisible();
-  await expect(page.getByText(/Generated · 0:0\d · x plays/)).toBeVisible();
-  await expect(page.getByText(/Generated · 0:01 · x plays/)).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText(/Generated · 0:0\d · 3 plays/)).toBeVisible();
+  await expect(page.getByText(/Generated · 0:01 · 3 plays/)).toBeVisible({ timeout: 5000 });
 
   await activeRow.click();
 
@@ -628,9 +628,10 @@ function activeItems(buttonId: string, contentType: string) {
         "lang-1",
         "language",
         "This file name is intentionally long enough to trim nicely.wav",
-        "Hello"
+        "Hello",
+        3
       ),
-      activeItem("lang-2", "language", "Goodbye", "Goodbye")
+      activeItem("lang-2", "language", "Goodbye", "Goodbye", 1)
     ];
   }
   if (buttonId === "2" && contentType === "animals") {
@@ -656,7 +657,7 @@ function inactiveItems(buttonId: string, contentType: string) {
   return [];
 }
 
-function activeItem(id: string, contentType: string, title: string, text: string) {
+function activeItem(id: string, contentType: string, title: string, text: string, playCount = 0) {
   return {
     id,
     content_type: contentType,
@@ -665,6 +666,7 @@ function activeItem(id: string, contentType: string, title: string, text: string
     source: id === "lang-1" ? "generated" : "test",
     state: "active",
     audio_path: `active/${contentType}/${id}.wav`,
-    preview_url: `/api/media/active/${contentType}/${id}.wav`
+    preview_url: `/api/media/active/${contentType}/${id}.wav`,
+    play_count: playCount
   };
 }

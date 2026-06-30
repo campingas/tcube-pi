@@ -310,6 +310,14 @@ Latest auth route extraction on 2026-06-30:
 - Admin auth endpoint handlers and DTOs now live in `src/server/routes/auth.rs`: session read, password login, first-owner bootstrap, password recovery, recovery code creation, manager invitations, invitation acceptance, logout, and auth cookie helpers.
 - `src/server/handler.rs` no longer owns auth endpoint business logic; media creation, speech provider, status, and recent-event handlers remain there pending later extraction.
 
+Latest task backlog cleanup on 2026-06-30:
+
+- Reviewed `src/` and `admin-ui/src/` for next implementation gaps, stale TODO-style work, maintainability hotspots, and product-risk ordering.
+- Replaced `docs/tasks.md` with a focused, priority-ordered next-work backlog and moved completed-history expectations to this current-state document.
+- Highest-priority remaining work is target Raspberry Pi validation, real GPIO input, I2S output validation, admin-load latency measurement, LED output, and microphone privacy rules before capture implementation.
+- Backend cleanup targets include hardening malformed WAV validation, adding real per-content play counts, formalizing SQLite migrations, and finishing the migration away from `src/server/handler.rs` toward typed Axum route modules.
+- Admin UI cleanup targets include splitting the large `admin-ui/src/App.svelte` into focused views/state components, removing stale unused component prototypes, and preserving mobile Playwright coverage during extraction.
+
 Latest CI workflow validation on 2026-06-23:
 
 - `.github/workflows/ci.yml` parses as YAML locally.
@@ -338,3 +346,26 @@ Latest release preparation validation on 2026-06-23:
 - `just test`
 - `just build-admin-ui`
 - `cargo build --release --locked --all-features`
+
+Latest audio validation hardening on 2026-06-30:
+
+- WAV inspection now rejects short or truncated `fmt ` chunks with a clean `recorded WAV file is malformed` error instead of panicking on unchecked slice reads.
+- WAV parsing now uses checked little-endian field reads for chunk sizes, `fmt ` fields, and sample data.
+- Added parser coverage for valid PCM WAVs, short `fmt ` chunks, truncated chunks, missing data chunks, non-PCM audio, non-16-bit audio, quiet audio, and over-duration language audio.
+- Multipart recording and upload coverage now verifies malformed WAV files return HTTP 400 JSON errors while preserving valid draft creation and 25 MB rejection coverage.
+- Validation after the hardening: `cargo test inspect_wav --all-features`, `cargo test validate_wav --all-features`, `cargo test multipart_recording_and_upload_create_inactive_drafts --all-features`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace --all-features`.
+
+Latest per-content play-count update on 2026-06-30:
+
+- Active content list responses now include `play_count`, computed from local `button_events.response_id` matches against each `content_items.id`.
+- Admin schema migration now creates `idx_button_events_response_id` to keep play-count aggregation inexpensive.
+- Button-configuration active rows now render real all-time counts as `0 plays`, `1 play`, or `{n} plays` instead of the previous `x plays` placeholder.
+- Backend coverage verifies nonzero and zero active-item play counts, and mobile Playwright coverage verifies real play-count text in active rows.
+- Validation after the update: `cargo test content_lifecycle_lists_activates_trashes_and_cleans_generated_drafts --all-features`, `just check-admin-ui`, `just build-admin-ui`, `just test-admin-ui-mobile`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features`, `just check`, and `just test`.
+
+Latest admin route extraction completion on 2026-06-30:
+
+- Multipart recording/upload orchestration and generated-speech draft/status orchestration now live in `src/server/routes/content.rs`.
+- Admin status response construction now lives in `src/server/routes/status.rs`, and recent button-event reads now live in `src/server/routes/events.rs`.
+- Production server code no longer imports or calls `src/server/handler.rs`; that module is compiled only for legacy route test coverage.
+- Validation after the extraction: `cargo test multipart_recording_and_upload_create_inactive_drafts --all-features`, `cargo test generated_language_filename_includes_model_language_and_text --all-features`, `cargo test versioned_admin_api_aliases_support_session_setup_and_events --all-features`, `cargo test content_lifecycle_lists_activates_trashes_and_cleans_generated_drafts --all-features`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features`, `just check`, and `just test`.

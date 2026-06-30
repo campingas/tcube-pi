@@ -5,12 +5,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::AdminConfig;
 use crate::db::admin::auth::{
-    authenticate_session, now, require_local_cube_role, timestamp, RoleRequirement,
+    authenticate_session, now, random_token, require_local_cube_role, timestamp, RoleRequirement,
 };
-use crate::db::admin::content::{self as content_storage, ContentEmptyState};
+use crate::db::admin::content::{self as content_storage, ContentEmptyState, NewContentItem};
 use crate::server::media::{
     activate_audio_file, content_preview_url, delete_content_audio_file, delete_draft_audio_file,
-    delete_draft_audio_files,
+    delete_draft_audio_files, draft_audio_path, generated_filename, inspect_wav, media_filename,
+    normalize_media_input, uploaded_audio_extension, validate_wav, write_draft_audio_file,
+    MediaInput, MAX_AUDIO_BYTES,
+};
+use crate::server::speech::{
+    generate_speech_audio, generated_speech_status_response, GeneratedSpeechStatusResponse,
 };
 
 #[derive(Debug, Serialize)]
@@ -23,6 +28,7 @@ pub(crate) struct ActiveContentResponse {
     state: &'static str,
     audio_path: Option<String>,
     preview_url: Option<String>,
+    play_count: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -95,6 +101,15 @@ pub(crate) struct GeneratedCleanupRequest {
     language: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct GeneratedSpeechRequest {
+    button_id: i64,
+    language: String,
+    text: String,
+    provider: Option<String>,
+    voice: Option<String>,
+}
+
 pub(crate) fn list_active_content(
     config: &AdminConfig,
     token: Option<&str>,
@@ -126,6 +141,7 @@ pub(crate) fn list_active_content(
                 state: "active",
                 preview_url: item.audio_path.as_deref().map(content_preview_url),
                 audio_path: item.audio_path,
+                play_count: item.play_count,
             }
         })
         .collect();
@@ -243,6 +259,158 @@ pub(crate) fn trash_unused_content(
         status: "ok",
         deleted_count: unused.len(),
     })
+}
+
+pub(crate) fn save_multipart_media(
+    config: &AdminConfig,
+    token: Option<&str>,
+    input: MediaInput,
+    source: &str,
+) -> Result<InactiveContentResponse> {
+    let conn = authenticated_connection(config, token)?;
+    let normalized = normalize_media_input(&input, source)?;
+    if input.audio_bytes.len() > MAX_AUDIO_BYTES {
+        anyhow::bail!("{source} audio must be 25 MB or smaller");
+    }
+    let extension = if source == "recorded" {
+        let wav = inspect_wav(&input.audio_bytes)?;
+        validate_wav(&wav, &normalized.content_type)?;
+        "wav"
+    } else {
+        let extension = uploaded_audio_extension(&input.original_filename, &input.mime_type)?;
+        if extension == "wav" {
+            let wav = inspect_wav(&input.audio_bytes)?;
+            validate_wav(&wav, &normalized.content_type)?;
+        }
+        extension
+    };
+    let filename = media_filename(
+        source,
+        &normalized.content_type,
+        &normalized.language,
+        if normalized.content_type == "language" {
+            &normalized.text
+        } else {
+            &normalized.title
+        },
+        extension,
+    );
+    let title = if normalized.content_type == "language" {
+        filename.clone()
+    } else {
+        normalized.title.clone()
+    };
+    let relative_path = draft_audio_path(&normalized.content_type, &filename);
+    write_draft_audio_file(
+        config,
+        &normalized.content_type,
+        &filename,
+        &input.audio_bytes,
+    )?;
+
+    let item_id = format!("{source}-{}-{}", normalized.content_type, random_token(12)?);
+    let order_index =
+        content_storage::next_order_index(&conn, &normalized.content_type, normalized.button_id)?;
+    let text = if normalized.content_type == "language" {
+        normalized.text.clone()
+    } else {
+        normalized.title.clone()
+    };
+    content_storage::insert_content_item(
+        &conn,
+        &NewContentItem {
+            id: &item_id,
+            content_type: &normalized.content_type,
+            button_id: normalized.button_id,
+            language: empty_to_null(&normalized.language),
+            title: &title,
+            text: &text,
+            audio_path: &relative_path,
+            source,
+            order_index,
+        },
+    )?;
+    content_storage::insert_media_artifact_if_present(
+        &conn,
+        &item_id,
+        source,
+        &relative_path,
+        None,
+    )?;
+    inactive_response_for_item(&conn, &item_id)
+}
+
+pub(crate) fn save_generated_speech(
+    config: &AdminConfig,
+    token: Option<&str>,
+    body: GeneratedSpeechRequest,
+) -> Result<InactiveContentResponse> {
+    let conn = authenticated_connection(config, token)?;
+    let text = body.text.trim();
+    let language = body.language.trim();
+    if !(1..=5).contains(&body.button_id) {
+        anyhow::bail!("button id must be between 1 and 5");
+    }
+    if text.is_empty() {
+        anyhow::bail!("generated speech text is required");
+    }
+    if text.len() > 240 {
+        anyhow::bail!("generated speech text must be 240 characters or fewer");
+    }
+    if language.is_empty() {
+        anyhow::bail!("language is required");
+    }
+    let generated = generate_speech_audio(
+        body.provider.as_deref().unwrap_or("auto"),
+        language,
+        text,
+        body.voice.as_deref(),
+    )?;
+    if generated.bytes.len() > MAX_AUDIO_BYTES {
+        anyhow::bail!("generated audio must be 25 MB or smaller");
+    }
+    if generated.extension == "wav" {
+        let wav = inspect_wav(&generated.bytes)?;
+        validate_wav(&wav, "language")?;
+    }
+    let filename = generated_filename(&generated.model, language, text, generated.extension);
+    let relative_path = draft_audio_path("language", &filename);
+    write_draft_audio_file(config, "language", &filename, &generated.bytes)?;
+
+    let item_id = format!("generated-language-{}", random_token(12)?);
+    let order_index = content_storage::next_order_index(&conn, "language", body.button_id)?;
+    content_storage::insert_content_item(
+        &conn,
+        &NewContentItem {
+            id: &item_id,
+            content_type: "language",
+            button_id: body.button_id,
+            language: Some(language),
+            title: &filename,
+            text,
+            audio_path: &relative_path,
+            source: "generated",
+            order_index,
+        },
+    )?;
+    content_storage::insert_media_artifact_if_present(
+        &conn,
+        &item_id,
+        "generated",
+        &relative_path,
+        Some(text),
+    )?;
+    inactive_response_for_item(&conn, &item_id)
+}
+
+pub(crate) fn generated_speech_status(
+    config: &AdminConfig,
+    token: Option<&str>,
+    provider: &str,
+    language: &str,
+) -> Result<GeneratedSpeechStatusResponse> {
+    let _conn = authenticated_connection(config, token)?;
+    generated_speech_status_response(provider.trim(), language.trim())
 }
 
 pub(crate) fn activate_content_item(
@@ -395,4 +563,12 @@ fn validate_content_scope(button_id: i64, content_type: &str) -> Result<()> {
 
 fn purge_after() -> String {
     timestamp(Utc::now() + chrono::Duration::days(15))
+}
+
+fn empty_to_null(value: &str) -> Option<&str> {
+    if value.trim().is_empty() {
+        None
+    } else {
+        Some(value)
+    }
 }

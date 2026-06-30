@@ -16,6 +16,7 @@ pub(crate) struct ContentItemRow {
     pub(crate) source: String,
     pub(crate) state: String,
     pub(crate) audio_path: Option<String>,
+    pub(crate) play_count: i64,
 }
 
 #[derive(Debug)]
@@ -143,13 +144,30 @@ pub(crate) fn active_content_rows(
     } else {
         None
     };
-    let sql = if language.is_some() {
-        "select id, content_type, title, text, language, source, state, audio_path \
+    let has_button_events = table_exists(conn, "button_events")?;
+    let sql = if has_button_events {
+        if language.is_some() {
+            "select ci.id, ci.content_type, ci.title, ci.text, ci.language, ci.source, ci.state, ci.audio_path, count(be.id) \
+             from content_items ci \
+             left join button_events be on be.response_id = ci.id \
+             where ci.button_id = ?1 and ci.content_type = ?2 and ci.state = 'active' and ci.language = ?3 \
+             group by ci.id, ci.content_type, ci.title, ci.text, ci.language, ci.source, ci.state, ci.audio_path, ci.order_index \
+             order by ci.order_index, ci.id"
+        } else {
+            "select ci.id, ci.content_type, ci.title, ci.text, ci.language, ci.source, ci.state, ci.audio_path, count(be.id) \
+             from content_items ci \
+             left join button_events be on be.response_id = ci.id \
+             where ci.button_id = ?1 and ci.content_type = ?2 and ci.state = 'active' \
+             group by ci.id, ci.content_type, ci.title, ci.text, ci.language, ci.source, ci.state, ci.audio_path, ci.order_index \
+             order by ci.order_index, ci.id"
+        }
+    } else if language.is_some() {
+        "select id, content_type, title, text, language, source, state, audio_path, 0 \
          from content_items \
          where button_id = ?1 and content_type = ?2 and state = 'active' and language = ?3 \
          order by order_index, id"
     } else {
-        "select id, content_type, title, text, language, source, state, audio_path \
+        "select id, content_type, title, text, language, source, state, audio_path, 0 \
          from content_items \
          where button_id = ?1 and content_type = ?2 and state = 'active' \
          order by order_index, id"
@@ -175,13 +193,13 @@ pub(crate) fn inactive_content_rows(
     language: Option<&str>,
 ) -> Result<Vec<ContentItemRow>> {
     let sql = if language.is_some() {
-        "select id, content_type, title, text, language, source, state, audio_path \
+        "select id, content_type, title, text, language, source, state, audio_path, 0 \
          from content_items \
          where button_id = ?1 and content_type = ?2 and state = 'archived' \
            and language = ?3 and source in ('recorded', 'uploaded', 'generated') \
          order by created_at desc, id"
     } else {
-        "select id, content_type, title, text, language, source, state, audio_path \
+        "select id, content_type, title, text, language, source, state, audio_path, 0 \
          from content_items \
          where button_id = ?1 and content_type = ?2 and state = 'archived' \
            and source in ('recorded', 'uploaded', 'generated') \
@@ -335,7 +353,7 @@ pub(crate) fn content_item_by_id(
     item_id: &str,
 ) -> Result<Option<ContentItemRow>> {
     conn.prepare(
-        "select id, content_type, title, text, language, source, state, audio_path \
+        "select id, content_type, title, text, language, source, state, audio_path, 0 \
          from content_items where id = ?1",
     )?
     .query_row([item_id], content_item_from_row)
@@ -396,6 +414,7 @@ fn content_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContentIte
         source: row.get(5)?,
         state: row.get(6)?,
         audio_path: row.get(7)?,
+        play_count: row.get(8)?,
     })
 }
 

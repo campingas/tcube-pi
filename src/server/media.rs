@@ -170,39 +170,30 @@ pub(crate) fn inspect_wav(bytes: &[u8]) -> Result<WavInspection> {
     let mut data_size = 0_usize;
     while offset + 8 <= bytes.len() {
         let chunk_id = &bytes[offset..offset + 4];
-        let chunk_size =
-            u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
+        let chunk_size = read_le_u32(bytes, offset + 4)? as usize;
         let chunk_data_offset = offset + 8;
-        if chunk_data_offset + chunk_size > bytes.len() {
+        let chunk_end = chunk_data_offset
+            .checked_add(chunk_size)
+            .context("recorded WAV file is malformed")?;
+        if chunk_end > bytes.len() {
             anyhow::bail!("recorded WAV file is malformed");
         }
         if chunk_id == b"fmt " {
-            audio_format = u16::from_le_bytes(
-                bytes[chunk_data_offset..chunk_data_offset + 2]
-                    .try_into()
-                    .unwrap(),
-            );
-            channels = u16::from_le_bytes(
-                bytes[chunk_data_offset + 2..chunk_data_offset + 4]
-                    .try_into()
-                    .unwrap(),
-            );
-            sample_rate = u32::from_le_bytes(
-                bytes[chunk_data_offset + 4..chunk_data_offset + 8]
-                    .try_into()
-                    .unwrap(),
-            );
-            bits_per_sample = u16::from_le_bytes(
-                bytes[chunk_data_offset + 14..chunk_data_offset + 16]
-                    .try_into()
-                    .unwrap(),
-            );
+            if chunk_size < 16 {
+                anyhow::bail!("recorded WAV file is malformed");
+            }
+            audio_format = read_le_u16(bytes, chunk_data_offset)?;
+            channels = read_le_u16(bytes, chunk_data_offset + 2)?;
+            sample_rate = read_le_u32(bytes, chunk_data_offset + 4)?;
+            bits_per_sample = read_le_u16(bytes, chunk_data_offset + 14)?;
         } else if chunk_id == b"data" {
             data_offset = Some(chunk_data_offset);
             data_size = chunk_size;
             break;
         }
-        offset = chunk_data_offset + chunk_size + (chunk_size % 2);
+        offset = chunk_end
+            .checked_add(chunk_size % 2)
+            .context("recorded WAV file is malformed")?;
     }
     if audio_format != 1 || bits_per_sample != 16 || channels < 1 || sample_rate < 8000 {
         anyhow::bail!("recorded WAV file must be 16-bit PCM audio");
@@ -215,9 +206,7 @@ pub(crate) fn inspect_wav(bytes: &[u8]) -> Result<WavInspection> {
     let mut sum_squares = 0.0_f64;
     let mut samples = 0_usize;
     for sample_offset in (data_offset..data_offset + data_size - 1).step_by(2) {
-        let sample = i16::from_le_bytes(bytes[sample_offset..sample_offset + 2].try_into().unwrap())
-            as f64
-            / 32768.0;
+        let sample = read_le_i16(bytes, sample_offset)? as f64 / 32768.0;
         let abs = sample.abs();
         peak = peak.max(abs);
         sum_squares += sample * sample;
@@ -228,6 +217,27 @@ pub(crate) fn inspect_wav(bytes: &[u8]) -> Result<WavInspection> {
         peak,
         rms: (sum_squares / samples as f64).sqrt(),
     })
+}
+
+fn read_le_i16(bytes: &[u8], offset: usize) -> Result<i16> {
+    let slice = bytes
+        .get(offset..offset + 2)
+        .context("recorded WAV file is malformed")?;
+    Ok(i16::from_le_bytes([slice[0], slice[1]]))
+}
+
+fn read_le_u16(bytes: &[u8], offset: usize) -> Result<u16> {
+    let slice = bytes
+        .get(offset..offset + 2)
+        .context("recorded WAV file is malformed")?;
+    Ok(u16::from_le_bytes([slice[0], slice[1]]))
+}
+
+fn read_le_u32(bytes: &[u8], offset: usize) -> Result<u32> {
+    let slice = bytes
+        .get(offset..offset + 4)
+        .context("recorded WAV file is malformed")?;
+    Ok(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
 }
 
 pub(crate) fn media_filename(
@@ -428,4 +438,157 @@ fn content_audio_absolute_path(
 ) -> Option<std::path::PathBuf> {
     let relative = audio_path.strip_prefix("data/audio/")?;
     Some(config.media_root.join(relative))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{inspect_wav, validate_wav};
+
+    #[test]
+    fn inspect_wav_accepts_valid_pcm_audio() {
+        let wav = wav_with_samples(8_000, 800, 10_000, 1, 16);
+
+        let inspection = inspect_wav(&wav).expect("valid wav should inspect");
+
+        validate_wav(&inspection, "language").expect("valid wav should pass product validation");
+    }
+
+    #[test]
+    fn inspect_wav_rejects_short_fmt_chunk_without_panicking() {
+        let mut wav = riff_header();
+        wav.extend_from_slice(b"fmt ");
+        wav.extend_from_slice(&4_u32.to_le_bytes());
+        wav.extend_from_slice(&[1, 0, 1, 0]);
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&2_u32.to_le_bytes());
+        wav.extend_from_slice(&10_000_i16.to_le_bytes());
+        wav.extend_from_slice(&[0; 10]);
+
+        let error = inspect_wav(&wav).expect_err("short fmt chunk should fail");
+
+        assert_eq!(error.to_string(), "recorded WAV file is malformed");
+    }
+
+    #[test]
+    fn inspect_wav_rejects_truncated_fmt_chunk_without_panicking() {
+        let mut wav = riff_header();
+        wav.extend_from_slice(b"fmt ");
+        wav.extend_from_slice(&100_u32.to_le_bytes());
+        wav.extend_from_slice(&[0; 32]);
+
+        let error = inspect_wav(&wav).expect_err("truncated fmt chunk should fail");
+
+        assert_eq!(error.to_string(), "recorded WAV file is malformed");
+    }
+
+    #[test]
+    fn inspect_wav_rejects_missing_data_chunk() {
+        let mut wav = riff_header();
+        append_fmt_chunk(&mut wav, 1, 1, 8_000, 16);
+        wav.extend_from_slice(b"JUNK");
+        wav.extend_from_slice(&0_u32.to_le_bytes());
+
+        let error = inspect_wav(&wav).expect_err("missing data chunk should fail");
+
+        assert_eq!(error.to_string(), "recorded WAV file has no audio data");
+    }
+
+    #[test]
+    fn inspect_wav_rejects_non_pcm_audio() {
+        let wav = wav_with_samples(8_000, 800, 10_000, 3, 16);
+
+        let error = inspect_wav(&wav).expect_err("non-pcm wav should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "recorded WAV file must be 16-bit PCM audio"
+        );
+    }
+
+    #[test]
+    fn inspect_wav_rejects_non_sixteen_bit_audio() {
+        let wav = wav_with_samples(8_000, 800, 10_000, 1, 8);
+
+        let error = inspect_wav(&wav).expect_err("8-bit wav should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "recorded WAV file must be 16-bit PCM audio"
+        );
+    }
+
+    #[test]
+    fn validate_wav_rejects_quiet_audio() {
+        let wav = wav_with_samples(8_000, 800, 1, 1, 16);
+        let inspection = inspect_wav(&wav).expect("quiet wav should still inspect");
+
+        let error = validate_wav(&inspection, "language").expect_err("quiet audio should fail");
+
+        assert_eq!(error.to_string(), "audio is too quiet");
+    }
+
+    #[test]
+    fn validate_wav_rejects_over_duration_language_audio() {
+        let wav = wav_with_samples(8_000, 128_001, 10_000, 1, 16);
+        let inspection = inspect_wav(&wav).expect("long wav should still inspect");
+
+        let error =
+            validate_wav(&inspection, "language").expect_err("over-duration audio should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "language and animal audio must be 15 seconds or shorter"
+        );
+    }
+
+    fn riff_header() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(b"WAVE");
+        bytes
+    }
+
+    fn append_fmt_chunk(
+        bytes: &mut Vec<u8>,
+        audio_format: u16,
+        channels: u16,
+        sample_rate: u32,
+        bits_per_sample: u16,
+    ) {
+        let bytes_per_sample = u32::from(bits_per_sample / 8);
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        bytes.extend_from_slice(&audio_format.to_le_bytes());
+        bytes.extend_from_slice(&channels.to_le_bytes());
+        bytes.extend_from_slice(&sample_rate.to_le_bytes());
+        bytes.extend_from_slice(
+            &(sample_rate * u32::from(channels) * bytes_per_sample).to_le_bytes(),
+        );
+        bytes.extend_from_slice(&(channels * (bits_per_sample / 8)).to_le_bytes());
+        bytes.extend_from_slice(&bits_per_sample.to_le_bytes());
+    }
+
+    fn wav_with_samples(
+        sample_rate: u32,
+        sample_count: u32,
+        amplitude: i16,
+        audio_format: u16,
+        bits_per_sample: u16,
+    ) -> Vec<u8> {
+        let mut bytes = riff_header();
+        append_fmt_chunk(&mut bytes, audio_format, 1, sample_rate, bits_per_sample);
+        let data_size = sample_count * 2;
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_size.to_le_bytes());
+        for index in 0..sample_count {
+            let value = if index % 2 == 0 {
+                amplitude
+            } else {
+                -amplitude
+            };
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes
+    }
 }
