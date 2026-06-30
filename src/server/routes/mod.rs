@@ -1,24 +1,44 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use axum::body::Body;
-use axum::extract::State;
-use axum::http::Request;
+use axum::extract::{Multipart, OriginalUri, Path, Query, State};
+use axum::http::header::SET_COOKIE;
+use axum::http::HeaderValue;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
+use axum::Json;
 use axum::Router;
+use serde::{Deserialize, Serialize};
 
 use crate::config::AdminConfig;
 
-use super::handler::{self, error_response, json_response, HttpRequest, HttpResponse};
+use super::handler;
+use super::media::media_input_from_axum_multipart;
 
 pub mod auth;
 pub mod content;
-pub mod multipart;
-pub mod provider;
+pub mod error;
 pub mod setup;
 
 type AdminState = Arc<AdminConfig>;
+
+use error::{ApiError, SessionCookie};
+
+#[derive(Debug, Deserialize)]
+struct ContentQuery {
+    language: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeneratedSpeechStatusQuery {
+    language: Option<String>,
+    provider: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct OkResponse {
+    status: &'static str,
+}
 
 pub(crate) fn router() -> Router<AdminState> {
     Router::new()
@@ -124,578 +144,387 @@ pub(crate) fn router() -> Router<AdminState> {
         .fallback(get(serve_static))
 }
 
-async fn status(State(config): State<AdminState>) -> Response {
-    json_response(200, auth::pi_status(&config)).into_response()
+async fn status(State(config): State<AdminState>) -> Json<handler::StatusResponse> {
+    Json(handler::pi_status(&config))
 }
 
-async fn auth_session(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(config, request, |config, request| match auth::auth_session(
-        config,
-        request.session_cookie(),
-    ) {
-        Ok((body, cookie)) => {
-            let mut response = json_response(200, body);
-            if let Some(cookie) = cookie {
-                response.headers.push(("Set-Cookie".to_string(), cookie));
-            }
-            response
-        }
-        Err(error) => error_response(500, error.to_string()),
+async fn auth_session(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+) -> Result<Response, ApiError> {
+    let (body, cookie) = blocking(config, move |config| {
+        auth::auth_session(config, token.as_deref())
     })
     .await
+    .map_err(ApiError::server)?;
+    Ok(match cookie {
+        Some(cookie) => json_with_cookie(body, cookie),
+        None => Json(body).into_response(),
+    })
 }
 
-async fn login_password(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match auth::login_password(config, request) {
-            Ok((body, cookie)) => {
-                let mut response = json_response(200, body);
-                response.headers.push(("Set-Cookie".to_string(), cookie));
-                response
-            }
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
-    .await
+async fn login_password(
+    State(config): State<AdminState>,
+    Json(body): Json<auth::LoginRequest>,
+) -> Result<Response, ApiError> {
+    let (body, cookie) = blocking(config, move |config| auth::login_password(config, body))
+        .await
+        .map_err(ApiError::bad_request)?;
+    Ok(json_with_cookie(body, cookie))
 }
 
-async fn bootstrap_owner(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match auth::bootstrap_owner(config, request) {
-            Ok((body, cookie)) => {
-                let mut response = json_response(200, body);
-                response.headers.push(("Set-Cookie".to_string(), cookie));
-                response
-            }
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
-    .await
+async fn bootstrap_owner(
+    State(config): State<AdminState>,
+    Json(body): Json<auth::BootstrapRequest>,
+) -> Result<Response, ApiError> {
+    let (body, cookie) = blocking(config, move |config| auth::bootstrap_owner(config, body))
+        .await
+        .map_err(ApiError::bad_request)?;
+    Ok(json_with_cookie(body, cookie))
 }
 
-async fn recover_password(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match auth::recover_password(config, request) {
-            Ok(()) => json_response(200, serde_json::json!({ "status": "ok" })),
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
-    .await
+async fn recover_password(
+    State(config): State<AdminState>,
+    Json(body): Json<auth::RecoverRequest>,
+) -> Result<Json<OkResponse>, ApiError> {
+    blocking(config, move |config| auth::recover_password(config, body))
+        .await
+        .map_err(ApiError::bad_request)?;
+    Ok(ok_json())
 }
 
 async fn create_recovery_code(
     State(config): State<AdminState>,
-    request: Request<Body>,
-) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match auth::create_recovery_code(config, request.session_cookie()) {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(401, error.to_string()),
-        },
-    )
-    .await
-}
-
-async fn create_invitation(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match auth::create_invitation(config, request) {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
-    .await
-}
-
-async fn accept_invitation(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match auth::accept_invitation(config, request) {
-            Ok((body, cookie)) => {
-                let mut response = json_response(200, body);
-                response.headers.push(("Set-Cookie".to_string(), cookie));
-                response
-            }
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
-    .await
-}
-
-async fn logout(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(config, request, |config, request| {
-        match auth::logout(config, request.session_cookie()) {
-            Ok(()) => {
-                let mut response = json_response(200, serde_json::json!({ "status": "ok" }));
-                response
-                    .headers
-                    .push(("Set-Cookie".to_string(), auth::clear_session_cookie()));
-                response
-            }
-            Err(error) => error_response(500, error.to_string()),
-        }
+    SessionCookie(token): SessionCookie,
+) -> Result<Json<auth::RecoveryCodeResponse>, ApiError> {
+    blocking(config, move |config| {
+        auth::create_recovery_code(config, token.as_deref())
     })
     .await
+    .map(Json)
+    .map_err(ApiError::unauthorized)
 }
 
-async fn setup_review(State(config): State<AdminState>) -> Response {
-    response_from_result(setup::setup_review(&config), 500)
-}
-
-async fn set_cube_name(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    response_from_request_result(config, request, setup::set_cube_name).await
-}
-
-async fn verify_wifi(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match setup::verify_wifi(config, request) {
-            Ok(()) => json_response(200, serde_json::json!({ "status": "ok" })),
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
+async fn create_invitation(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    Json(body): Json<auth::InvitationCreateRequest>,
+) -> Result<Json<auth::InvitationResponse>, ApiError> {
+    blocking(config, move |config| {
+        auth::create_invitation(config, token.as_deref(), body)
+    })
     .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
 }
 
-async fn set_button_mode(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match setup::set_button_mode(config, request, &request.path) {
-            Ok(()) => json_response(200, serde_json::json!({ "status": "ok" })),
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
+async fn accept_invitation(
+    State(config): State<AdminState>,
+    Json(body): Json<auth::InvitationAcceptRequest>,
+) -> Result<Response, ApiError> {
+    let (body, cookie) = blocking(config, move |config| auth::accept_invitation(config, body))
+        .await
+        .map_err(ApiError::bad_request)?;
+    Ok(json_with_cookie(body, cookie))
+}
+
+async fn logout(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+) -> Result<Response, ApiError> {
+    blocking(config, move |config| auth::logout(config, token.as_deref()))
+        .await
+        .map_err(ApiError::server)?;
+    Ok(json_with_cookie(ok_body(), auth::clear_session_cookie()))
+}
+
+async fn setup_review(
+    State(config): State<AdminState>,
+) -> Result<Json<setup::SetupReviewResponse>, ApiError> {
+    blocking(config, setup::setup_review)
+        .await
+        .map(Json)
+        .map_err(ApiError::server)
+}
+
+async fn set_cube_name(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    Json(body): Json<setup::NameRequest>,
+) -> Result<Json<setup::CubeSaveResponse>, ApiError> {
+    blocking(config, move |config| {
+        setup::set_cube_name(config, token.as_deref(), body)
+    })
     .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
 }
 
-async fn complete_setup(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    response_from_request_result(config, request, setup::complete_setup).await
-}
-
-async fn factory_reset(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match setup::factory_reset(config, request) {
-            Ok(body) => {
-                let mut response = json_response(200, body);
-                response
-                    .headers
-                    .push(("Set-Cookie".to_string(), auth::clear_session_cookie()));
-                response
-            }
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
+async fn verify_wifi(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    Json(body): Json<setup::WifiRequest>,
+) -> Result<Json<OkResponse>, ApiError> {
+    blocking(config, move |config| {
+        setup::verify_wifi(config, token.as_deref(), body)
+    })
     .await
+    .map_err(ApiError::bad_request)?;
+    Ok(ok_json())
 }
 
-async fn save_recording(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match multipart::save_multipart_media(config, request, "recorded") {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
+async fn set_button_mode(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    Path(button_id): Path<i64>,
+    Json(body): Json<setup::ButtonModeRequest>,
+) -> Result<Json<OkResponse>, ApiError> {
+    blocking(config, move |config| {
+        setup::set_button_mode(config, token.as_deref(), button_id, body)
+    })
     .await
+    .map_err(ApiError::bad_request)?;
+    Ok(ok_json())
 }
 
-async fn save_upload(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match multipart::save_multipart_media(config, request, "uploaded") {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
+async fn complete_setup(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+) -> Result<Json<setup::CompleteSetupResponse>, ApiError> {
+    blocking(config, move |config| {
+        setup::complete_setup(config, token.as_deref())
+    })
     .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
+}
+
+async fn factory_reset(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    Json(body): Json<setup::FactoryResetRequest>,
+) -> Result<Response, ApiError> {
+    let body = blocking(config, move |config| {
+        setup::factory_reset(config, token.as_deref(), body)
+    })
+    .await
+    .map_err(ApiError::bad_request)?;
+    Ok(json_with_cookie(body, auth::clear_session_cookie()))
+}
+
+async fn save_recording(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    multipart: Multipart,
+) -> Result<Json<content::InactiveContentResponse>, ApiError> {
+    let input = media_input_from_axum_multipart(multipart)
+        .await
+        .map_err(ApiError::bad_request)?;
+    blocking(config, move |config| {
+        handler::save_multipart_media(config, token.as_deref(), input, "recorded")
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
+}
+
+async fn save_upload(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    multipart: Multipart,
+) -> Result<Json<content::InactiveContentResponse>, ApiError> {
+    let input = media_input_from_axum_multipart(multipart)
+        .await
+        .map_err(ApiError::bad_request)?;
+    blocking(config, move |config| {
+        handler::save_multipart_media(config, token.as_deref(), input, "uploaded")
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
 }
 
 async fn save_generated_speech(
     State(config): State<AdminState>,
-    request: Request<Body>,
-) -> Response {
-    response_from_request_result(config, request, provider::save_generated_speech).await
+    SessionCookie(token): SessionCookie,
+    Json(body): Json<handler::GeneratedSpeechRequest>,
+) -> Result<Json<content::InactiveContentResponse>, ApiError> {
+    blocking(config, move |config| {
+        handler::save_generated_speech(config, token.as_deref(), body)
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
 }
 
 async fn generated_speech_status(
     State(config): State<AdminState>,
-    request: Request<Body>,
-) -> Response {
-    response_from_request_result(config, request, provider::generated_speech_status).await
-}
-
-async fn content_inventory(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    response_from_request_result(config, request, content::content_inventory).await
-}
-
-async fn list_active_content(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match content::list_active_content(config, request, &request.path) {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
+    SessionCookie(token): SessionCookie,
+    Query(query): Query<GeneratedSpeechStatusQuery>,
+) -> Result<Json<super::speech::GeneratedSpeechStatusResponse>, ApiError> {
+    let language = query.language.unwrap_or_else(|| "English".to_string());
+    let provider = query.provider.unwrap_or_else(|| "auto".to_string());
+    blocking(config, move |config| {
+        handler::generated_speech_status(config, token.as_deref(), &provider, &language)
+    })
     .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
+}
+
+async fn content_inventory(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+) -> Result<Json<content::ContentInventoryResponse>, ApiError> {
+    blocking(config, move |config| {
+        content::content_inventory(config, token.as_deref())
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
+}
+
+async fn list_active_content(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    Path((button_id, content_type)): Path<(i64, String)>,
+    Query(query): Query<ContentQuery>,
+) -> Result<Json<content::ContentListResponse<content::ActiveContentResponse>>, ApiError> {
+    blocking(config, move |config| {
+        content::list_active_content(
+            config,
+            token.as_deref(),
+            button_id,
+            &content_type,
+            query.language.as_deref(),
+        )
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
 }
 
 async fn list_inactive_content(
     State(config): State<AdminState>,
-    request: Request<Body>,
-) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match content::list_inactive_content(config, request, &request.path) {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
+    SessionCookie(token): SessionCookie,
+    Path((button_id, content_type)): Path<(i64, String)>,
+    Query(query): Query<ContentQuery>,
+) -> Result<Json<content::ContentListResponse<content::InactiveContentResponse>>, ApiError> {
+    blocking(config, move |config| {
+        content::list_inactive_content(
+            config,
+            token.as_deref(),
+            button_id,
+            &content_type,
+            query.language.as_deref(),
+        )
+    })
     .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
 }
 
 async fn activate_content_item(
     State(config): State<AdminState>,
-    request: Request<Body>,
-) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match content::activate_content_item(config, request, &request.path) {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
+    SessionCookie(token): SessionCookie,
+    Path(item_id): Path<String>,
+) -> Result<Json<content::InactiveContentResponse>, ApiError> {
+    blocking(config, move |config| {
+        content::activate_content_item(config, token.as_deref(), &item_id)
+    })
     .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
 }
 
 async fn trash_unused_generated_speech(
     State(config): State<AdminState>,
-    request: Request<Body>,
-) -> Response {
-    response_from_request_result(config, request, content::trash_unused_generated_speech).await
+    SessionCookie(token): SessionCookie,
+    Json(body): Json<content::GeneratedCleanupRequest>,
+) -> Result<Json<content::CleanupResponse>, ApiError> {
+    blocking(config, move |config| {
+        content::trash_unused_generated_speech(config, token.as_deref(), body)
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
 }
 
 async fn trash_unused_content(
     State(config): State<AdminState>,
-    request: Request<Body>,
-) -> Response {
-    response_from_request_result(config, request, content::trash_unused_content).await
+    SessionCookie(token): SessionCookie,
+) -> Result<Json<content::CleanupResponse>, ApiError> {
+    blocking(config, move |config| {
+        content::trash_unused_content(config, token.as_deref())
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
 }
 
-async fn trash_content_item(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(
-        config,
-        request,
-        |config, request| match content::trash_content_item(config, request, &request.path) {
-            Ok(()) => json_response(200, serde_json::json!({ "status": "ok" })),
-            Err(error) => error_response(400, error.to_string()),
-        },
-    )
+async fn trash_content_item(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    Path(item_id): Path<String>,
+) -> Result<Json<OkResponse>, ApiError> {
+    blocking(config, move |config| {
+        content::trash_content_item(config, token.as_deref(), &item_id)
+    })
     .await
+    .map_err(ApiError::bad_request)?;
+    Ok(ok_json())
 }
 
 async fn recent_button_events(
     State(config): State<AdminState>,
-    request: Request<Body>,
-) -> Response {
-    response_from_request_result(config, request, handler::recent_button_events).await
-}
-
-async fn serve_media(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(config, request, |config, request| {
-        let Some(relative) = request
-            .path
-            .strip_prefix("/api/media/")
-            .or_else(|| request.path.strip_prefix("/media/"))
-        else {
-            return error_response(404, "not found");
-        };
-        super::pages::serve_file(&config.media_root, relative)
+    SessionCookie(token): SessionCookie,
+) -> Result<Json<Vec<handler::RecentButtonEventResponse>>, ApiError> {
+    blocking(config, move |config| {
+        handler::recent_button_events(config, token.as_deref())
     })
     .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
 }
 
-async fn serve_content(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(config, request, |config, request| {
-        let Some(relative) = request.path.strip_prefix("/content/") else {
-            return error_response(404, "not found");
-        };
-        super::pages::serve_file(&config.content_root, relative)
-    })
-    .await
+async fn serve_media(State(config): State<AdminState>, Path(path): Path<String>) -> Response {
+    super::pages::serve_file(&config.media_root, &path)
 }
 
-async fn serve_static(State(config): State<AdminState>, request: Request<Body>) -> Response {
-    run_request(config, request, |config, request| {
-        super::pages::serve_static(&config.ui_dist, &request.path)
-    })
-    .await
+async fn serve_content(State(config): State<AdminState>, Path(path): Path<String>) -> Response {
+    super::pages::serve_file(&config.content_root, &path)
 }
 
-async fn response_from_request_result<T>(
+async fn serve_static(State(config): State<AdminState>, OriginalUri(uri): OriginalUri) -> Response {
+    super::pages::serve_static(&config.ui_dist, uri.path())
+}
+
+async fn blocking<T>(
     config: AdminState,
-    request: Request<Body>,
-    operation: fn(&AdminConfig, &HttpRequest) -> Result<T>,
-) -> Response
+    operation: impl FnOnce(&AdminConfig) -> Result<T> + Send + 'static,
+) -> Result<T, anyhow::Error>
 where
-    T: serde::Serialize + 'static,
+    T: Send + 'static,
 {
-    run_request(config, request, move |config, request| {
-        http_response_from_result(operation(config, request), 400)
-    })
-    .await
+    tokio::task::spawn_blocking(move || operation(config.as_ref()))
+        .await
+        .map_err(|error| anyhow::anyhow!("admin request failed: {error}"))?
 }
 
-fn response_from_result<T>(result: Result<T>, error_status: u16) -> Response
-where
-    T: serde::Serialize,
-{
-    http_response_from_result(result, error_status).into_response()
+fn ok_json() -> Json<OkResponse> {
+    Json(ok_body())
 }
 
-fn http_response_from_result<T>(result: Result<T>, error_status: u16) -> HttpResponse
-where
-    T: serde::Serialize,
-{
-    match result {
-        Ok(body) => json_response(200, body),
-        Err(error) => error_response(error_status, error.to_string()),
-    }
+fn ok_body() -> OkResponse {
+    OkResponse { status: "ok" }
 }
 
-async fn run_request(
-    config: AdminState,
-    request: Request<Body>,
-    operation: impl FnOnce(&AdminConfig, &HttpRequest) -> HttpResponse + Send + 'static,
-) -> Response {
-    let mut request = match HttpRequest::from_request(request).await {
-        Ok(request) => request,
-        Err(error) => return error_response(400, error.to_string()).into_response(),
-    };
-    request.path = canonical_admin_api_path(&request.path);
-    match tokio::task::spawn_blocking(move || operation(config.as_ref(), &request)).await {
-        Ok(response) => response.into_response(),
-        Err(error) => error_response(500, format!("admin request failed: {error}")).into_response(),
+fn json_with_cookie<T: Serialize>(body: T, cookie: String) -> Response {
+    let mut response = Json(body).into_response();
+    if let Ok(value) = HeaderValue::try_from(cookie) {
+        response.headers_mut().insert(SET_COOKIE, value);
     }
-}
-
-#[cfg(test)]
-pub(crate) fn route_request(request: &HttpRequest, config: &AdminConfig) -> HttpResponse {
-    let path = canonical_admin_api_path(&request.path);
-
-    match (request.method.as_str(), path.as_str()) {
-        ("GET", "/api/pi/v1/status") => json_response(200, auth::pi_status(config)),
-        ("GET", "/api/auth/session") => {
-            match auth::auth_session(config, request.session_cookie()) {
-                Ok((body, cookie)) => {
-                    let mut response = json_response(200, body);
-                    if let Some(cookie) = cookie {
-                        response.headers.push(("Set-Cookie".to_string(), cookie));
-                    }
-                    response
-                }
-                Err(error) => error_response(500, error.to_string()),
-            }
-        }
-        ("POST", "/api/auth/login/password") => match auth::login_password(config, request) {
-            Ok((body, cookie)) => {
-                let mut response = json_response(200, body);
-                response.headers.push(("Set-Cookie".to_string(), cookie));
-                response
-            }
-            Err(error) => error_response(400, error.to_string()),
-        },
-        ("POST", "/api/auth/bootstrap") => match auth::bootstrap_owner(config, request) {
-            Ok((body, cookie)) => {
-                let mut response = json_response(200, body);
-                response.headers.push(("Set-Cookie".to_string(), cookie));
-                response
-            }
-            Err(error) => error_response(400, error.to_string()),
-        },
-        ("POST", "/api/auth/recover") => match auth::recover_password(config, request) {
-            Ok(()) => json_response(200, serde_json::json!({ "status": "ok" })),
-            Err(error) => error_response(400, error.to_string()),
-        },
-        ("POST", "/api/auth/recovery-code") => {
-            match auth::create_recovery_code(config, request.session_cookie()) {
-                Ok(body) => json_response(200, body),
-                Err(error) => error_response(401, error.to_string()),
-            }
-        }
-        ("POST", "/api/auth/invitations") => match auth::create_invitation(config, request) {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(400, error.to_string()),
-        },
-        ("POST", "/api/auth/invitations/accept") => {
-            match auth::accept_invitation(config, request) {
-                Ok((body, cookie)) => {
-                    let mut response = json_response(200, body);
-                    response.headers.push(("Set-Cookie".to_string(), cookie));
-                    response
-                }
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("POST", "/api/auth/logout") => match auth::logout(config, request.session_cookie()) {
-            Ok(()) => {
-                let mut response = json_response(200, serde_json::json!({ "status": "ok" }));
-                response
-                    .headers
-                    .push(("Set-Cookie".to_string(), auth::clear_session_cookie()));
-                response
-            }
-            Err(error) => error_response(500, error.to_string()),
-        },
-        ("POST", "/api/setup/name") => match setup::set_cube_name(config, request) {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(400, error.to_string()),
-        },
-        ("POST", "/api/setup/wifi/verified") => match setup::verify_wifi(config, request) {
-            Ok(()) => json_response(200, serde_json::json!({ "status": "ok" })),
-            Err(error) => error_response(400, error.to_string()),
-        },
-        ("POST", "/api/setup/complete") => match setup::complete_setup(config, request) {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(400, error.to_string()),
-        },
-        ("POST", "/api/setup/factory-reset") => match setup::factory_reset(config, request) {
-            Ok(body) => {
-                let mut response = json_response(200, body);
-                response
-                    .headers
-                    .push(("Set-Cookie".to_string(), auth::clear_session_cookie()));
-                response
-            }
-            Err(error) => error_response(400, error.to_string()),
-        },
-        ("POST", path) if path.starts_with("/api/setup/buttons/") && path.ends_with("/mode") => {
-            match setup::set_button_mode(config, request, path) {
-                Ok(()) => json_response(200, serde_json::json!({ "status": "ok" })),
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("POST", "/api/content/recordings") => {
-            match multipart::save_multipart_media(config, request, "recorded") {
-                Ok(body) => json_response(200, body),
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("POST", "/api/content/uploads") => {
-            match multipart::save_multipart_media(config, request, "uploaded") {
-                Ok(body) => json_response(200, body),
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("POST", "/api/content/generated-speech") => {
-            match provider::save_generated_speech(config, request) {
-                Ok(body) => json_response(200, body),
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("GET", "/api/content/generated-speech/status") => {
-            match provider::generated_speech_status(config, request) {
-                Ok(body) => json_response(200, body),
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("GET", "/api/content/inventory") => match content::content_inventory(config, request) {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(400, error.to_string()),
-        },
-        ("GET", path) if path.starts_with("/api/content/buttons/") && path.ends_with("/active") => {
-            match content::list_active_content(config, request, path) {
-                Ok(body) => json_response(200, body),
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("GET", path)
-            if path.starts_with("/api/content/buttons/") && path.ends_with("/inactive") =>
-        {
-            match content::list_inactive_content(config, request, path) {
-                Ok(body) => json_response(200, body),
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("POST", path)
-            if path.starts_with("/api/content/items/") && path.ends_with("/activate") =>
-        {
-            match content::activate_content_item(config, request, path) {
-                Ok(body) => json_response(200, body),
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("DELETE", "/api/content/generated-speech/unused") => {
-            match content::trash_unused_generated_speech(config, request) {
-                Ok(body) => json_response(200, body),
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("DELETE", "/api/content/unused") => match content::trash_unused_content(config, request) {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(400, error.to_string()),
-        },
-        ("DELETE", path) if path.starts_with("/api/content/items/") => {
-            match content::trash_content_item(config, request, path) {
-                Ok(()) => json_response(200, serde_json::json!({ "status": "ok" })),
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("GET", "/api/setup/review") => match setup::setup_review(config) {
-            Ok(body) => json_response(200, body),
-            Err(error) => error_response(500, error.to_string()),
-        },
-        ("GET", "/api/events/recent") => {
-            match super::handler::recent_button_events(config, request) {
-                Ok(body) => json_response(200, body),
-                Err(error) => error_response(400, error.to_string()),
-            }
-        }
-        ("GET", path) if path.starts_with("/api/media/") => {
-            super::pages::serve_file(&config.media_root, path.trim_start_matches("/api/media/"))
-        }
-        ("GET", path) if path.starts_with("/media/") => {
-            super::pages::serve_file(&config.media_root, path.trim_start_matches("/media/"))
-        }
-        ("GET", path) if path.starts_with("/content/") => {
-            super::pages::serve_file(&config.content_root, path.trim_start_matches("/content/"))
-        }
-        ("GET", _) => super::pages::serve_static(&config.ui_dist, &request.path),
-        _ => error_response(405, "method not allowed"),
-    }
-}
-
-fn canonical_admin_api_path(path: &str) -> String {
-    if path == "/api/pi/v1/status" {
-        return path.to_string();
-    }
-
-    for prefix in ["/auth/", "/setup/", "/content/", "/media/", "/events/"] {
-        let versioned_prefix = format!("/api/pi/v1{prefix}");
-        if let Some(rest) = path.strip_prefix(&versioned_prefix) {
-            return format!("/api{prefix}{rest}");
-        }
-    }
-
-    path.to_string()
+    response
 }
 
 #[cfg(test)]

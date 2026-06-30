@@ -112,7 +112,6 @@ jobs:
           install -m 0755 target/release/tcube-pi "${payload_dir}/bin/tcube-pi"
           install -m 0755 target/release/tcube-pi-admin "${payload_dir}/bin/tcube-pi-admin"
           install -m 0755 target/release/tcube-pi-admin-measure "${payload_dir}/bin/tcube-pi-admin-measure"
-          install -m 0755 target/release/tcube-pi-device-api "${payload_dir}/bin/tcube-pi-device-api"
           install -m 0755 deploy/pi-release/install-on-pi "${payload_dir}/install.sh"
 
           cp -R admin-ui/build/. "${payload_dir}/admin-ui/"
@@ -131,7 +130,6 @@ jobs:
               bin/tcube-pi \
               bin/tcube-pi-admin \
               bin/tcube-pi-admin-measure \
-              bin/tcube-pi-device-api \
               install.sh >> ../SHA256SUMS
           )
 

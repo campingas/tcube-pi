@@ -4,12 +4,11 @@ This document summarizes what the current repository code can do today, split be
 
 ## Rust Code Features
 
-The Rust code builds four maintained binaries:
+The Rust code builds three maintained binaries:
 
 - `tcube-pi`: child-facing device runtime and keyboard simulator.
 - `tcube-pi-admin`: Pi-hosted local admin API and static admin UI server.
 - `tcube-pi-admin-measure`: latency measurement harness for button handling under admin API load.
-- `tcube-pi-device-api`: compatibility harness for authenticated device content package sync APIs.
 
 The child-facing runtime currently supports:
 
@@ -59,17 +58,6 @@ The Pi-hosted admin service currently supports:
 - Cleanup of unused generated speech for a selected button and language.
 - Authenticated recent button event listing from the local SQLite event log for parent monitoring.
 
-The device sync code currently supports:
-
-- HTTPS-only device sync base URLs.
-- Optional custom CA certificate loading for device sync.
-- Authenticated requests using bearer token and `X-TCube-Device-ID`.
-- Fetching latest package metadata with optional ETag handling.
-- Downloading content package bytes.
-- Acknowledging activated packages.
-- Reporting package activation failures.
-- A device API compatibility service for latest package metadata, package downloads, activation acknowledgement, and failure reporting.
-
 ## Admin UI Features Right Now
 
 The admin UI is a Svelte and Vite dashboard served as same-origin static files by `tcube-pi-admin`.
@@ -110,4 +98,4 @@ Current limitations:
 - Physical Raspberry Pi GPIO, LED output, I2S audio, and USB microphone capture still require implementation or target hardware validation.
 - The admin UI manages local setup and content workflows, but child-facing playback remains deterministic and local; generated speech is saved as an inactive draft until activation.
 - Browser recording depends on browser microphone support and a secure context.
-
+- External content sync is not implemented; it is deferred until the parent/device use case, update source, package format, auth model, rollback behavior, and privacy rules are defined.

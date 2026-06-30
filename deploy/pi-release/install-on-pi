@@ -19,7 +19,6 @@ require_path() {
 require_path "${SCRIPT_DIR}/bin/tcube-pi"
 require_path "${SCRIPT_DIR}/bin/tcube-pi-admin"
 require_path "${SCRIPT_DIR}/bin/tcube-pi-admin-measure"
-require_path "${SCRIPT_DIR}/bin/tcube-pi-device-api"
 require_path "${SCRIPT_DIR}/admin-ui/index.html"
 require_path "${SCRIPT_DIR}/content/content.json"
 require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/Caddyfile"
@@ -38,7 +37,6 @@ install -d -o root -g root -m 0755 /opt/tcube/bin /opt/tcube/admin-ui /opt/tcube
 install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi" /opt/tcube/bin/tcube-pi
 install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi-admin" /opt/tcube/bin/tcube-pi-admin
 install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi-admin-measure" /opt/tcube/bin/tcube-pi-admin-measure
-install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi-device-api" /opt/tcube/bin/tcube-pi-device-api
 
 rm -rf /opt/tcube/admin-ui/.new
 install -d -o root -g root -m 0755 /opt/tcube/admin-ui/.new
@@ -77,4 +75,3 @@ Next checks:
 
 Admin browsers and phones must trust Caddy's internal root CA before using https://tcube.local/.
 MESSAGE
-

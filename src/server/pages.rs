@@ -1,9 +1,13 @@
 use std::fs;
 use std::path::{Component, Path};
 
-use super::handler::{error_response, HttpResponse};
+use axum::body::Body;
+use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
+use axum::http::{HeaderValue, StatusCode};
+use axum::response::Response;
+use serde_json::json;
 
-pub(crate) fn serve_static(root: &Path, request_path: &str) -> HttpResponse {
+pub(crate) fn serve_static(root: &Path, request_path: &str) -> Response {
     let relative = request_path.trim_start_matches('/');
     let candidate = if relative.is_empty() {
         root.join("index.html")
@@ -19,22 +23,17 @@ pub(crate) fn serve_static(root: &Path, request_path: &str) -> HttpResponse {
     serve_path(&file)
 }
 
-pub(crate) fn serve_file(root: &Path, relative: &str) -> HttpResponse {
+pub(crate) fn serve_file(root: &Path, relative: &str) -> Response {
     if !is_safe_relative_path(relative) {
-        return error_response(400, "invalid path");
+        return error_response(StatusCode::BAD_REQUEST, "invalid path");
     }
     serve_path(&root.join(relative))
 }
 
-fn serve_path(path: &Path) -> HttpResponse {
+fn serve_path(path: &Path) -> Response {
     match fs::read(path) {
-        Ok(body) => HttpResponse {
-            status: 200,
-            content_type: content_type(path),
-            headers: Vec::new(),
-            body,
-        },
-        Err(_) => error_response(404, "not found"),
+        Ok(body) => file_response(path, body),
+        Err(_) => error_response(StatusCode::NOT_FOUND, "not found"),
     }
 }
 
@@ -58,6 +57,35 @@ fn content_type(path: &Path) -> &'static str {
         Some("webmanifest") => "application/manifest+json",
         _ => "application/octet-stream",
     }
+}
+
+fn file_response(path: &Path, body: Vec<u8>) -> Response {
+    let body_len = body.len().to_string();
+    let mut response = Response::new(Body::from(body));
+    *response.status_mut() = StatusCode::OK;
+    let headers = response.headers_mut();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type(path)));
+    if let Ok(value) = HeaderValue::try_from(body_len) {
+        headers.insert(CONTENT_LENGTH, value);
+    }
+    response
+}
+
+fn error_response(status: StatusCode, detail: &'static str) -> Response {
+    let body = serde_json::to_vec(&json!({ "detail": detail }))
+        .expect("serializing JSON error response should not fail");
+    let body_len = body.len().to_string();
+    let mut response = Response::new(Body::from(body));
+    *response.status_mut() = status;
+    let headers = response.headers_mut();
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    if let Ok(value) = HeaderValue::try_from(body_len) {
+        headers.insert(CONTENT_LENGTH, value);
+    }
+    response
 }
 
 #[cfg(test)]

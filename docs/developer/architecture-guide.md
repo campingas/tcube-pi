@@ -62,7 +62,7 @@ All Rust changes must follow the [Rust Guide](rust-guide.md), including module b
 
 ## Binary Responsibilities
 
-`tcube-pi` is a single Rust workspace with four maintained binaries.
+`tcube-pi` is a single Rust workspace with three maintained binaries.
 
 ### `tcube-pi` — child-facing runtime
 
@@ -73,7 +73,7 @@ The runtime is the product. It owns:
 - Audio playback trigger and LED effect trigger
 - Fast asynchronous event logging to SQLite
 - Hardware-facing safety behavior
-- Approved content package caching and atomic activation
+- Approved local content caching and atomic activation
 
 The runtime must not wait for AI inference, transcription, dashboard requests, network access, or any long-running operation. See the Button Response Pipeline section for the exact constraint.
 
@@ -84,7 +84,7 @@ The admin service owns:
 - Loopback HTTP service behind Caddy HTTPS
 - Static serving for the admin UI build output under `admin-ui/build/`
 - Static media serving from the configured media and content roots
-- All `/api/pi/v1/` endpoints: status, authentication, setup, content management, media upload, generated speech drafts, and device sync compatibility
+- All `/api/pi/v1/` endpoints: status, authentication, setup, content management, media upload, and generated speech drafts
 - Local account management: owner bootstrap, password hashing (scrypt), session tokens, invitation codes, recovery codes, and role checks
 
 The admin service shares the SQLite database and filesystem with the runtime. It must never block the button response path. Any write that could contend with runtime reads must use SQLite WAL mode and be structured to resolve in microseconds from the runtime's perspective.
@@ -92,10 +92,6 @@ The admin service shares the SQLite database and filesystem with the runtime. It
 ### `tcube-pi-admin-measure` — latency harness
 
 Records button-handling latency under concurrent admin API load. Reports p50, p95, p99, max latency, and admin request success/failure counts as JSON. Run before any architecture change that touches the I2S audio path, the SQLite schema, or the content activation flow. Provides the evidence that the admin service does not degrade the child-facing runtime.
-
-### `tcube-pi-device-api` — device sync compatibility layer
-
-Bridges the Pi to an optional external content sync service. Owns HTTPS-only sync base URLs, optional custom CA certificate loading, bearer token and device ID authentication, ETag-based package metadata, and package download, acknowledgement, and failure reporting. This binary is never invoked during a child's button-press session.
 
 ---
 
@@ -286,7 +282,7 @@ These principles are ordered by priority. When two principles conflict, the high
 
 1. **Child-facing behavior is deterministic and immediate.** The button response path is local, short, and never blocked by any external dependency. This is non-negotiable.
 
-2. **Local first, external optional.** The Pi works without the Mac, without the internet, and without any cloud service. Every external capability (TTS generation, LLM curation, content sync) adds value when present and removes nothing when absent.
+2. **Local first, external optional.** The Pi works without the Mac, without the internet, and without any cloud service. Every external capability (TTS generation, LLM curation, future content transfer) adds value when present and removes nothing when absent. External content sync is deferred until the parent/device use case, update source, package format, auth model, rollback behavior, and privacy rules are defined.
 
 3. **Activation gates the child's experience.** The runtime reads only content the parent has explicitly activated. Drafts, staged files, failed downloads, and corrupt media never reach the child. This is a child-safety guarantee, not a convenience feature.
 

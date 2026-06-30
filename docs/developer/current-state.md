@@ -5,8 +5,8 @@ Last updated: 2026-06-30 (+07)
 ## Current Focus
 
 - `tcube-pi` is extracted as a standalone Rust repository for the Raspberry Pi side of T-Cube.
-- The root package is `tcube-pi`, the Rust crate import path is `tcube_pi`, and the maintained binaries are `tcube-pi`, `tcube-pi-admin`, `tcube-pi-admin-measure`, and `tcube-pi-device-api`.
-- The repository owns the child-facing runtime, keyboard simulator, local SQLite state, Pi-hosted admin API, checked-in static admin UI, content sync client/API compatibility code, Caddy deployment files, default content assets, and Pi hardware smoke payloads.
+- The root package is `tcube-pi`, the Rust crate import path is `tcube_pi`, and the maintained binaries are `tcube-pi`, `tcube-pi-admin`, and `tcube-pi-admin-measure`.
+- The repository owns the child-facing runtime, keyboard simulator, local SQLite state, Pi-hosted admin API, checked-in static admin UI, Caddy deployment files, default content assets, and Pi hardware smoke payloads.
 - `docs/developer/FEATURES.md` documents the currently implemented Rust features and the admin UI capabilities.
 - The Mac-hosted TTS workers are intentionally not part of this repository. The checked-in `admin-ui/build/` is the static build output from the Svelte + Vite source in `admin-ui/` and is served by `tcube-pi-admin`; generated speech may call external HTTPS speech services for drafts.
 - The admin UI has been rebuilt as a dark-mode-only, mobile-first parent dashboard aligned with `VISION.md` and `docs/developer/branding-guide.md`: compact top bar, horizontal status strip, cube hero, button strip, quick actions, recent activity, setup checklist, full-screen button configuration drilldown, active/draft content review, record/upload/generate draft flows, owner tools, and local runtime boundary copy.
@@ -23,7 +23,6 @@ Last updated: 2026-06-30 (+07)
 - Parent-created audio drafts are stored under `data/audio/draft/{content_type}/` and activation moves them to `data/audio/active/{content_type}/`; legacy `data/media/...` preview paths remain readable for existing rows.
 - Svelte + Vite + Tailwind admin UI source under `admin-ui/`, with checked-in static build output under `admin-ui/build/`.
 - Local account, session, recovery-code, and manager-invitation primitives.
-- Content sync API/client modules for staged package download, checksums, activation, acknowledgements, and failure reporting.
 - Caddy deployment sketch and one-button Pi Zero bench smoke payload.
 - Rust formatting, linting, and test workflows through `just`.
 - GitHub Actions CI under `.github/workflows/ci.yml` runs Rust formatting, check, Clippy, tests, and admin UI pnpm install/check/build gates.
@@ -219,6 +218,27 @@ Latest recording feedback update on 2026-06-29:
 - Stopping, switching away from Record, discarding, saving, or leaving the app cleans up the microphone stream, recorder timer, waveform animation, and audio context.
 - Mobile Playwright coverage now mocks browser recording APIs and verifies the idle hint, live waveform, ready preview state, and language text requirement before saving.
 
+Latest admin route extraction on 2026-06-30:
+
+- Shared HTTP request/response primitives now live in `src/server/http.rs`, auth endpoint handlers live in `src/server/routes/auth.rs`, setup endpoint handlers live in `src/server/routes/setup.rs`, and content management endpoint handlers live in `src/server/routes/content.rs`.
+- Local media/file helpers now live in `src/server/media.rs`, including multipart parsing, WAV inspection/validation, media filename/path construction, preview URL construction, draft writes, draft-to-active movement, and audio deletion helpers.
+- Speech provider generation, health caching, HTTPS URL validation, and blocking HTTP client construction now live in `src/server/speech.rs`.
+- `src/server/handler.rs` remains responsible for legacy handler dispatch plus status, media creation endpoint orchestration, generated speech endpoint orchestration, static assets, and recent-event behavior while routes continue moving behind Axum handlers.
+- Route tests for the extracted admin endpoints use Axum `oneshot` coverage instead of the deleted test-only dispatcher.
+
+Latest native Axum route conversion on 2026-06-30:
+
+- Admin API routes now use native Axum extractors for state, JSON bodies, path params, query params, multipart uploads, and `tcube_session` cookies through a small route-layer extractor.
+- Route errors now flow through `src/server/routes/error.rs` as JSON `{ "detail": ... }` responses while preserving the existing 400, 401, and 500 status mappings.
+- Auth, setup, content management, generated speech, recent events, recording upload, and file upload handlers now receive typed inputs instead of `HttpRequest`.
+- Axum multipart support is enabled through the existing Axum dependency, replacing the custom multipart parser while preserving draft creation and validation behavior.
+
+Latest legacy admin HTTP adapter removal on 2026-06-30:
+
+- Static admin UI, admin media, and bundled content routes now return native Axum `Response` values with preserved MIME types, content lengths, SPA fallback behavior, path traversal rejection, and JSON error bodies.
+- The admin server no longer has `src/server/http.rs`; `HttpRequest`, `HttpResponse`, `json_response`, `error_response`, `run_request`, and versioned-path canonicalization were removed from the admin route layer.
+- Admin route tests use a local test request builder for Axum `oneshot` coverage.
+
 Latest generated TTS offline handling on 2026-06-29:
 
 - Added authenticated generated-speech provider status support so the admin UI can detect local TTS availability without submitting a generation request.
@@ -237,8 +257,17 @@ Latest settings page implementation on 2026-06-29:
 - Added owner-only `POST /api/pi/v1/setup/factory-reset`, wired to the Settings Danger zone with typed `FACTORY RESET` confirmation, to clear setup, accounts, sessions, content rows, events, sync state, and parent-created `data/audio/{draft,active}/` media before reseeding defaults.
 - Password change and session revocation remain visually present but disabled because the local API contracts do not exist yet.
 - Mobile Playwright coverage now verifies settings layout, save-name, recovery-code, manager-invite, clear-unused-content, factory-reset confirmation, and viewport overflow behavior.
+
 - The unauthenticated Create local owner page no longer shows a refresh action, and the dashboard Setup incomplete checklist now appears directly below the refreshed-state notice; the Wi-Fi prerequisite opens Settings with Wi-Fi verification expanded.
 - First owner bootstrap now provisions or reuses a local cube identity and creates an owner membership immediately, including after factory reset, so the top bar reports `owner` and owner-only setup actions remain available before the cube name is changed. Existing single-account databases missing that membership self-repair on session read or password login.
+
+Latest device sync removal on 2026-06-30:
+
+- Removed the unused `tcube-pi-device-api` binary and the `device_api`/`device_sync` library modules because they are not wired into runtime playback, the Pi admin service, the admin UI, release update handling, or child-facing behavior.
+- Release packaging and the Pi installer now ship only the maintained Pi binaries: `tcube-pi`, `tcube-pi-admin`, and `tcube-pi-admin-measure`.
+- Product and developer docs now treat external content sync as deferred future discovery work until the parent/device use case, update source, package format, auth model, rollback behavior, and privacy rules are defined.
+- Existing SQLite content package and failure tables remain in place for now; schema cleanup should be handled as a separate migration decision.
+- Validation after removal: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features`, `just check`, and `just test`.
 
 Latest admin server boundary refactor on 2026-06-29:
 
@@ -249,6 +278,23 @@ Latest admin server boundary refactor on 2026-06-29:
 - Content item insertion, active/draft listing, empty-state detection, inventory classification, activation, trashing, media artifact rows, and content order allocation now live under `src/db/admin/content.rs`.
 - Added Axum service coverage for the production route table with versioned status and owner bootstrap requests.
 - Latest validation after the refactor: `cargo fmt --all --check`, `cargo check --workspace --all-targets --all-features`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features`, `just check`, and `just test`.
+
+Latest admin route test conversion on 2026-06-30:
+
+- Admin route tests now drive the production Axum router with `tower::ServiceExt::oneshot` instead of the legacy test-only `route_request` dispatcher.
+- The test-only dispatcher in `src/server/routes/mod.rs` has been removed; production versioned-path canonicalization remains in the shared route request wrapper.
+- Existing auth, setup, content, static-content, multipart upload, factory reset, manager-permission, and versioned-alias assertions were preserved while switching their HTTP path through Axum.
+- Latest validation after the conversion: `cargo test --workspace --all-features`.
+
+Superseded HTTP primitive extraction on 2026-06-30:
+
+- Shared admin HTTP primitives briefly lived in `src/server/http.rs` during route extraction.
+- This intermediate adapter was removed by the native Axum cleanup; admin routes and static/media responses now use Axum extractors and responses directly.
+
+Latest auth route extraction on 2026-06-30:
+
+- Admin auth endpoint handlers and DTOs now live in `src/server/routes/auth.rs`: session read, password login, first-owner bootstrap, password recovery, recovery code creation, manager invitations, invitation acceptance, logout, and auth cookie helpers.
+- `src/server/handler.rs` no longer owns auth endpoint business logic; media creation, speech provider, status, and recent-event handlers remain there pending later extraction.
 
 Latest CI workflow validation on 2026-06-23:
 

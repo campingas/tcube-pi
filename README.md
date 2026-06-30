@@ -31,7 +31,7 @@ Use Caddy for HTTPS browser access by following [the Pi admin Caddy guide](deplo
 
 ## Repository Map
 
-- [src/](src/): Rust runtime, Pi admin service, sync client/API, and measurement harness
+- [src/](src/): Rust runtime, Pi admin service, and measurement harness
 - [content/](content/): default approved local content and audio assets
 - [admin-ui/](admin-ui/): Svelte + Vite source for the parent/admin dashboard
 - [admin-ui/build/](admin-ui/build/): checked-in static admin UI build output served by `tcube-pi-admin`
@@ -46,7 +46,6 @@ Use Caddy for HTTPS browser access by following [the Pi admin Caddy guide](deplo
 - `tcube-pi`: child-facing runtime and simulator
 - `tcube-pi-admin`: Pi-hosted admin API
 - `tcube-pi-admin-measure`: admin-load latency harness
-- `tcube-pi-device-api`: device content sync API compatibility harness
 
 ## Validation
 
