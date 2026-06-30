@@ -3,9 +3,6 @@ set dotenv-load := true
 default:
     just --list
 
-dev-shell:
-    docker compose run --rm dev
-
 check:
     cargo fmt --all --check
     cargo check --all-features

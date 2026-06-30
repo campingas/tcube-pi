@@ -278,6 +278,11 @@ Latest Rust admin optimization pass on 2026-06-30:
 - Admin schema migration now creates targeted `content_items` indexes for list, draft cleanup, and inventory query paths.
 - Validation after the optimization pass: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features`, `just check`, and `just test`.
 
+Latest native-only development cleanup on 2026-06-30:
+
+- Removed the unused alternate development artifacts and recipe. Local development and Pi validation now use native host/Pi commands through `just`.
+- Updated contributor, package, and task docs to remove the obsolete alternate development/runtime path.
+
 Latest admin server boundary refactor on 2026-06-29:
 
 - `tcube-pi-admin` now registers explicit Axum routes for the versioned and legacy admin API paths instead of serving the API through the catch-all fallback dispatcher.

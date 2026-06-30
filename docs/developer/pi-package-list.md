@@ -91,11 +91,3 @@ Likely host requirements:
 
 * user membership or service permissions for GPIO access
 * access to GPIO character devices such as `/dev/gpiochip*`
-
-## Optional Docker Dev Tooling
-
-Docker is optional on the Pi for now. Use it as a reproducible development shell, not as the first hardware runtime path.
-
-Follow Docker's Debian install documentation for Docker Engine and the Compose plugin. Raspberry Pi OS is Debian-based, and current 64-bit Lite images use arm64 Debian Trixie.
-
-Do not make the child-facing runtime depend on Docker until native GPIO and audio behavior have been validated.

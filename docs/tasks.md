@@ -44,4 +44,3 @@
 - [ ] Clarify future sync use case: who publishes content packages, where packages are hosted, whether this is GitHub Releases, Mac-local curation, parent-to-device transfer, or cloud sync, and what auth/rollback/privacy guarantees are required.
 - [ ] Define future content package signing, admin publication controls, retention, and rollback requirements after the sync use case is clarified.
 - [ ] Add systemd deployment for the native Pi runtime.
-- [ ] Revisit Docker runtime deployment after native GPIO and audio are validated.

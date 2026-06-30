@@ -22,17 +22,16 @@ Current stack:
 * Rust for the child-facing device runtime and Pi-hosted admin API.
 * SQLite for local durable setup, content, and event storage.
 * Caddy for the local HTTPS browser boundary.
-* Docker for a reproducible development shell.
 * `just` for documented project commands.
 
-Docker is a dev-shell tool for now. The first Raspberry Pi runtime path should stay native until GPIO and audio behavior are validated on hardware.
+Development runs directly on the host. The first Raspberry Pi runtime path stays native so GPIO, audio, and systemd behavior are validated without a container boundary.
 
 ## macOS Setup
 
 Install local tools:
 
 ```sh
-brew install rust just sqlite caddy docker
+brew install rust just sqlite caddy
 ```
 
 Validate the repo:
@@ -109,7 +108,7 @@ Install Rust with rustup unless the project later pins another Pi-specific insta
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-Run native validation on the Pi before trying to containerize GPIO or audio:
+Run native validation on the Pi:
 
 ```sh
 just check
