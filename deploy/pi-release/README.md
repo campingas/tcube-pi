@@ -6,5 +6,6 @@ Use `just prepare-release vX.Y.Z` before creating a release tag. The recipe call
 
 `install-on-pi` is copied into GitHub Release tarballs as root-level `install.sh`. Run that packaged installer on the Pi with `sudo ./install.sh` after verifying `SHA256SUMS`.
 
-Keep release-bundle scripts here. Keep long-running service files and Caddy configuration in `deploy/pi-admin-caddy/`.
+`install-latest` is the curl-pipe bootstrapper documented in `docs/hardware/pi-os-lite-install.md`. It resolves the latest release, downloads the archive and `SHA256SUMS`, verifies them, extracts the bundle, and runs the packaged `install.sh`.
 
+Keep release-bundle scripts here. Keep long-running service files and Caddy configuration in `deploy/pi-admin-caddy/`.

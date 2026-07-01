@@ -92,21 +92,19 @@ The expected prototype card name includes `sndrpimaxims`. If no I2S card appears
 
 ## Install Latest Release
 
-Download the latest release bundle from GitHub Releases:
+Install the latest release bundle directly from GitHub Releases:
 
 ```sh
-repo="campingas/tcube-pi"
-tag="$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
-curl -fLO "https://github.com/${repo}/releases/download/${tag}/tcube-pi-${tag}-linux-arm64.tar.gz"
-curl -fLO "https://github.com/${repo}/releases/download/${tag}/SHA256SUMS"
-grep "tcube-pi-${tag}-linux-arm64.tar.gz$" SHA256SUMS | sha256sum -c -
-tar -xzf "tcube-pi-${tag}-linux-arm64.tar.gz"
-cd "tcube-pi-${tag}-linux-arm64"
-grep -E ' (bin/|install\.sh$)' ../SHA256SUMS | sha256sum -c -
-sudo ./install.sh
+curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/master/deploy/pi-release/install-latest | sudo bash
 ```
 
-The installer writes application files under `/opt/tcube`, configuration under `/etc/tcube`, data under `/var/lib/tcube`, and systemd service files under `/etc/systemd/system`. It enables `tcube-pi-admin` and Caddy.
+To install a specific version:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/master/deploy/pi-release/install-latest | sudo env TCUBE_PI_VERSION=v0.0.3 bash
+```
+
+The bootstrap script downloads the selected release archive and `SHA256SUMS`, verifies the archive plus bundled installer and binaries, extracts the bundle in a temporary directory, then runs the bundled installer. The installer writes application files under `/opt/tcube`, configuration under `/etc/tcube`, data under `/var/lib/tcube`, and systemd service files under `/etc/systemd/system`. It enables `tcube-pi-admin` and Caddy.
 
 ## Post-Install Checks
 
