@@ -54,6 +54,7 @@ test("dashboard stat cards open focused detail views", async ({ page }) => {
   await page.getByTestId("dashboard-stat-active").click();
   await expect(page.getByTestId("stat-detail-view")).toBeVisible();
   await expect(page.getByText("Active sounds")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Refresh" })).toHaveCount(0);
   await expect(page.getByText("Morning greeting")).toBeVisible();
   await expect(page.getByText("Top · Language · English · Generated")).toBeVisible();
 
@@ -110,6 +111,7 @@ test("create owner screen does not show a refresh action", async ({ page }) => {
 
   await expect(page.getByText("Create local owner")).toBeVisible();
   await expect(page.getByRole("button", { name: "Refresh" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /go to dashboard/i })).toHaveCount(0);
 });
 
 test("mobile button selector keeps five fixed-size button pills horizontally usable", async ({ page }) => {

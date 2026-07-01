@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, FileAudio, Hand, RefreshCw } from "@lucide/svelte";
+  import { AlertTriangle, FileAudio, Hand } from "@lucide/svelte";
   import type { AuthSession, ContentInventory, ContentInventoryItem, RecentActivityEvent } from "../api";
   import type { InventoryFilter, MessageType } from "../types";
   import TopBar from "../components/TopBar.svelte";
@@ -19,7 +19,6 @@
   export let actions: {
     goHome: () => void;
     openSettings: () => void;
-    refreshInventory: () => void | Promise<void>;
     openInventoryButton: (item: ContentInventoryItem) => void;
   };
 
@@ -93,11 +92,6 @@
       </div>
       <div class="inventory-actions">
         <span class="inventory-count">{count}</span>
-        {#if state.filter !== "presses_today"}
-          <button type="button" class="sec-link" on:click={actions.refreshInventory}>
-            Refresh <RefreshCw size={13} strokeWidth={1.5} aria-hidden="true" />
-          </button>
-        {/if}
       </div>
     </div>
     {#if state.filter !== "presses_today" && state.inventoryError}

@@ -31,7 +31,6 @@
     PawPrint,
     Play,
     Plus,
-    RefreshCw,
     Save,
     Settings,
     ShieldCheck,
@@ -1131,7 +1130,6 @@
       actions={{
         goHome,
         openSettings: () => (view = "settings"),
-        refreshInventory,
         openInventoryButton
       }}
     />

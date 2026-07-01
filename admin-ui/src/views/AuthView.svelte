@@ -25,9 +25,9 @@
 
 <nav class="topbar">
   <div class="topbar-left">
-    <button type="button" class="topbar-logo topbar-logo-btn" aria-label="Go to dashboard" on:click={() => window.location.reload()}>
+    <div class="topbar-logo">
       T<span>·</span>Cube
-    </button>
+    </div>
     <div class="topbar-session">Local parent dashboard</div>
   </div>
 </nav>
