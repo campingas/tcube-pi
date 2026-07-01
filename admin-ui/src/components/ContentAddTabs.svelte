@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { FileAudio, Mic, Play, Square, Upload, WandSparkles, X } from "@lucide/svelte";
+  import { Check, FileAudio, Mic, Play, Upload, WandSparkles, X } from "@lucide/svelte";
   import type { RecordedWav } from "../audio";
-  import { recordingHint, recordingSaveHint } from "../recording-controller";
+  import { recordingHint, recordingSaveHint, uploadFileSize, uploadHint, uploadStepLabel } from "../recording-controller";
   import type { ButtonConfig, DraftForm } from "../types";
 
   export let selectedTab: "record" | "upload" | "generate";
@@ -21,6 +21,9 @@
   export let revokeRecording: () => void;
   export let submitRecording: () => void | Promise<void>;
   export let chooseUpload: (event: Event) => void;
+  export let clearUpload: () => void;
+  export let dropUpload: (event: DragEvent) => void;
+  export let setUploadDragging: (dragging: boolean) => void;
   export let submitUpload: () => void | Promise<void>;
   export let submitGeneration: () => void | Promise<void>;
   export let minutes: (seconds: number) => string;
@@ -30,12 +33,14 @@
   export let generatedSpeechStatusLoading = false;
   export let generatedSpeechStatusError: string | null = null;
   export let voiceOptions: string[] = [];
+  export let draggingUpload = false;
 
   $: isLanguageButton = selectedButton.contentType === "language";
   $: mediaTitleReady = isLanguageButton || Boolean(draftForm.title.trim());
   $: languageTextReady = !isLanguageButton || Boolean(draftForm.text.trim());
   $: recordingSaveDisabled = busy || !recordedWav || !mediaTitleReady || !languageTextReady;
   $: uploadSaveDisabled = busy || !uploadFile || !mediaTitleReady || !languageTextReady;
+  $: uploadReadyToSave = Boolean(uploadFile && mediaTitleReady && languageTextReady);
 </script>
 
 <section class="content-input-surface">
@@ -125,24 +130,69 @@
       {/if}
     </div>
   {:else if selectedTab === "upload"}
-    <div class="upload-zone" data-testid="upload-zone">
-      <div class="upload-icon-big">
-        <FileAudio size={24} strokeWidth={1.5} aria-hidden="true" />
+    <div
+      class:dragging={draggingUpload}
+      class:upload-ready={Boolean(uploadFile)}
+      class="upload-zone"
+      data-testid="upload-zone"
+      role="group"
+      aria-label="Upload audio draft"
+      on:dragover|preventDefault={() => setUploadDragging(true)}
+      on:dragleave={() => setUploadDragging(false)}
+      on:drop={dropUpload}
+    >
+      <div class="upload-step-row" role="list" aria-label="Upload steps">
+        <div class:done={Boolean(uploadFile)} class:current={!uploadFile} class="upload-step" role="listitem">
+          {#if uploadFile}<Check size={13} strokeWidth={1.5} aria-hidden="true" />{:else}1{/if}
+          <span>Choose</span>
+        </div>
+        <div class:done={uploadReadyToSave} class:current={Boolean(uploadFile) && !uploadReadyToSave} class="upload-step" role="listitem">
+          {#if uploadReadyToSave}<Check size={13} strokeWidth={1.5} aria-hidden="true" />{:else}2{/if}
+          <span>Review</span>
+        </div>
+        <div class:current={uploadReadyToSave} class="upload-step" role="listitem">
+          3
+          <span>Save Draft</span>
+        </div>
       </div>
-      <label class="upload-hint">Choose an MP3 or WAV file to stage as a draft.
-        <input class="neo-field file-field" type="file" accept="audio/mpeg,audio/mp3,audio/wav,.mp3,.wav" on:change={chooseUpload} />
+
+      <label class="upload-picker" aria-label="Choose audio file">
+        <span class="upload-icon-big">
+          <FileAudio size={24} strokeWidth={1.5} aria-hidden="true" />
+        </span>
+        <strong>{uploadStepLabel(uploadFile, uploadReadyToSave)}</strong>
+        <span>{uploadHint(uploadFile, uploadReadyToSave)}</span>
+        <input class="file-field" type="file" accept="audio/mpeg,audio/mp3,audio/wav,.mp3,.wav" on:change={chooseUpload} />
       </label>
-      {#if uploadPreviewUrl}
-        <audio controls src={uploadPreviewUrl}></audio>
-      {/if}
-      {#if isLanguageButton}
-        <label class="field-label upload-text-field">Text spoken
-          <input class="neo-field" value={draftForm.text} placeholder="Short phrase" on:input={(event) => updateDraftForm({ text: (event.currentTarget as HTMLInputElement).value })} />
-        </label>
+
+      {#if uploadFile}
+        <div class="upload-review">
+          <div class="upload-file-row">
+            <div class="upload-file-icon">
+              <FileAudio size={18} strokeWidth={1.5} aria-hidden="true" />
+            </div>
+            <div class="upload-file-meta">
+              <strong title={uploadFile.name}>{uploadFile.name}</strong>
+              <span>{uploadFileSize(uploadFile.size)} · MP3 or WAV</span>
+            </div>
+            <button type="button" class="upload-clear" on:click={clearUpload} aria-label="Choose another file" disabled={busy}>
+              <X size={16} strokeWidth={1.5} aria-hidden="true" />
+            </button>
+          </div>
+          {#if uploadPreviewUrl}
+            <audio controls src={uploadPreviewUrl}></audio>
+          {/if}
+          {#if isLanguageButton}
+            <label class="field-label upload-text-field">Text spoken
+              <input class="neo-field" value={draftForm.text} placeholder="Short phrase" on:input={(event) => updateDraftForm({ text: (event.currentTarget as HTMLInputElement).value })} />
+            </label>
+          {/if}
+          <p class="muted upload-draft-note">Drafts are not heard by the child until you activate them.</p>
+        </div>
       {/if}
       <button type="button" class="btn-primary" on:click={submitUpload} disabled={uploadSaveDisabled}>
         <Upload size={15} strokeWidth={1.5} aria-hidden="true" />
-        Upload draft
+        Save Draft
       </button>
     </div>
   {:else}

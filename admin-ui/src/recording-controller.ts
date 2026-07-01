@@ -55,6 +55,25 @@ export function validateUploadFile(file: Pick<File, "name" | "size"> | null) {
   return { ok: true as const };
 }
 
+export function uploadStepLabel(file: Pick<File, "name" | "size"> | null, readyToSave: boolean) {
+  if (!file) return "Choose file";
+  if (!readyToSave) return "Review details";
+  return "Save Draft";
+}
+
+export function uploadHint(file: Pick<File, "name" | "size"> | null, readyToSave: boolean) {
+  if (!file) return "Choose an MP3 or WAV under 25 MB.";
+  if (!readyToSave) return "Preview the file, then add the required details.";
+  return "Saving creates a Draft. The child cannot hear it until you activate it.";
+}
+
+export function uploadFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  const kilobytes = bytes / 1024;
+  if (kilobytes < 1024) return `${formatFileUnit(kilobytes)} KB`;
+  return `${formatFileUnit(kilobytes / 1024)} MB`;
+}
+
 export function waveformLevels(data: Uint8Array, barCount: number) {
   if (barCount <= 0) return [];
   const segmentSize = Math.max(1, Math.floor(data.length / barCount));
@@ -91,4 +110,8 @@ function minutes(seconds: number) {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60).toString().padStart(2, "0");
   return `${mins}:${secs}`;
+}
+
+function formatFileUnit(value: number) {
+  return value >= 10 ? String(Math.round(value)) : value.toFixed(1);
 }

@@ -20,6 +20,7 @@
     recordedWav: RecordedWav | null;
     uploadFile: File | null;
     uploadPreviewUrl: string | null;
+    draggingUpload: boolean;
     generatedSpeechStatusLoading: boolean;
     generatedSpeechStatusError: string | null;
     generatedSpeechVoiceOptions: string[];
@@ -43,6 +44,9 @@
     revokeRecording: () => void;
     submitRecording: () => void | Promise<void>;
     chooseUpload: (event: Event) => void;
+    clearUpload: () => void;
+    dropUpload: (event: DragEvent) => void;
+    setUploadDragging: (dragging: boolean) => void;
     submitUpload: () => void | Promise<void>;
     submitGeneration: () => void | Promise<void>;
     playContentPreview: (item: ActiveContentItem | { id: string; title: string; preview_url: string | null }) => void | Promise<void>;
@@ -249,6 +253,9 @@
           revokeRecording={actions.revokeRecording}
           submitRecording={actions.submitRecording}
           chooseUpload={actions.chooseUpload}
+          clearUpload={actions.clearUpload}
+          dropUpload={actions.dropUpload}
+          setUploadDragging={actions.setUploadDragging}
           submitUpload={actions.submitUpload}
           submitGeneration={actions.submitGeneration}
           minutes={(seconds) => `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`}
@@ -258,6 +265,7 @@
           generatedSpeechStatusLoading={state.generatedSpeechStatusLoading}
           generatedSpeechStatusError={state.generatedSpeechStatusError}
           voiceOptions={state.generatedSpeechVoiceOptions}
+          draggingUpload={state.draggingUpload}
         />
       </section>
     {:else}

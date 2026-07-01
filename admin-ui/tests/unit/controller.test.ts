@@ -21,6 +21,9 @@ import {
   recordingStatusAfterSave,
   recordingStatusAfterStop,
   shouldBlockRecordingStart,
+  uploadFileSize,
+  uploadHint,
+  uploadStepLabel,
   validateUploadFile,
   waveformLevels
 } from "../../src/recording-controller.ts";
@@ -105,6 +108,22 @@ describe("recording controller", () => {
       error: "Upload failed. File must be 25 MB or smaller."
     });
     assert.deepEqual(validateUploadFile({ name: "sound.MP3", size: 25 * 1024 * 1024 }), { ok: true });
+  });
+
+  test("describes upload steps and file sizes", () => {
+    assert.equal(uploadStepLabel(null, false), "Choose file");
+    assert.equal(uploadStepLabel({ name: "hello.wav", size: 1536 }, false), "Review details");
+    assert.equal(uploadStepLabel({ name: "hello.wav", size: 1536 }, true), "Save Draft");
+    assert.equal(uploadHint(null, false), "Choose an MP3 or WAV under 25 MB.");
+    assert.equal(uploadHint({ name: "hello.wav", size: 1536 }, false), "Preview the file, then add the required details.");
+    assert.equal(
+      uploadHint({ name: "hello.wav", size: 1536 }, true),
+      "Saving creates a Draft. The child cannot hear it until you activate it."
+    );
+    assert.equal(uploadFileSize(512), "512 B");
+    assert.equal(uploadFileSize(1536), "1.5 KB");
+    assert.equal(uploadFileSize(2 * 1024 * 1024), "2.0 MB");
+    assert.equal(uploadFileSize(12 * 1024 * 1024), "12 MB");
   });
 
   test("calculates recording status transitions and hints", () => {

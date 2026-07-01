@@ -1534,8 +1534,7 @@ audio {
 
 .gen-field .neo-field,
 .field-label .neo-field,
-.add-meta-grid .neo-field,
-.upload-hint .neo-field {
+.add-meta-grid .neo-field {
   color: var(--text-primary);
   font-size: 14px;
   font-weight: 400;
@@ -1591,6 +1590,11 @@ audio {
 
 .upload-zone.dragging {
   border-color: var(--accent-coral);
+  background: var(--glow-coral);
+}
+
+.upload-zone.upload-ready {
+  border-color: rgba(0, 144, 138, 0.45);
 }
 
 .record-btn-big {
@@ -1649,18 +1653,11 @@ audio {
   transition: height 80ms ease-out;
 }
 
-.record-hint,
-.upload-hint {
+.record-hint {
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
   text-align: center;
-}
-
-.upload-hint input {
-  display: block;
-  margin-top: 8px;
-  font-size: 11px;
 }
 
 .upload-text-field {
@@ -1688,6 +1685,166 @@ audio {
   border-radius: 14px;
   background: var(--surface-2);
   color: var(--text-muted);
+}
+
+.upload-step-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.upload-step {
+  display: flex;
+  min-width: 0;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-0);
+  color: var(--text-disabled);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.upload-step.current {
+  border-color: rgba(197, 83, 71, 0.38);
+  color: var(--accent-coral);
+}
+
+.upload-step.done {
+  border-color: rgba(0, 144, 138, 0.32);
+  background: var(--glow-teal);
+  color: var(--accent-teal);
+}
+
+.upload-step span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-picker {
+  display: flex;
+  width: 100%;
+  min-height: 148px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-0);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 18px 14px;
+  text-align: center;
+}
+
+.upload-picker:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.upload-picker strong {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.upload-picker span:not(.upload-icon-big) {
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.file-field {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.upload-review {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.upload-review audio {
+  width: 100%;
+}
+
+.upload-file-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 38px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 10px;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-0);
+  padding: 10px;
+}
+
+.upload-file-icon {
+  display: flex;
+  width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--glow-sage);
+  color: var(--accent-sage);
+}
+
+.upload-file-meta {
+  min-width: 0;
+}
+
+.upload-file-meta strong,
+.upload-file-meta span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-file-meta strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.upload-file-meta span {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.upload-clear {
+  display: flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-1);
+  color: var(--text-muted);
+}
+
+.upload-draft-note {
+  margin: 0;
 }
 
 .add-action-row {

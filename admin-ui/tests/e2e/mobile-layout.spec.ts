@@ -248,16 +248,24 @@ test("recording flow shows live microphone feedback and draft guidance", async (
   await page.getByRole("tab", { name: /Upload/i }).click();
   await expect(page.getByRole("tab", { name: /Upload/i })).toHaveClass(/active-atab/);
   await expect(page.getByTestId("upload-zone")).toBeVisible();
-  await expect(page.getByText("Choose an MP3 or WAV file to stage as a draft.")).toBeVisible();
-  await expect(page.getByTestId("upload-zone").getByLabel("Text spoken")).toBeVisible();
-  await expect(page.getByTestId("upload-zone").getByRole("button", { name: "Upload draft" })).toBeDisabled();
+  await expect(page.getByLabel("Upload steps")).toBeVisible();
+  await expect(page.getByText("Choose file")).toBeVisible();
+  await expect(page.getByText("Choose an MP3 or WAV under 25 MB.")).toBeVisible();
+  await expect(page.getByTestId("upload-zone").getByLabel("Text spoken")).toHaveCount(0);
+  await expect(page.getByTestId("upload-zone").getByRole("button", { name: "Save Draft" })).toBeDisabled();
   await page.getByTestId("upload-zone").locator("input[type='file']").setInputFiles({
     name: "bonjour.wav",
     mimeType: "audio/wav",
     buffer: Buffer.from("mock upload")
   });
-  await expect(page.getByTestId("upload-zone").getByRole("button", { name: "Upload draft" })).toBeEnabled();
-  await page.getByTestId("upload-zone").getByRole("button", { name: "Upload draft" }).click();
+  await expect(page.getByText("bonjour.wav")).toBeVisible();
+  await expect(page.getByText("11 B · MP3 or WAV")).toBeVisible();
+  await expect(page.getByTestId("upload-zone").locator("audio")).toBeVisible();
+  await expect(page.getByTestId("upload-zone").getByLabel("Text spoken")).toBeVisible();
+  await expect(page.getByText("Drafts are not heard by the child until you activate them.")).toBeVisible();
+  await expect(page.getByTestId("upload-zone").getByRole("button", { name: "Choose another file" })).toBeVisible();
+  await expect(page.getByTestId("upload-zone").getByRole("button", { name: "Save Draft" })).toBeEnabled();
+  await page.getByTestId("upload-zone").getByRole("button", { name: "Save Draft" }).click();
   await expect(page.getByRole("tab", { name: /Drafts/i })).toHaveAttribute("aria-selected", "true");
 });
 

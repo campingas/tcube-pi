@@ -846,6 +846,9 @@
     }
     uploadFile = file;
     uploadPreviewUrl = URL.createObjectURL(file);
+    if (selectedButton?.contentType && selectedButton.contentType !== "language" && !draftForm.title.trim()) {
+      draftForm = updateDraftFormValue(draftForm, { title: defaultDraftTitle(file.name) });
+    }
   }
 
   function mediaForm(file: Blob, filename: string) {
@@ -1084,6 +1087,7 @@
         recordedWav,
         uploadFile,
         uploadPreviewUrl,
+        draggingUpload,
         contentDurations,
         events,
         generatedSpeechDisabled,
@@ -1110,6 +1114,9 @@
         revokeRecording,
         submitRecording,
         chooseUpload,
+        clearUpload: () => setUploadFile(null),
+        dropUpload,
+        setUploadDragging: (dragging: boolean) => (draggingUpload = dragging),
         submitUpload,
         submitGeneration,
         playContentPreview,

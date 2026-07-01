@@ -22,6 +22,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - Per-content play counts are computed from local button events.
 - Admin UI source is Svelte + Vite + Tailwind under `admin-ui/`, with static build output checked in under `admin-ui/build/`.
 - Admin UI is split into focused views, shared components, and controller helpers for button config, generated speech health, and recording/upload decisions.
+- Admin UI upload flow stages audio as Choose, Review, and Save Draft steps, then sends parents to Drafts for preview and explicit activation.
 - Release workflow builds Linux arm64 bundles with Rust binaries, prebuilt admin UI, content, Caddy/systemd files, installer, and SHA-256 checksums.
 
 ## Not Complete
