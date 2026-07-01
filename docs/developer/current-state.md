@@ -30,7 +30,7 @@ Last updated: 2026-07-01 (+07)
 - GitHub Actions CI under `.github/workflows/ci.yml` runs Rust formatting, check, Clippy, tests, and admin UI pnpm install/check/build gates.
 - GitHub Actions release workflow under `.github/workflows/release.yml` builds Linux arm64 Pi Zero 2 W application bundles with Rust binaries, prebuilt admin UI, content, Caddy/systemd deployment files, installer, and SHA-256 checksums.
 - Release preparation uses `just prepare-release vX.Y.Z` to update `Cargo.toml`, `Cargo.lock`, and `admin-ui/package.json` before committing and tagging. The release workflow verifies the tag version matches both manifests before publishing.
-- Version `0.0.2` is prepared as the first stable release candidate after prerelease validation; push annotated tag `v0.0.2` to publish the GitHub Release bundle.
+- Version `0.0.3` is prepared with the generated-speech admin flow fixes; push annotated tag `v0.0.3` to publish the GitHub Release bundle.
 - Repository Rust workflow config uses `rust-toolchain.toml` for stable Rust with `rustfmt` and `clippy`, plus `.cargo/config.toml` to force inherited host C/C++ flags empty for native dependency consistency.
 
 ## Not Yet Complete
@@ -421,6 +421,16 @@ Latest release preparation validation on 2026-06-23:
 - `just test`
 - `just build-admin-ui`
 - `cargo build --release --locked --all-features`
+
+Latest release preparation validation on 2026-07-01:
+
+- `just prepare-release v0.0.3`
+- `just check`
+- `just check-admin-ui`
+- `just test-admin-ui-unit`
+- `just test`
+- `just test-admin-ui-mobile`
+- `just build-admin-ui`
 
 Latest audio validation hardening on 2026-06-30:
 
