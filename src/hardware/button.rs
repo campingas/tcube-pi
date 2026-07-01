@@ -2,11 +2,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::{self, BufReader};
+use std::num::{NonZeroU16, NonZeroU32};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::db::admin::pomodoro::{runtime_enabled_settings, PomodoroSettings};
 use crate::events::types::{ButtonBehavior, ButtonEvent, ButtonMapping, ContentPack, Response};
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
@@ -23,7 +25,23 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap};
 use ratatui::Frame;
 use ratatui::Terminal;
+use rodio::{ChannelCount, SampleRate, Source};
 use rusqlite::{params, Connection};
+
+const POMODORO_FOCUS_LABEL: &str = "generated binaural focus tone";
+const FOCUS_SAMPLE_RATE_HZ: u32 = 44_100;
+const FOCUS_CHANNELS: u16 = 2;
+const FOCUS_LEFT_HZ: f32 = 220.0;
+const FOCUS_RIGHT_HZ: f32 = 226.0;
+const FOCUS_VOLUME: f32 = 0.10;
+const FOCUS_FADE_SECONDS: f32 = 3.0;
+const FOCUS_SLOW_MOD_HZ: f32 = 0.035;
+#[allow(dead_code)]
+const POMODORO_COMBO_BUTTONS: [u8; 3] = [1, 2, 4];
+#[allow(dead_code)]
+const POMODORO_CHORD_ARM_WINDOW: Duration = Duration::from_millis(180);
+#[allow(dead_code)]
+const POMODORO_HOLD_DURATION: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Parser)]
 #[command(about = "T-Cube child-facing device runtime")]
@@ -184,10 +202,23 @@ trait ButtonInput {
     fn feedback(&mut self, _feedback: DeviceFeedback) -> Result<()> {
         Ok(())
     }
+    fn wait_for_pomodoro_cancel(&mut self, duration: Duration) -> Result<bool> {
+        thread::sleep(duration);
+        Ok(false)
+    }
 }
 
 trait AudioOutput {
     fn play(&self, response: &Response) -> Result<AudioPlayback>;
+    fn stop(&self) -> Result<()> {
+        Ok(())
+    }
+    fn play_chime(&self, _chime: PomodoroChime) -> Result<()> {
+        Ok(())
+    }
+    fn play_focus(&self, _duration: Duration) -> Result<()> {
+        Ok(())
+    }
 }
 
 trait LedOutput {
@@ -197,6 +228,7 @@ trait LedOutput {
 
 enum InputEvent {
     Button(ButtonPress),
+    PomodoroShortcut,
     Quit,
 }
 
@@ -214,6 +246,10 @@ enum DeviceFeedback {
         mode: String,
         response: Response,
         audio: AudioPlayback,
+    },
+    Pomodoro {
+        label: String,
+        detail: String,
     },
     Led {
         label: String,
@@ -297,6 +333,10 @@ impl ButtonInput for TerminalButtonInput {
                             self.state.note_key_press(5);
                             Ok(InputEvent::Button(button_press(5, &self.content)?))
                         }
+                        KeyCode::Char('p') => {
+                            self.state.note_pomodoro_shortcut();
+                            Ok(InputEvent::PomodoroShortcut)
+                        }
                         KeyCode::Char('q') | KeyCode::Esc => Ok(InputEvent::Quit),
                         _ => continue,
                     };
@@ -308,6 +348,26 @@ impl ButtonInput for TerminalButtonInput {
     fn feedback(&mut self, feedback: DeviceFeedback) -> Result<()> {
         self.state.apply_feedback(feedback);
         self.draw()
+    }
+
+    fn wait_for_pomodoro_cancel(&mut self, duration: Duration) -> Result<bool> {
+        let deadline = Instant::now() + duration;
+        while Instant::now() < deadline {
+            self.draw()?;
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let poll_for = remaining.min(Duration::from_millis(100));
+            if event::poll(poll_for).context("failed to poll terminal input")? {
+                if let Event::Key(key) = event::read().context("failed to read terminal input")? {
+                    if key.kind == KeyEventKind::Release {
+                        continue;
+                    }
+                    if matches!(key.code, KeyCode::Char('p') | KeyCode::Esc) {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
     }
 }
 
@@ -411,6 +471,19 @@ impl TuiState {
                     LedFeedbackState::Inactive => "inactive blink".to_string(),
                 };
             }
+            DeviceFeedback::Pomodoro { label, detail } => {
+                self.last_mode = label.clone();
+                self.last_response = detail.clone();
+                self.last_audio_path = POMODORO_FOCUS_LABEL.to_string();
+                self.last_led = "button LEDs off".to_string();
+                self.push_log(TuiLogEntry {
+                    occurred_at: Utc::now().format("%H:%M:%S%.3f").to_string(),
+                    button_id: None,
+                    title: label,
+                    detail,
+                    color: Color::LightCyan,
+                });
+            }
             DeviceFeedback::Quit => {
                 self.push_log(TuiLogEntry {
                     occurred_at: Utc::now().format("%H:%M:%S%.3f").to_string(),
@@ -425,6 +498,11 @@ impl TuiState {
 
     fn note_key_press(&mut self, button_id: u8) {
         self.last_button = Some(button_id);
+        self.last_key_at = Some(Utc::now().format("%H:%M:%S%.3f").to_string());
+    }
+
+    fn note_pomodoro_shortcut(&mut self) {
+        self.last_button = None;
         self.last_key_at = Some(Utc::now().format("%H:%M:%S%.3f").to_string());
     }
 
@@ -658,6 +736,13 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &TuiState) {
         ),
         Span::raw(" to play mapped content   "),
         Span::styled(
+            "p",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" focus routine   "),
+        Span::styled(
             "q / Esc",
             Style::default()
                 .fg(Color::White)
@@ -707,6 +792,15 @@ impl AudioOutput for TerminalAudioOutput {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PomodoroChime {
+    Start,
+    BreakStart,
+    BreakEnd,
+    Complete,
+    Cancel,
+}
+
 struct LocalAudioOutput {
     _sink_handle: rodio::MixerDeviceSink,
     player: Mutex<rodio::Player>,
@@ -747,6 +841,125 @@ impl AudioOutput for LocalAudioOutput {
             resolved_path: Some(path),
             source_path: response.audio_path.clone(),
         })
+    }
+
+    fn stop(&self) -> Result<()> {
+        let player = self
+            .player
+            .lock()
+            .map_err(|_| anyhow::anyhow!("audio player lock was poisoned"))?;
+        player.stop();
+        Ok(())
+    }
+
+    fn play_chime(&self, chime: PomodoroChime) -> Result<()> {
+        let player = self
+            .player
+            .lock()
+            .map_err(|_| anyhow::anyhow!("audio player lock was poisoned"))?;
+        player.stop();
+        for frequency in chime_frequencies(chime) {
+            player.append(
+                rodio::source::SineWave::new(*frequency)
+                    .take_duration(Duration::from_millis(180))
+                    .amplify(0.12),
+            );
+        }
+        player.sleep_until_end();
+        Ok(())
+    }
+
+    fn play_focus(&self, duration: Duration) -> Result<()> {
+        let source = BinauralFocusSource::new(duration);
+        let player = self
+            .player
+            .lock()
+            .map_err(|_| anyhow::anyhow!("audio player lock was poisoned"))?;
+        player.stop();
+        player.append(source);
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct BinauralFocusSource {
+    sample_index: u64,
+    total_samples: u64,
+    duration: Duration,
+}
+
+impl BinauralFocusSource {
+    fn new(duration: Duration) -> Self {
+        let frames = duration
+            .as_secs()
+            .saturating_mul(u64::from(FOCUS_SAMPLE_RATE_HZ))
+            .saturating_add(
+                u64::from(duration.subsec_nanos()).saturating_mul(u64::from(FOCUS_SAMPLE_RATE_HZ))
+                    / 1_000_000_000,
+            );
+        Self {
+            sample_index: 0,
+            total_samples: frames.saturating_mul(u64::from(FOCUS_CHANNELS)),
+            duration,
+        }
+    }
+}
+
+impl Iterator for BinauralFocusSource {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.sample_index >= self.total_samples {
+            return None;
+        }
+
+        let channel = self.sample_index % u64::from(FOCUS_CHANNELS);
+        let frame = self.sample_index / u64::from(FOCUS_CHANNELS);
+        let total_frames = self.total_samples / u64::from(FOCUS_CHANNELS);
+        let t = frame as f32 / FOCUS_SAMPLE_RATE_HZ as f32;
+        let frequency = if channel == 0 {
+            FOCUS_LEFT_HZ
+        } else {
+            FOCUS_RIGHT_HZ
+        };
+        let fade_in = (t / FOCUS_FADE_SECONDS).clamp(0.0, 1.0);
+        let remaining_t = total_frames.saturating_sub(frame) as f32 / FOCUS_SAMPLE_RATE_HZ as f32;
+        let fade_out = (remaining_t / FOCUS_FADE_SECONDS).clamp(0.0, 1.0);
+        let fade = fade_in.min(fade_out);
+        let modulation = 0.92 + 0.08 * (std::f32::consts::TAU * FOCUS_SLOW_MOD_HZ * t).sin();
+        let sample =
+            (std::f32::consts::TAU * frequency * t).sin() * FOCUS_VOLUME * fade * modulation;
+        self.sample_index = self.sample_index.wrapping_add(1);
+        Some(sample)
+    }
+}
+
+impl Source for BinauralFocusSource {
+    fn current_span_len(&self) -> Option<usize> {
+        let remaining = self.total_samples.saturating_sub(self.sample_index);
+        Some(remaining.min(usize::MAX as u64) as usize)
+    }
+
+    fn channels(&self) -> ChannelCount {
+        NonZeroU16::new(FOCUS_CHANNELS).expect("focus channel count is nonzero")
+    }
+
+    fn sample_rate(&self) -> SampleRate {
+        NonZeroU32::new(FOCUS_SAMPLE_RATE_HZ).expect("focus sample rate is nonzero")
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        Some(self.duration)
+    }
+}
+
+fn chime_frequencies(chime: PomodoroChime) -> &'static [f32] {
+    match chime {
+        PomodoroChime::Start => &[440.0, 554.37, 659.25],
+        PomodoroChime::BreakStart => &[659.25, 554.37],
+        PomodoroChime::BreakEnd => &[523.25, 659.25],
+        PomodoroChime::Complete => &[523.25, 659.25, 783.99],
+        PomodoroChime::Cancel => &[392.0, 329.63],
     }
 }
 
@@ -886,6 +1099,17 @@ fn init_schema(conn: &Connection) -> Result<()> {
             event_type text not null,
             button_id integer,
             details text
+        );
+        create table if not exists pomodoro_settings (
+          id integer primary key check (id = 1),
+          enabled integer not null default 0,
+          child_age_years integer check (child_age_years between 3 and 18),
+          focus_minutes integer not null default 10 check (focus_minutes between 5 and 60),
+          break_minutes integer not null default 3 check (break_minutes between 1 and 30),
+          cycles integer not null default 2 check (cycles between 1 and 8),
+          preset text not null default 'mini' check (preset in ('mini', 'focus', 'full', 'custom')),
+          validated_at text,
+          updated_at text not null default current_timestamp
         );",
     )
     .context("failed to initialize SQLite schema")
@@ -918,7 +1142,7 @@ fn run_device_loop(
     content: ContentPack,
     database_path: PathBuf,
 ) -> Result<()> {
-    let store = EventStore::start(database_path)?;
+    let store = EventStore::start(database_path.clone())?;
     let mut response_counts: HashMap<String, usize> = HashMap::new();
 
     loop {
@@ -1035,6 +1259,9 @@ fn run_device_loop(
                     })?;
                 }
             },
+            InputEvent::PomodoroShortcut => {
+                handle_pomodoro_shortcut(input, audio, &store, &database_path)?;
+            }
             InputEvent::Quit => {
                 input.feedback(DeviceFeedback::Quit)?;
                 break;
@@ -1043,6 +1270,195 @@ fn run_device_loop(
     }
 
     store.shutdown()
+}
+
+fn handle_pomodoro_shortcut(
+    input: &mut dyn ButtonInput,
+    audio: &dyn AudioOutput,
+    store: &EventStore,
+    database_path: &Path,
+) -> Result<()> {
+    let conn = Connection::open(database_path)
+        .with_context(|| format!("failed to open SQLite database {}", database_path.display()))?;
+    let Some(settings) = runtime_enabled_settings(&conn)? else {
+        store.record_setup_debug(SetupDebugEvent {
+            event_type: "pomodoro_skipped".to_string(),
+            button_id: 0,
+            details: "{\"reason\":\"disabled_or_unvalidated\"}".to_string(),
+        })?;
+        input.feedback(DeviceFeedback::Pomodoro {
+            label: "Focus skipped".to_string(),
+            detail: "Owner must validate the focus routine in Settings.".to_string(),
+        })?;
+        return Ok(());
+    };
+
+    run_pomodoro_routine(input, audio, store, &settings)
+}
+
+fn run_pomodoro_routine(
+    input: &mut dyn ButtonInput,
+    audio: &dyn AudioOutput,
+    store: &EventStore,
+    settings: &PomodoroSettings,
+) -> Result<()> {
+    audio.stop()?;
+    input.feedback(DeviceFeedback::Pomodoro {
+        label: "Focus routine".to_string(),
+        detail: format!(
+            "{} min focus, {} min break, {} cycles",
+            settings.focus_minutes, settings.break_minutes, settings.cycles
+        ),
+    })?;
+    audio.play_chime(PomodoroChime::Start)?;
+
+    for cycle in 1..=settings.cycles {
+        input.feedback(DeviceFeedback::Pomodoro {
+            label: "Focus".to_string(),
+            detail: format!("Cycle {cycle} of {}", settings.cycles),
+        })?;
+        let focus_duration = Duration::from_secs(u64::from(settings.focus_minutes) * 60);
+        audio.play_focus(focus_duration)?;
+        if input.wait_for_pomodoro_cancel(focus_duration)? {
+            audio.stop()?;
+            audio.play_chime(PomodoroChime::Cancel)?;
+            store.record_setup_debug(SetupDebugEvent {
+                event_type: "pomodoro_cancelled".to_string(),
+                button_id: 0,
+                details: format!("{{\"cycle\":{cycle}}}"),
+            })?;
+            return Ok(());
+        }
+        audio.stop()?;
+        audio.play_chime(PomodoroChime::BreakStart)?;
+        input.feedback(DeviceFeedback::Pomodoro {
+            label: "Break".to_string(),
+            detail: format!("Cycle {cycle} of {}", settings.cycles),
+        })?;
+        let break_duration = Duration::from_secs(u64::from(settings.break_minutes) * 60);
+        if input.wait_for_pomodoro_cancel(break_duration)? {
+            audio.play_chime(PomodoroChime::Cancel)?;
+            store.record_setup_debug(SetupDebugEvent {
+                event_type: "pomodoro_cancelled".to_string(),
+                button_id: 0,
+                details: format!("{{\"cycle\":{cycle},\"phase\":\"break\"}}"),
+            })?;
+            return Ok(());
+        }
+        audio.play_chime(PomodoroChime::BreakEnd)?;
+    }
+
+    audio.play_chime(PomodoroChime::Complete)?;
+    store.record_setup_debug(SetupDebugEvent {
+        event_type: "pomodoro_completed".to_string(),
+        button_id: 0,
+        details: format!("{{\"cycles\":{}}}", settings.cycles),
+    })?;
+    input.feedback(DeviceFeedback::Pomodoro {
+        label: "Focus complete".to_string(),
+        detail: "Routine finished.".to_string(),
+    })?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ButtonGestureEventKind {
+    Down,
+    Up,
+    Tick,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ButtonGestureEvent {
+    button_id: u8,
+    kind: ButtonGestureEventKind,
+    at: Duration,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PomodoroGesture {
+    HoldCompleted,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+struct PomodoroGestureRecognizer {
+    pressed_since: HashMap<u8, Duration>,
+    chord_started_at: Option<Duration>,
+    completed: bool,
+}
+
+#[allow(dead_code)]
+impl PomodoroGestureRecognizer {
+    fn new() -> Self {
+        Self {
+            pressed_since: HashMap::new(),
+            chord_started_at: None,
+            completed: false,
+        }
+    }
+
+    fn handle(&mut self, event: ButtonGestureEvent) -> Option<PomodoroGesture> {
+        match event.kind {
+            ButtonGestureEventKind::Down => {
+                self.pressed_since
+                    .entry(event.button_id)
+                    .or_insert(event.at);
+                self.update_chord_state(event.at);
+            }
+            ButtonGestureEventKind::Up => {
+                self.pressed_since.remove(&event.button_id);
+                if POMODORO_COMBO_BUTTONS.contains(&event.button_id) {
+                    self.chord_started_at = None;
+                    self.completed = false;
+                }
+            }
+            ButtonGestureEventKind::Tick => {
+                self.update_chord_state(event.at);
+            }
+        }
+
+        if !self.completed {
+            if let Some(started_at) = self.chord_started_at {
+                if event.at.saturating_sub(started_at) >= POMODORO_HOLD_DURATION {
+                    self.completed = true;
+                    return Some(PomodoroGesture::HoldCompleted);
+                }
+            }
+        }
+        None
+    }
+
+    fn update_chord_state(&mut self, at: Duration) {
+        if !POMODORO_COMBO_BUTTONS
+            .iter()
+            .all(|button_id| self.pressed_since.contains_key(button_id))
+        {
+            return;
+        }
+
+        let first = POMODORO_COMBO_BUTTONS
+            .iter()
+            .filter_map(|button_id| self.pressed_since.get(button_id))
+            .min()
+            .copied()
+            .unwrap_or(at);
+        let last = POMODORO_COMBO_BUTTONS
+            .iter()
+            .filter_map(|button_id| self.pressed_since.get(button_id))
+            .max()
+            .copied()
+            .unwrap_or(at);
+
+        if last.saturating_sub(first) <= POMODORO_CHORD_ARM_WINDOW {
+            self.chord_started_at = Some(last);
+        } else {
+            self.chord_started_at = None;
+        }
+    }
 }
 
 fn display_timestamp(rfc3339: &str) -> String {
@@ -1092,16 +1508,23 @@ mod tests {
 
     struct ScriptedInput {
         events: Vec<InputEvent>,
+        cancel_waits: std::cell::RefCell<Vec<Duration>>,
     }
 
     impl ButtonInput for ScriptedInput {
         fn next_press(&mut self) -> Result<InputEvent> {
             Ok(self.events.remove(0))
         }
+
+        fn wait_for_pomodoro_cancel(&mut self, duration: Duration) -> Result<bool> {
+            self.cancel_waits.borrow_mut().push(duration);
+            Ok(false)
+        }
     }
 
     struct CapturingAudio {
         played: std::cell::RefCell<Vec<String>>,
+        routine: std::cell::RefCell<Vec<String>>,
     }
 
     impl AudioOutput for CapturingAudio {
@@ -1111,6 +1534,23 @@ mod tests {
                 resolved_path: None,
                 source_path: response.audio_path.clone(),
             })
+        }
+
+        fn stop(&self) -> Result<()> {
+            self.routine.borrow_mut().push("stop".to_string());
+            Ok(())
+        }
+
+        fn play_chime(&self, chime: PomodoroChime) -> Result<()> {
+            self.routine.borrow_mut().push(format!("chime:{chime:?}"));
+            Ok(())
+        }
+
+        fn play_focus(&self, duration: Duration) -> Result<()> {
+            self.routine
+                .borrow_mut()
+                .push(format!("focus:{}", duration.as_secs()));
+            Ok(())
         }
     }
 
@@ -1321,9 +1761,11 @@ mod tests {
                 InputEvent::Button(button_press(1, &content).unwrap()),
                 InputEvent::Quit,
             ],
+            cancel_waits: std::cell::RefCell::new(Vec::new()),
         };
         let audio = CapturingAudio {
             played: std::cell::RefCell::new(Vec::new()),
+            routine: std::cell::RefCell::new(Vec::new()),
         };
 
         run_device_loop(
@@ -1355,9 +1797,11 @@ mod tests {
                 InputEvent::Button(button_press(4, &content).unwrap()),
                 InputEvent::Quit,
             ],
+            cancel_waits: std::cell::RefCell::new(Vec::new()),
         };
         let audio = CapturingAudio {
             played: std::cell::RefCell::new(Vec::new()),
+            routine: std::cell::RefCell::new(Vec::new()),
         };
 
         run_device_loop(
@@ -1382,5 +1826,178 @@ mod tests {
             .unwrap();
         assert_eq!(button_count, 0);
         assert_eq!(setup_count, 2);
+    }
+
+    #[test]
+    fn generated_pomodoro_focus_source_is_stereo_and_non_silent() {
+        let focus_duration = Duration::from_secs(8 * 60);
+        let mut source = BinauralFocusSource::new(focus_duration);
+
+        assert_eq!(source.channels().get(), FOCUS_CHANNELS);
+        assert_eq!(source.sample_rate().get(), FOCUS_SAMPLE_RATE_HZ);
+        assert_eq!(source.total_duration(), Some(focus_duration));
+
+        let first_samples = source.by_ref().take(16).collect::<Vec<_>>();
+        assert!(first_samples.iter().all(|sample| sample.abs() < 0.001));
+
+        let later_samples = source
+            .skip((FOCUS_SAMPLE_RATE_HZ as usize * FOCUS_CHANNELS as usize) - 16)
+            .take(64)
+            .collect::<Vec<_>>();
+        assert!(later_samples.iter().any(|sample| sample.abs() > 0.01));
+        assert_ne!(later_samples[0], later_samples[1]);
+
+        let after_old_fade_cutoff = BinauralFocusSource::new(focus_duration)
+            .skip((FOCUS_SAMPLE_RATE_HZ as usize * FOCUS_CHANNELS as usize * 4) + 11)
+            .take(128)
+            .collect::<Vec<_>>();
+        assert!(after_old_fade_cutoff
+            .iter()
+            .any(|sample| sample.abs() > 0.01));
+    }
+
+    #[test]
+    fn pomodoro_gesture_starts_after_together_hold() {
+        let mut recognizer = PomodoroGestureRecognizer::new();
+
+        assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
+        assert_eq!(recognizer.handle(gesture_down(2, 50)), None);
+        assert_eq!(recognizer.handle(gesture_down(4, 100)), None);
+        assert_eq!(
+            recognizer.handle(gesture_tick(5_100)),
+            Some(PomodoroGesture::HoldCompleted)
+        );
+    }
+
+    #[test]
+    fn pomodoro_gesture_release_before_hold_cancels() {
+        let mut recognizer = PomodoroGestureRecognizer::new();
+
+        assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
+        assert_eq!(recognizer.handle(gesture_down(2, 50)), None);
+        assert_eq!(recognizer.handle(gesture_down(4, 100)), None);
+        assert_eq!(recognizer.handle(gesture_up(2, 2_000)), None);
+        assert_eq!(recognizer.handle(gesture_tick(6_000)), None);
+    }
+
+    #[test]
+    fn pomodoro_gesture_rejects_staggered_chord() {
+        let mut recognizer = PomodoroGestureRecognizer::new();
+
+        assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
+        assert_eq!(recognizer.handle(gesture_down(2, 50)), None);
+        assert_eq!(recognizer.handle(gesture_down(4, 500)), None);
+        assert_eq!(recognizer.handle(gesture_tick(5_500)), None);
+    }
+
+    #[test]
+    fn pomodoro_routine_runs_focus_break_sequence() {
+        let database = NamedTempFile::new().unwrap();
+        let store = EventStore::start(database.path().to_path_buf()).unwrap();
+        let mut input = ScriptedInput {
+            events: Vec::new(),
+            cancel_waits: std::cell::RefCell::new(Vec::new()),
+        };
+        let audio = CapturingAudio {
+            played: std::cell::RefCell::new(Vec::new()),
+            routine: std::cell::RefCell::new(Vec::new()),
+        };
+        let settings = PomodoroSettings {
+            enabled: true,
+            child_age_years: Some(9),
+            focus_minutes: 20,
+            break_minutes: 5,
+            cycles: 2,
+            preset: "focus".to_string(),
+            validated_at: Some("2026-07-01T00:00:00.000Z".to_string()),
+            updated_at: "2026-07-01T00:00:00.000Z".to_string(),
+        };
+
+        run_pomodoro_routine(&mut input, &audio, &store, &settings).unwrap();
+        store.shutdown().unwrap();
+
+        assert_eq!(
+            audio.routine.borrow().as_slice(),
+            [
+                "stop",
+                "chime:Start",
+                "focus:1200",
+                "stop",
+                "chime:BreakStart",
+                "chime:BreakEnd",
+                "focus:1200",
+                "stop",
+                "chime:BreakStart",
+                "chime:BreakEnd",
+                "chime:Complete",
+            ]
+        );
+        assert_eq!(
+            input.cancel_waits.borrow().as_slice(),
+            [
+                Duration::from_secs(20 * 60),
+                Duration::from_secs(5 * 60),
+                Duration::from_secs(20 * 60),
+                Duration::from_secs(5 * 60),
+            ]
+        );
+    }
+
+    #[test]
+    fn pomodoro_shortcut_skips_when_unvalidated() {
+        let database = NamedTempFile::new().unwrap();
+        let content = test_content();
+        let mut input = ScriptedInput {
+            events: vec![InputEvent::PomodoroShortcut, InputEvent::Quit],
+            cancel_waits: std::cell::RefCell::new(Vec::new()),
+        };
+        let audio = CapturingAudio {
+            played: std::cell::RefCell::new(Vec::new()),
+            routine: std::cell::RefCell::new(Vec::new()),
+        };
+
+        run_device_loop(
+            &mut input,
+            &audio,
+            &NoopLed,
+            content,
+            database.path().to_path_buf(),
+        )
+        .unwrap();
+
+        assert!(audio.routine.borrow().is_empty());
+        let conn = Connection::open(database.path()).unwrap();
+        let event_type: String = conn
+            .query_row(
+                "select event_type from setup_debug_events order by id desc limit 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_type, "pomodoro_skipped");
+    }
+
+    fn gesture_down(button_id: u8, millis: u64) -> ButtonGestureEvent {
+        gesture_event(button_id, ButtonGestureEventKind::Down, millis)
+    }
+
+    fn gesture_up(button_id: u8, millis: u64) -> ButtonGestureEvent {
+        gesture_event(button_id, ButtonGestureEventKind::Up, millis)
+    }
+
+    fn gesture_tick(millis: u64) -> ButtonGestureEvent {
+        gesture_event(0, ButtonGestureEventKind::Tick, millis)
+    }
+
+    fn gesture_event(
+        button_id: u8,
+        kind: ButtonGestureEventKind,
+        millis: u64,
+    ) -> ButtonGestureEvent {
+        ButtonGestureEvent {
+            button_id,
+            kind,
+            at: Duration::from_millis(millis),
+        }
     }
 }

@@ -58,6 +58,7 @@
     generateSpeech,
     getContentInventory,
     getGeneratedSpeechStatus,
+    getPomodoroSettings,
     getSession,
     getSetupReview,
     getStatus,
@@ -70,6 +71,7 @@
     saveButtonMode,
     saveCubeName,
     saveMultipart,
+    savePomodoroSettings,
     trashContentItem,
     verifyWifi
   } from "./api";
@@ -83,6 +85,7 @@
     ContentInventoryItem,
     ContentType,
     InactiveContentItem,
+    PomodoroSettings,
     RecentActivityEvent,
     ServiceStatus,
     SetupReview
@@ -92,6 +95,14 @@
   import { buttonViewModels, contentKey, updateDraftFormValue } from "./button-config-controller";
   import type { ButtonView } from "./button-config-controller";
   import { contentTypeForMode, defaultMode, modeLabel, splitMode } from "./button-mode";
+  import {
+    applyAgeRecommendation,
+    applyPreset,
+    markPomodoroCustom,
+    pomodoroPayload,
+    settingsToPomodoroForm
+  } from "./focus-routine-controller";
+  import type { PomodoroForm } from "./focus-routine-controller";
   import {
     generatedSpeechDisabled as generatedSpeechHealthDisabled,
     generatedSpeechMaxBackoffSeconds,
@@ -147,6 +158,7 @@
   let status: ServiceStatus | null = null;
   let session: AuthSession | null = null;
   let setup: SetupReview | null = null;
+  let pomodoro: PomodoroSettings | null = null;
   let events: RecentActivityEvent[] = [];
   let inventory: ContentInventory | null = null;
   let inventoryError: string | null = null;
@@ -209,6 +221,7 @@
   let settingsRecoveryOpen = true;
   let factoryResetPromptOpen = false;
   let factoryResetConfirmation = "";
+  let pomodoroForm: PomodoroForm = settingsToPomodoroForm(null);
 
   $: buttons = buttonViewModels(buildButtonConfigs(setup), contentState);
   $: selectedButton = buttons.find((button) => button.id === selectedButtonId) ?? buttons[0] ?? null;
@@ -283,6 +296,13 @@
       status = nextStatus;
       session = nextSession;
       setup = nextSetup;
+      if (session.authenticated) {
+        pomodoro = await getPomodoroSettings();
+        pomodoroForm = settingsToPomodoroForm(pomodoro);
+      } else {
+        pomodoro = null;
+        pomodoroForm = settingsToPomodoroForm(null);
+      }
       cubeName = setup.cube_name || "T-Cube";
       wifiForm.ssid = setup.wifi_ssid ?? "";
       wifiForm.dashboard_ip = setup.dashboard_ip ?? "";
@@ -688,6 +708,8 @@
       setup = null;
       events = [];
       inventory = null;
+      pomodoro = null;
+      pomodoroForm = settingsToPomodoroForm(null);
       contentState = {};
       recoveryCode = null;
       invitation = null;
@@ -1139,6 +1161,8 @@
         session,
         status,
         setup,
+        pomodoro,
+        pomodoroForm,
         message,
         messageType,
         roleLabel,
@@ -1163,6 +1187,15 @@
         setSettingsRecoveryOpen: (open: boolean) => (settingsRecoveryOpen = open),
         saveCubeName: async (value: string) => run(() => saveCubeName(value), "Cube name saved."),
         verifyWifi: async (ssid: string, dashboardIp: string) => run(() => verifyWifi(ssid, dashboardIp), "Wi-Fi marked verified."),
+        setPomodoroForm: (form: PomodoroForm) => (pomodoroForm = form),
+        applyPomodoroAge: (age: string) => (pomodoroForm = applyAgeRecommendation(pomodoroForm, age)),
+        applyPomodoroPreset: (preset: "mini" | "focus" | "full" | "custom") => (pomodoroForm = applyPreset(pomodoroForm, preset)),
+        updatePomodoroCustom: (patch: Partial<Omit<PomodoroForm, "preset">>) => (pomodoroForm = markPomodoroCustom(pomodoroForm, patch)),
+        savePomodoro: async () =>
+          run(async () => {
+            pomodoro = await savePomodoroSettings(pomodoroPayload(pomodoroForm));
+            pomodoroForm = settingsToPomodoroForm(pomodoro);
+          }, "Focus routine saved."),
         createRecoveryCode: async () => run(async () => (recoveryCode = await createRecoveryCode()), "Recovery code created."),
         copyText,
         createManagerInvitation: async () => run(createManagerInvitation, "Manager invitation created."),

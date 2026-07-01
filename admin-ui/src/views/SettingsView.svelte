@@ -10,13 +10,16 @@
     Lock,
     LogOut,
     Plus,
+    Timer,
     Usb,
     User,
     Users,
     Wifi,
     X
   } from "@lucide/svelte";
-  import type { AuthSession, RecoveryCode, ServiceStatus, SetupReview } from "../api";
+  import type { AuthSession, PomodoroPreset, PomodoroSettings, RecoveryCode, ServiceStatus, SetupReview } from "../api";
+  import { pomodoroCanEnable, recommendationForAge } from "../focus-routine-controller";
+  import type { PomodoroForm } from "../focus-routine-controller";
   import type { MessageType } from "../types";
   import TopBar from "../components/TopBar.svelte";
 
@@ -24,6 +27,8 @@
     session: AuthSession | null;
     status: ServiceStatus | null;
     setup: SetupReview | null;
+    pomodoro: PomodoroSettings | null;
+    pomodoroForm: PomodoroForm;
     message: string;
     messageType: MessageType;
     roleLabel: string;
@@ -49,6 +54,11 @@
     setSettingsRecoveryOpen: (open: boolean) => void;
     saveCubeName: (value: string) => void | Promise<void>;
     verifyWifi: (ssid: string, dashboardIp: string) => void | Promise<void>;
+    setPomodoroForm: (form: PomodoroForm) => void;
+    applyPomodoroAge: (age: string) => void;
+    applyPomodoroPreset: (preset: PomodoroPreset) => void;
+    updatePomodoroCustom: (patch: Partial<Omit<PomodoroForm, "preset">>) => void;
+    savePomodoro: () => void | Promise<void>;
     createRecoveryCode: () => void | Promise<void>;
     copyText: (value: string, label: string) => void | Promise<void>;
     createManagerInvitation: () => void | Promise<void>;
@@ -69,6 +79,12 @@
   let cubeName = state.cubeName;
   let wifiSsid = state.wifiForm.ssid;
   let wifiDashboardIp = state.wifiForm.dashboard_ip;
+  $: pomodoroAgeValue = Number(state.pomodoroForm.childAgeYears);
+  $: pomodoroRecommendation = recommendationForAge(
+    state.pomodoroForm.childAgeYears.trim() && Number.isInteger(pomodoroAgeValue) && pomodoroAgeValue >= 3 && pomodoroAgeValue <= 18 ? pomodoroAgeValue : null
+  );
+  $: pomodoroEnableAllowed = pomodoroCanEnable(state.pomodoroForm);
+  $: pomodoroStatus = state.pomodoro?.enabled && state.pomodoro?.validated_at ? "Enabled" : state.pomodoro?.validated_at ? "Saved" : "Not saved";
 </script>
 
 <TopBar
@@ -86,6 +102,116 @@
 <div class="body settings-body">
   <section class:error={state.messageType === "error"} class:success={state.messageType === "success"} class="notice" aria-live="polite">
     {state.message}
+  </section>
+
+  <section class="settings-group">
+    <div class="settings-group-label">Focus routine · Owner only</div>
+    <div class="settings-group-card focus-routine-card">
+      <div class="settings-row no-tap">
+        <div class:si-teal={state.pomodoro?.enabled} class:si-muted={!state.pomodoro?.enabled} class="settings-row-icon">
+          <Timer size={17} strokeWidth={1.5} aria-hidden="true" />
+        </div>
+        <div class="settings-row-body">
+          <div class="settings-row-title">Pomodoro routine</div>
+          <div class="settings-row-desc">Hold Top, Front left, and Front right for 5 seconds. This setting is stored only on this cube.</div>
+        </div>
+        <div class="settings-row-right">
+          <span class:bs-teal={state.pomodoro?.enabled} class:bs-amber={!state.pomodoro?.validated_at} class:bs-muted={!state.pomodoro?.enabled && state.pomodoro?.validated_at} class="settings-badge">{pomodoroStatus}</span>
+        </div>
+      </div>
+
+      <div class="focus-routine-grid">
+        <label class="field-label">Child age
+          <input
+            class="settings-input"
+            type="number"
+            min="3"
+            max="18"
+            inputmode="numeric"
+            value={state.pomodoroForm.childAgeYears}
+            placeholder="Age"
+            disabled={!state.isOwner}
+            on:input={(event) => actions.applyPomodoroAge((event.currentTarget as HTMLInputElement).value)}
+          />
+        </label>
+
+        <label class="focus-toggle">
+          <input
+            type="checkbox"
+            checked={state.pomodoroForm.enabled}
+            disabled={!state.isOwner || !pomodoroEnableAllowed}
+            on:change={(event) => actions.setPomodoroForm({ ...state.pomodoroForm, enabled: (event.currentTarget as HTMLInputElement).checked })}
+          />
+          <span>Enable after save</span>
+        </label>
+      </div>
+
+      <div class="focus-recommendation">
+        <div>
+          <div class="focus-rec-title">Recommended plan</div>
+          <div class="focus-rec-copy">{pomodoroRecommendation.reason}</div>
+        </div>
+        <div class="focus-rec-values">{pomodoroRecommendation.focus_minutes}/{pomodoroRecommendation.break_minutes} x{pomodoroRecommendation.cycles}</div>
+      </div>
+
+      <div class="focus-presets" role="radiogroup" aria-label="Focus routine presets">
+        {#each ["mini", "focus", "full", "custom"] as preset}
+          <button
+            type="button"
+            class:active={state.pomodoroForm.preset === preset}
+            role="radio"
+            aria-checked={state.pomodoroForm.preset === preset}
+            disabled={!state.isOwner}
+            on:click={() => actions.applyPomodoroPreset(preset as PomodoroPreset)}
+          >
+            {preset === "mini" ? "Mini" : preset === "focus" ? "Focus" : preset === "full" ? "Full" : "Custom"}
+          </button>
+        {/each}
+      </div>
+
+      <div class="focus-routine-grid compact">
+        <label class="field-label">Focus minutes
+          <input
+            class="settings-input"
+            type="number"
+            min="5"
+            max="60"
+            value={state.pomodoroForm.focusMinutes}
+            disabled={!state.isOwner}
+            on:input={(event) => actions.updatePomodoroCustom({ focusMinutes: Number((event.currentTarget as HTMLInputElement).value) })}
+          />
+        </label>
+        <label class="field-label">Break minutes
+          <input
+            class="settings-input"
+            type="number"
+            min="1"
+            max="30"
+            value={state.pomodoroForm.breakMinutes}
+            disabled={!state.isOwner}
+            on:input={(event) => actions.updatePomodoroCustom({ breakMinutes: Number((event.currentTarget as HTMLInputElement).value) })}
+          />
+        </label>
+        <label class="field-label">Cycles
+          <input
+            class="settings-input"
+            type="number"
+            min="1"
+            max="8"
+            value={state.pomodoroForm.cycles}
+            disabled={!state.isOwner}
+            on:input={(event) => actions.updatePomodoroCustom({ cycles: Number((event.currentTarget as HTMLInputElement).value) })}
+          />
+        </label>
+      </div>
+
+      <div class="settings-hint">Focus audio uses a generated soft stereo tone. Breaks stay silent except for short transition chimes.</div>
+      <div class="settings-row-actions">
+        <button type="button" class="settings-save-btn" on:click={actions.savePomodoro} disabled={state.busy || !state.isOwner}>
+          Save focus routine
+        </button>
+      </div>
+    </div>
   </section>
 
   <section class="settings-group">

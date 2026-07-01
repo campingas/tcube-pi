@@ -23,11 +23,14 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - Admin UI source is Svelte + Vite + Tailwind under `admin-ui/`, with static build output checked in under `admin-ui/build/`.
 - Admin UI is split into focused views, shared components, and controller helpers for button config, generated speech health, and recording/upload decisions.
 - Admin UI upload flow stages audio as Choose, Review, and Save Draft steps, then sends parents to Drafts for preview and explicit activation.
+- Focus routine settings are stored locally in SQLite and exposed under `/api/pi/v1/setup/pomodoro`; managers can view the state, owners can save/validate it, and the runtime skips the Pomodoro shortcut until the saved settings are enabled and validated.
+- The runtime includes Pomodoro routine orchestration with generated `rodio` focus audio and transition chimes, silent breaks, and a tested Top + Front left + Front right hold recognizer for the future GPIO backend; the simulator exposes `p` as the manual routine shortcut.
 - Release workflow builds Linux arm64 bundles with Rust binaries, prebuilt admin UI, content, Caddy/systemd files, installer, and SHA-256 checksums.
 
 ## Not Complete
 
 - Real Raspberry Pi GPIO backend and physical debouncing.
+- Physical Pomodoro three-button hold activation and cancellation still depend on the pending real GPIO input backend; the gesture state machine is implemented and unit-tested, but the desktop simulator uses the `p` shortcut.
 - Final LED output backend.
 - MAX98357A I2S audio validation on target hardware.
 - Mini USB microphone capture, retention, upload, and physical indicator privacy rules.

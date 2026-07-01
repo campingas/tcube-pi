@@ -12,6 +12,14 @@ import {
   preferredGeneratedSpeechVoice
 } from "../../src/generated-speech-health.ts";
 import {
+  applyAgeRecommendation,
+  applyPreset,
+  pomodoroCanEnable,
+  pomodoroPayload,
+  recommendationForAge,
+  settingsToPomodoroForm
+} from "../../src/focus-routine-controller.ts";
+import {
   defaultDraftTitle,
   initialRecordWaveform,
   mediaDraftValidationError,
@@ -163,5 +171,48 @@ describe("recording controller", () => {
     assert.deepEqual(waveformLevels(new Uint8Array([128, 128, 128, 128]), 2), [0.08, 0.08]);
     assert.deepEqual(waveformLevels(new Uint8Array([0, 255]), 2), [1, 1]);
     assert.deepEqual(waveformLevels(new Uint8Array([128]), 0), []);
+  });
+});
+
+describe("focus routine controller", () => {
+  test("maps child age to local Pomodoro recommendations", () => {
+    assert.equal(recommendationForAge(null).focus_minutes, 10);
+    assert.equal(recommendationForAge(4).focus_minutes, 8);
+    assert.equal(recommendationForAge(7).break_minutes, 4);
+    assert.equal(recommendationForAge(10).preset, "focus");
+    assert.equal(recommendationForAge(13).cycles, 4);
+  });
+
+  test("age selection applies the recommended plan", () => {
+    const form = settingsToPomodoroForm(null);
+    const next = applyAgeRecommendation(form, "10");
+    assert.deepEqual(next, {
+      enabled: false,
+      childAgeYears: "10",
+      focusMinutes: 20,
+      breakMinutes: 5,
+      cycles: 3,
+      preset: "focus"
+    });
+    assert.equal(pomodoroCanEnable(next), true);
+  });
+
+  test("custom edits persist as validated payload fields", () => {
+    const form = applyPreset(settingsToPomodoroForm(null), "full");
+    const payload = pomodoroPayload({ ...form, enabled: true, childAgeYears: "14", focusMinutes: 26 });
+    assert.deepEqual(payload, {
+      enabled: true,
+      child_age_years: 14,
+      focus_minutes: 26,
+      break_minutes: 5,
+      cycles: 4,
+      preset: "full"
+    });
+  });
+
+  test("unset age cannot enable the routine", () => {
+    const payload = pomodoroPayload({ ...settingsToPomodoroForm(null), enabled: true });
+    assert.equal(payload.enabled, false);
+    assert.equal(payload.child_age_years, null);
   });
 });

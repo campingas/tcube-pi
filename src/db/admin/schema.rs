@@ -253,6 +253,18 @@ pub(crate) fn migrate_admin_database(conn: &Connection, config: &AdminConfig) ->
           foreign key (account_id) references admin_accounts(id)
         );
 
+        create table if not exists pomodoro_settings (
+          id integer primary key check (id = 1),
+          enabled integer not null default 0,
+          child_age_years integer check (child_age_years between 3 and 18),
+          focus_minutes integer not null default 10 check (focus_minutes between 5 and 60),
+          break_minutes integer not null default 3 check (break_minutes between 1 and 30),
+          cycles integer not null default 2 check (cycles between 1 and 8),
+          preset text not null default 'mini' check (preset in ('mini', 'focus', 'full', 'custom')),
+          validated_at text,
+          updated_at text not null default current_timestamp
+        );
+
         create index if not exists idx_content_items_list_scope
           on content_items (button_id, content_type, state, language, order_index, id);
 
@@ -275,7 +287,7 @@ pub(crate) fn migrate_admin_database(conn: &Connection, config: &AdminConfig) ->
         ",
     )?;
     conn.execute(
-        "insert or ignore into schema_migrations (version) values (1), (2), (3), (4)",
+        "insert or ignore into schema_migrations (version) values (1), (2), (3), (4), (5)",
         [],
     )?;
     seed_admin_defaults(conn, config)?;

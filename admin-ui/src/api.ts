@@ -161,6 +161,28 @@ export type RecentActivityEvent = {
   text: string | null;
 };
 
+export type PomodoroPreset = "mini" | "focus" | "full" | "custom";
+
+export type PomodoroRecommendation = {
+  preset: PomodoroPreset;
+  focus_minutes: number;
+  break_minutes: number;
+  cycles: number;
+  reason: string;
+};
+
+export type PomodoroSettings = {
+  enabled: boolean;
+  child_age_years: number | null;
+  focus_minutes: number;
+  break_minutes: number;
+  cycles: number;
+  preset: PomodoroPreset;
+  validated_at: string | null;
+  updated_at: string;
+  recommendation: PomodoroRecommendation;
+};
+
 type RequestOptions = RequestInit & {
   json?: unknown;
 };
@@ -248,6 +270,21 @@ export function recoverPassword(body: { code: string; password: string }) {
 
 export function getSetupReview() {
   return api<SetupReview>(`${API_ROOT}/setup/review`);
+}
+
+export function getPomodoroSettings() {
+  return api<PomodoroSettings>(`${API_ROOT}/setup/pomodoro`);
+}
+
+export function savePomodoroSettings(body: {
+  enabled: boolean;
+  child_age_years: number | null;
+  focus_minutes: number;
+  break_minutes: number;
+  cycles: number;
+  preset: PomodoroPreset;
+}) {
+  return api<PomodoroSettings>(`${API_ROOT}/setup/pomodoro`, { method: "PUT", json: body });
 }
 
 export function listRecentEvents() {

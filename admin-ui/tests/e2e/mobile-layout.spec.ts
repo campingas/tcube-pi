@@ -387,9 +387,22 @@ test("settings page matches grouped setup controls and calls settings APIs", asy
 
   await expect(page.getByRole("navigation").getByText("Settings")).toBeVisible();
   await expect(page.getByText("Cube", { exact: true })).toBeVisible();
+  await expect(page.getByText("Focus routine · Owner only")).toBeVisible();
   await expect(page.getByText("Account", { exact: true })).toBeVisible();
   await expect(page.getByText("Manager invitations · Owner only")).toBeVisible();
   await expect(page.getByText("Danger zone")).toBeVisible();
+
+  await page.getByLabel("Child age").fill("10");
+  await expect(page.getByLabel("Focus minutes")).toHaveValue("20");
+  await expect(page.getByLabel("Break minutes")).toHaveValue("5");
+  await expect(page.getByLabel("Cycles")).toHaveValue("3");
+  await expect(page.getByRole("radio", { name: "Focus" })).toHaveAttribute("aria-checked", "true");
+  await page.getByLabel("Enable after save").check();
+  await page.getByLabel("Focus minutes").fill("21");
+  await expect(page.getByRole("radio", { name: "Custom" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("button", { name: "Save focus routine" }).click();
+  await expect(page.getByText("Focus routine saved.")).toBeVisible();
+  await expect(page.getByText("Enabled")).toBeVisible();
 
   await expect(page.getByLabel("Display name")).toHaveValue("T-Cube");
   await page.getByLabel("Display name").fill("Mia's Cube");
@@ -424,8 +437,45 @@ test("settings page matches grouped setup controls and calls settings APIs", asy
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test("manager can view focus routine settings but cannot edit them", async ({ page }) => {
+  await page.route("**/api/pi/v1/auth/session", async (route) => {
+    await route.fulfill({
+      json: {
+        authenticated: true,
+        bootstrap_required: false,
+        account: { id: "acct-manager", username: "manager", display_name: "Manager" },
+        cubes: [{ device_id: "cube-1", label: "T-Cube", role: "manager" }]
+      }
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+
+  await expect(page.getByText("Focus routine · Owner only")).toBeVisible();
+  await expect(page.getByLabel("Child age")).toBeDisabled();
+  await expect(page.getByLabel("Enable after save")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save focus routine" })).toBeDisabled();
+});
+
 async function mockAdminApi(page: Page) {
   let generatedSpeechStatusCalls = 0;
+  let pomodoroSettings = {
+    enabled: false,
+    child_age_years: null,
+    focus_minutes: 10,
+    break_minutes: 3,
+    cycles: 2,
+    preset: "mini",
+    validated_at: null,
+    updated_at: "2026-07-01T00:00:00.000Z",
+    recommendation: {
+      preset: "mini",
+      focus_minutes: 10,
+      break_minutes: 3,
+      cycles: 2,
+      reason: "Starter plan until an owner saves the child age."
+    }
+  };
   page.on("dialog", (dialog) => dialog.accept());
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
@@ -500,6 +550,30 @@ async function mockAdminApi(page: Page) {
           }
         }
       });
+      return;
+    }
+
+    if (path === "/api/pi/v1/setup/pomodoro" && route.request().method() === "GET") {
+      await route.fulfill({ json: pomodoroSettings });
+      return;
+    }
+
+    if (path === "/api/pi/v1/setup/pomodoro" && route.request().method() === "PUT") {
+      const body = route.request().postDataJSON();
+      pomodoroSettings = {
+        ...pomodoroSettings,
+        ...body,
+        validated_at: "2026-07-01T12:00:00.000Z",
+        updated_at: "2026-07-01T12:00:00.000Z",
+        recommendation: {
+          preset: "focus",
+          focus_minutes: 20,
+          break_minutes: 5,
+          cycles: 3,
+          reason: "Focus plan for ages 9-12."
+        }
+      };
+      await route.fulfill({ json: pomodoroSettings });
       return;
     }
 

@@ -7,8 +7,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::AdminConfig;
 use crate::db::admin::auth::{authenticate_session, require_local_cube_role, RoleRequirement};
+use crate::db::admin::pomodoro as pomodoro_storage;
 use crate::db::admin::schema::open_existing_database;
 use crate::db::admin::setup::{self as setup_storage, SetupReview};
+
+pub(crate) use crate::db::admin::pomodoro::{
+    PomodoroSettingsUpdate, PomodoroSettingsWithRecommendation,
+};
 
 const FACTORY_RESET_CONFIRMATION: &str = "FACTORY RESET";
 
@@ -91,6 +96,23 @@ pub(crate) fn setup_review(config: &AdminConfig) -> Result<SetupReviewResponse> 
         return Ok(setup_storage::default_setup_review(config).into());
     };
     setup_review_from_conn(config, &conn)
+}
+
+pub(crate) fn pomodoro_settings(
+    config: &AdminConfig,
+    token: Option<&str>,
+) -> Result<PomodoroSettingsWithRecommendation> {
+    let conn = authenticated_connection(config, token)?;
+    pomodoro_storage::get_settings(&conn)
+}
+
+pub(crate) fn save_pomodoro_settings(
+    config: &AdminConfig,
+    token: Option<&str>,
+    body: PomodoroSettingsUpdate,
+) -> Result<PomodoroSettingsWithRecommendation> {
+    let conn = owner_connection(config, token)?;
+    pomodoro_storage::save_settings(&conn, body)
 }
 
 pub(crate) fn set_cube_name(

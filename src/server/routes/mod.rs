@@ -5,7 +5,7 @@ use axum::extract::{DefaultBodyLimit, Multipart, OriginalUri, Path, Query, State
 use axum::http::header::SET_COOKIE;
 use axum::http::HeaderValue;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::Json;
 use axum::Router;
 use serde::{Deserialize, Serialize};
@@ -65,6 +65,8 @@ pub(crate) fn router() -> Router<AdminState> {
         .route("/api/pi/v1/auth/logout", post(logout))
         .route("/api/setup/review", get(setup_review))
         .route("/api/pi/v1/setup/review", get(setup_review))
+        .route("/api/pi/v1/setup/pomodoro", get(pomodoro_settings))
+        .route("/api/pi/v1/setup/pomodoro", put(save_pomodoro_settings))
         .route("/api/setup/name", post(set_cube_name))
         .route("/api/pi/v1/setup/name", post(set_cube_name))
         .route("/api/setup/wifi/verified", post(verify_wifi))
@@ -247,6 +249,31 @@ async fn setup_review(
         .await
         .map(Json)
         .map_err(ApiError::server)
+}
+
+async fn pomodoro_settings(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+) -> Result<Json<setup::PomodoroSettingsWithRecommendation>, ApiError> {
+    blocking(config, move |config| {
+        setup::pomodoro_settings(config, token.as_deref())
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
+}
+
+async fn save_pomodoro_settings(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    Json(body): Json<setup::PomodoroSettingsUpdate>,
+) -> Result<Json<setup::PomodoroSettingsWithRecommendation>, ApiError> {
+    blocking(config, move |config| {
+        setup::save_pomodoro_settings(config, token.as_deref(), body)
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
 }
 
 async fn set_cube_name(
@@ -537,11 +564,16 @@ mod tests {
     use axum::body::{to_bytes, Body};
     use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
     use axum::http::{Request, StatusCode};
+    use axum::Router;
+    use rusqlite::{params, Connection};
     use serde_json::json;
     use tempfile::TempDir;
     use tower::ServiceExt;
 
     use crate::config::AdminConfig;
+    use crate::db::admin::auth::{
+        add_cube_membership, create_session, generate_uuid_v4, hash_password, now, CubeRole,
+    };
 
     fn test_config(root: &TempDir) -> AdminConfig {
         AdminConfig {
@@ -623,5 +655,171 @@ mod tests {
             response.headers().get(CONTENT_DISPOSITION).unwrap(),
             "inline"
         );
+    }
+
+    #[tokio::test]
+    async fn pomodoro_get_defaults_and_owner_save() {
+        let root = TempDir::new().unwrap();
+        let config = Arc::new(test_config(&root));
+        let app = super::router().with_state(Arc::clone(&config));
+        let owner_cookie = bootstrap_owner_cookie(app.clone()).await;
+
+        let defaults = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pi/v1/setup/pomodoro")
+                    .header("cookie", &owner_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(defaults.status(), StatusCode::OK);
+        let body = to_bytes(defaults.into_body(), 1024 * 1024).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["enabled"], false);
+        assert_eq!(body["focus_minutes"], 10);
+        assert_eq!(body["recommendation"]["preset"], "mini");
+        assert!(body["validated_at"].is_null());
+
+        let saved = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/pi/v1/setup/pomodoro")
+                    .header("cookie", &owner_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "enabled": true,
+                            "child_age_years": 9,
+                            "focus_minutes": 20,
+                            "break_minutes": 5,
+                            "cycles": 3,
+                            "preset": "focus"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(saved.status(), StatusCode::OK);
+        let body = to_bytes(saved.into_body(), 1024 * 1024).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["enabled"], true);
+        assert_eq!(body["child_age_years"], 9);
+        assert_eq!(body["recommendation"]["focus_minutes"], 20);
+        assert!(body["validated_at"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    async fn pomodoro_manager_can_view_but_not_save() {
+        let root = TempDir::new().unwrap();
+        let config = Arc::new(test_config(&root));
+        let app = super::router().with_state(Arc::clone(&config));
+        let _owner_cookie = bootstrap_owner_cookie(app.clone()).await;
+        let manager_cookie = create_manager_cookie(&config.database);
+
+        let view = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pi/v1/setup/pomodoro")
+                    .header("cookie", &manager_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(view.status(), StatusCode::OK);
+
+        let save = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/pi/v1/setup/pomodoro")
+                    .header("cookie", &manager_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "enabled": true,
+                            "child_age_years": 9,
+                            "focus_minutes": 20,
+                            "break_minutes": 5,
+                            "cycles": 3,
+                            "preset": "focus"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(save.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(save.into_body(), 1024 * 1024).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(body["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("owner permission required"));
+    }
+
+    async fn bootstrap_owner_cookie(app: Router) -> String {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/pi/v1/auth/bootstrap")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "username": "parent",
+                            "display_name": "Parent",
+                            "password": "owner-password"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        response
+            .headers()
+            .get("set-cookie")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string()
+    }
+
+    fn create_manager_cookie(database: &PathBuf) -> String {
+        let conn = Connection::open(database).unwrap();
+        let device_id: String = conn
+            .query_row(
+                "select device_id from device_setup where id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let account_id = generate_uuid_v4();
+        conn.execute(
+            "insert into admin_accounts (id, username, display_name, password_hash, created_at) \
+             values (?1, 'manager', 'Manager', ?2, ?3)",
+            params![
+                account_id,
+                hash_password("manager-password").unwrap(),
+                now()
+            ],
+        )
+        .unwrap();
+        add_cube_membership(&conn, &account_id, &device_id, CubeRole::Manager).unwrap();
+        let token = create_session(&conn, &account_id).unwrap();
+        format!("tcube_session={token}")
     }
 }

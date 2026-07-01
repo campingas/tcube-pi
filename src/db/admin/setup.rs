@@ -24,6 +24,7 @@ const FACTORY_RESET_TABLES: &[&str] = &[
     "setup_debug_events",
     "trusted_sessions",
     "button_mappings",
+    "pomodoro_settings",
     "device_setup",
     "devices",
 ];
