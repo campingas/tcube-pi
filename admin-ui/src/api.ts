@@ -133,6 +133,7 @@ export type GeneratedSpeechStatus = {
   cache_ttl_seconds: number;
   next_check_after_seconds: number;
   message: string;
+  voices: string[];
 };
 
 export type RecentActivityEvent = {

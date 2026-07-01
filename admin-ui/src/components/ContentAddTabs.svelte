@@ -29,6 +29,7 @@
   export let generatedSpeechDisabled = false;
   export let generatedSpeechStatusLoading = false;
   export let generatedSpeechStatusError: string | null = null;
+  export let voiceOptions: string[] = [];
 
   $: isLanguageButton = selectedButton.contentType === "language";
   $: mediaTitleReady = isLanguageButton || Boolean(draftForm.title.trim());
@@ -93,8 +94,8 @@
         {/if}
       </button>
       {#if isLanguageButton}
-        <label class="field-label">Text spoken
-          <input class="neo-field" value={draftForm.text} placeholder="Short phrase" on:input={(event) => updateDraftForm({ text: (event.currentTarget as HTMLInputElement).value })} />
+        <label class="field-label">
+          <input class="neo-field" aria-label="Text spoken" value={draftForm.text} placeholder="Write the text spoken here" on:input={(event) => updateDraftForm({ text: (event.currentTarget as HTMLInputElement).value })} />
         </label>
       {/if}
       <div class="record-step" data-testid="record-status">{recordingHint(recordingStatus, recordSeconds, Boolean(recordedWav))}</div>
@@ -145,20 +146,28 @@
       </button>
     </div>
   {:else}
-    <form class="add-body" on:submit|preventDefault={submitGeneration}>
+    <form class="add-body generate-body" on:submit|preventDefault={submitGeneration}>
       <label class="gen-field">Text to speech
         <input class="neo-field" value={draftForm.text} placeholder="Short phrase" disabled={generatedSpeechDisabled} on:input={(event) => updateDraftForm({ text: (event.currentTarget as HTMLInputElement).value })} />
       </label>
       <div class="gen-row">
         <label class="gen-field">Provider
-          <select class="neo-field" value={draftForm.provider} disabled={generatedSpeechDisabled} on:change={(event) => updateDraftForm({ provider: (event.currentTarget as HTMLSelectElement).value })}>
+          <select class="neo-field" value={draftForm.provider} disabled={busy} on:change={(event) => updateDraftForm({ provider: (event.currentTarget as HTMLSelectElement).value })}>
             {#each providers as provider}
               <option value={provider}>{provider}</option>
             {/each}
           </select>
         </label>
         <label class="gen-field">Voice
-          <input class="neo-field" value={draftForm.voice} placeholder="Optional" disabled={generatedSpeechDisabled} on:input={(event) => updateDraftForm({ voice: (event.currentTarget as HTMLInputElement).value })} />
+          {#if voiceOptions.length}
+            <select class="neo-field" value={draftForm.voice} disabled={generatedSpeechDisabled} on:change={(event) => updateDraftForm({ voice: (event.currentTarget as HTMLSelectElement).value })}>
+              {#each voiceOptions as voice}
+                <option value={voice}>{voice}</option>
+              {/each}
+            </select>
+          {:else}
+            <span class="voice-placeholder">{generatedSpeechDisabled ? "Unavailable until provider is online." : "Provider default voice will be used."}</span>
+          {/if}
         </label>
       </div>
       {#if generatedSpeechStatusError}

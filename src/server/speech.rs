@@ -6,11 +6,13 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const SPEECH_PROVIDER_HEALTH_TTL: Duration = Duration::from_secs(20);
 const SPEECH_PROVIDER_HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
+const VOXTRAL_DEFAULT_BASE_URL: &str = "https://127.0.0.1:11445";
+const VIETNAMESE_VITS_DEFAULT_BASE_URL: &str = "https://127.0.0.1:11446";
 static SPEECH_PROVIDER_HEALTH_CACHE: OnceLock<Mutex<HashMap<String, CachedSpeechProviderHealth>>> =
     OnceLock::new();
 
@@ -30,6 +32,7 @@ pub(crate) struct GeneratedSpeechStatusResponse {
     cache_ttl_seconds: u64,
     next_check_after_seconds: u64,
     message: String,
+    voices: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -39,6 +42,12 @@ pub(crate) struct CachedSpeechProviderHealth {
     checked_at: String,
     checked_instant: Instant,
     message: String,
+    pub(crate) voices: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SpeechVoicesResponse {
+    voices: Vec<String>,
 }
 
 pub(crate) fn generate_speech_audio(
@@ -67,7 +76,7 @@ pub(crate) fn generate_speech_audio(
             })
             .to_string();
             let bytes = post_speech_json(
-                &format!("{}/audio/speech", base.trim_end_matches('/')),
+                &speech_provider_speech_url(provider, &base)?,
                 &body,
                 vec![(
                     "Authorization".to_string(),
@@ -87,7 +96,7 @@ pub(crate) fn generate_speech_audio(
             let base = speech_provider_base_url(provider)?;
             let body = json!({ "input": text, "response_format": "wav" }).to_string();
             let bytes = post_speech_json(
-                &format!("{}/v1/audio/speech", base.trim_end_matches('/')),
+                &speech_provider_speech_url(provider, &base)?,
                 &body,
                 Vec::new(),
             )?;
@@ -112,7 +121,7 @@ pub(crate) fn generated_speech_status_response(
     let base_url = speech_provider_base_url(resolved_provider)?;
     let cache_key = format!("{resolved_provider}:{base_url}");
     let cached = cached_speech_provider_health(cache_key, resolved_provider.to_string(), || {
-        probe_speech_provider(&base_url)
+        probe_speech_provider(resolved_provider, &base_url)
     })?;
     Ok(speech_provider_status_response(cached))
 }
@@ -166,10 +175,15 @@ fn resolve_speech_provider<'a>(provider: &'a str, language: &str) -> &'a str {
 
 fn speech_provider_base_url(provider: &str) -> Result<String> {
     match provider {
-        "voxtral" => Ok(std::env::var("VOXTRAL_API_BASE")
-            .unwrap_or_else(|_| "https://127.0.0.1:8001/v1".to_string())),
-        "vietnamese-vits" => Ok(std::env::var("VIETNAMESE_VITS_API_BASE")
-            .unwrap_or_else(|_| "https://127.0.0.1:7872".to_string())),
+        "voxtral" => {
+            let default_base_url = speech_provider_default_base_url(provider)?;
+            Ok(std::env::var("VOXTRAL_API_BASE").unwrap_or_else(|_| default_base_url.to_string()))
+        }
+        "vietnamese-vits" => {
+            let default_base_url = speech_provider_default_base_url(provider)?;
+            Ok(std::env::var("VIETNAMESE_VITS_API_BASE")
+                .unwrap_or_else(|_| default_base_url.to_string()))
+        }
         "mistral" => {
             anyhow::bail!("hosted Mistral generation is not supported by the Pi Rust spike yet")
         }
@@ -177,10 +191,46 @@ fn speech_provider_base_url(provider: &str) -> Result<String> {
     }
 }
 
+pub(crate) fn speech_provider_default_base_url(provider: &str) -> Result<&'static str> {
+    match provider {
+        "voxtral" => Ok(VOXTRAL_DEFAULT_BASE_URL),
+        "vietnamese-vits" => Ok(VIETNAMESE_VITS_DEFAULT_BASE_URL),
+        _ => anyhow::bail!("unsupported speech provider"),
+    }
+}
+
+pub(crate) fn speech_provider_health_url(base_url: &str) -> Result<String> {
+    let _ = validate_speech_api_url(base_url)?;
+    Ok(format!("{}/health", base_url.trim_end_matches('/')))
+}
+
+pub(crate) fn speech_provider_speech_url(provider: &str, base_url: &str) -> Result<String> {
+    let _ = validate_speech_api_url(base_url)?;
+    match provider {
+        "voxtral" | "vietnamese-vits" => Ok(format!(
+            "{}/v1/audio/speech",
+            base_url.trim_end_matches('/')
+        )),
+        _ => anyhow::bail!("unsupported speech provider"),
+    }
+}
+
+pub(crate) fn speech_provider_voices_url(provider: &str, base_url: &str) -> Result<Option<String>> {
+    let _ = validate_speech_api_url(base_url)?;
+    match provider {
+        "voxtral" => Ok(Some(format!(
+            "{}/v1/audio/voices",
+            base_url.trim_end_matches('/')
+        ))),
+        "vietnamese-vits" => Ok(None),
+        _ => anyhow::bail!("unsupported speech provider"),
+    }
+}
+
 pub(crate) fn cached_speech_provider_health(
     cache_key: String,
     provider: String,
-    probe: impl FnOnce() -> Result<()>,
+    probe: impl FnOnce() -> Result<Vec<String>>,
 ) -> Result<(CachedSpeechProviderHealth, bool)> {
     let cache = SPEECH_PROVIDER_HEALTH_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Some(cached) = cache
@@ -194,14 +244,16 @@ pub(crate) fn cached_speech_provider_health(
     }
 
     let checked_at = Utc::now().to_rfc3339();
-    let (online, message) = match probe() {
-        Ok(()) => (
+    let (online, message, voices) = match probe() {
+        Ok(voices) => (
             true,
             "TTS provider is online and ready for generated speech.".to_string(),
+            voices,
         ),
         Err(error) => (
             false,
             format!("TTS provider is offline or unreachable: {error}"),
+            Vec::new(),
         ),
     };
     let health = CachedSpeechProviderHealth {
@@ -210,6 +262,7 @@ pub(crate) fn cached_speech_provider_health(
         checked_at,
         checked_instant: Instant::now(),
         message,
+        voices,
     };
     cache
         .lock()
@@ -230,17 +283,55 @@ fn speech_provider_status_response(
         cache_ttl_seconds: SPEECH_PROVIDER_HEALTH_TTL.as_secs(),
         next_check_after_seconds: SPEECH_PROVIDER_HEALTH_TTL.as_secs(),
         message: health.message,
+        voices: health.voices,
     }
 }
 
-pub(crate) fn probe_speech_provider(base_url: &str) -> Result<()> {
-    let url = validate_speech_api_url(base_url)?;
+pub(crate) fn probe_speech_provider(provider: &str, base_url: &str) -> Result<Vec<String>> {
+    let health_url = speech_provider_health_url(base_url)?;
+    let url = validate_speech_api_url(&health_url)?;
     let client = speech_http_client_with_timeout(SPEECH_PROVIDER_HEALTH_TIMEOUT)?;
-    client
+    let response = client
         .get(url)
         .send()
-        .with_context(|| format!("failed to connect to speech provider {base_url}"))?;
-    Ok(())
+        .with_context(|| format!("failed to connect to speech provider {health_url}"))?;
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "speech provider health check failed with HTTP {} at {}",
+            response.status(),
+            health_url
+        );
+    }
+    speech_provider_voices(provider, base_url, &client)
+}
+
+fn speech_provider_voices(
+    provider: &str,
+    base_url: &str,
+    client: &reqwest::blocking::Client,
+) -> Result<Vec<String>> {
+    let Some(voices_url) = speech_provider_voices_url(provider, base_url)? else {
+        return Ok(Vec::new());
+    };
+    let url = validate_speech_api_url(&voices_url)?;
+    let response = client
+        .get(url)
+        .send()
+        .with_context(|| format!("failed to fetch speech provider voices from {voices_url}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        anyhow::bail!(
+            "speech provider voices check failed with HTTP {} at {}",
+            status,
+            voices_url
+        );
+    }
+    let response_body = response
+        .bytes()
+        .context("speech provider returned unreadable voices response body")?;
+    let body = serde_json::from_slice::<SpeechVoicesResponse>(&response_body)
+        .context("speech provider returned unreadable voices response")?;
+    Ok(body.voices)
 }
 
 fn post_speech_json(

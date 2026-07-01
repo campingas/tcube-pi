@@ -99,10 +99,12 @@
     generatedSpeechMinBackoffSeconds,
     generatedSpeechOfflineStatus,
     generatedSpeechStatusKey as buildGeneratedSpeechStatusKey,
+    generatedSpeechVoices,
     isSpeechProviderOfflineMessage,
     menuGeneratedSpeechStatusKey,
     nextGeneratedSpeechBackoff,
-    parseGeneratedSpeechStatusKey
+    parseGeneratedSpeechStatusKey,
+    preferredGeneratedSpeechVoice
   } from "./generated-speech-health";
   import {
     defaultDraftTitle,
@@ -196,6 +198,7 @@
   let generatedSpeechBackoffSeconds = generatedSpeechMinBackoffSeconds;
   let generatedSpeechOffline = false;
   let generatedSpeechDisabled = false;
+  let generatedSpeechVoiceOptions: string[] = [];
   let menuLlmStatus: GeneratedSpeechStatus | null = null;
   let menuLlmStatusLoading = false;
   let menuLlmStatusKey = "";
@@ -229,6 +232,11 @@
   }
   $: generatedSpeechOffline = Boolean(generatedSpeechStatusKey && generatedSpeechStatus && !generatedSpeechStatus.online);
   $: generatedSpeechDisabled = generatedSpeechHealthDisabled(generatedSpeechStatusKey, generatedSpeechStatus, generatedSpeechStatusLoading);
+  $: generatedSpeechVoiceOptions = generatedSpeechVoices(generatedSpeechStatus);
+  $: if (selectedTab === "generate" && generatedSpeechVoiceOptions.length) {
+    const nextVoice = preferredGeneratedSpeechVoice(generatedSpeechVoiceOptions, draftForm.voice);
+    if (nextVoice !== draftForm.voice) updateDraftForm({ voice: nextVoice });
+  }
   $: if (menuLlmStatusKey && menuLlmStatusKey !== lastMenuLlmStatusKey) {
     void checkMenuLlmStatus(menuLlmStatusKey, true);
   }
@@ -519,7 +527,8 @@
         cached: false,
         cache_ttl_seconds: 20,
         next_check_after_seconds: menuLlmBackoffSeconds,
-        message: "TTS provider is offline or unreachable."
+        message: "TTS provider is offline or unreachable.",
+        voices: []
       };
       menuLlmBackoffSeconds = Math.min(generatedSpeechMaxBackoffSeconds, menuLlmBackoffSeconds * 2);
       scheduleMenuLlmStatusCheck(key, menuLlmBackoffSeconds);
@@ -896,7 +905,7 @@
     }
     busy = true;
     try {
-      await generateSpeech({
+      const generatedDraft = await generateSpeech({
         button_id: selectedButton.id,
         language: selectedButton.language,
         text: draftForm.text,
@@ -905,6 +914,7 @@
       });
       contentListTab = "draft";
       setMessage("Generated speech saved as draft.", "success");
+      await playContentPreview(generatedDraft);
       await refreshAll();
     } catch (error) {
       if (isSpeechProviderOfflineError(error)) {
@@ -1079,6 +1089,7 @@
         generatedSpeechDisabled,
         generatedSpeechStatusLoading,
         generatedSpeechStatusError,
+        generatedSpeechVoiceOptions,
         trashPrompt,
         busy
       }}
@@ -1094,7 +1105,6 @@
         saveSelectedButtonMode: () => selectedButton && saveSelectedButtonMode(selectedButton),
         activateSelectedContent,
         trashSelectedContent,
-        clearSelectedGenerated,
         startRecording,
         stopRecording,
         revokeRecording,

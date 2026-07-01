@@ -8,6 +8,8 @@ use crate::config::AdminConfig;
 use crate::db::admin::auth::{authenticate_session, require_local_cube_role, RoleRequirement};
 use crate::db::admin::schema::table_exists;
 
+const RECENT_ACTIVITY_LIMIT: usize = 10;
+
 #[derive(Debug, Serialize)]
 pub(crate) struct RecentActivityEventResponse {
     id: String,
@@ -96,7 +98,7 @@ pub(crate) fn recent_button_events(
             .cmp(&left.occurred_at)
             .then_with(|| right.id.cmp(&left.id))
     });
-    events.truncate(20);
+    events.truncate(RECENT_ACTIVITY_LIMIT);
     Ok(events)
 }
 

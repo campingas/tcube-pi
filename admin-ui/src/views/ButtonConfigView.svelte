@@ -22,6 +22,7 @@
     uploadPreviewUrl: string | null;
     generatedSpeechStatusLoading: boolean;
     generatedSpeechStatusError: string | null;
+    generatedSpeechVoiceOptions: string[];
     trashPrompt: { id: string; title: string } | null;
   };
 
@@ -37,7 +38,6 @@
     saveSelectedButtonMode: () => void | Promise<void>;
     activateSelectedContent: (id: string) => void | Promise<void>;
     trashSelectedContent: (id: string) => void | Promise<void>;
-    clearSelectedGenerated: () => void | Promise<void>;
     startRecording: () => void | Promise<void>;
     stopRecording: () => void;
     revokeRecording: () => void;
@@ -45,7 +45,7 @@
     chooseUpload: (event: Event) => void;
     submitUpload: () => void | Promise<void>;
     submitGeneration: () => void | Promise<void>;
-    playContentPreview: (item: ActiveContentItem) => void | Promise<void>;
+    playContentPreview: (item: ActiveContentItem | { id: string; title: string; preview_url: string | null }) => void | Promise<void>;
     promptTrashContent: (item: { id: string; title: string }) => void;
     cancelTrashContent: () => void;
     confirmTrashContent: () => void | Promise<void>;
@@ -219,10 +219,9 @@
               loading={Boolean(state.selectedContent?.loading)}
               error={state.selectedContent?.error ?? null}
               busy={state.busy}
-              canClearGenerated={state.selectedButton.contentType === "language"}
               activate={actions.activateSelectedContent}
               trash={actions.trashSelectedContent}
-              clearGenerated={actions.clearSelectedGenerated}
+              preview={actions.playContentPreview}
             />
           {/if}
         </section>
@@ -258,10 +257,8 @@
           generatedSpeechDisabled={state.generatedSpeechDisabled}
           generatedSpeechStatusLoading={state.generatedSpeechStatusLoading}
           generatedSpeechStatusError={state.generatedSpeechStatusError}
+          voiceOptions={state.generatedSpeechVoiceOptions}
         />
-        {#if state.selectedButton.contentType === "language"}
-          <button type="button" class="btn-secondary" on:click={actions.clearSelectedGenerated} disabled={state.busy || (state.selectedTab === "generate" && state.generatedSpeechDisabled)}>Clear generated drafts</button>
-        {/if}
       </section>
     {:else}
       <section class="section-card empty-state">

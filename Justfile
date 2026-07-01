@@ -56,6 +56,26 @@ run-pi-admin:
         done
     fi
 
+    voxtral_api_base="${VOXTRAL_API_BASE:-https://127.0.0.1:11445}"
+    vietnamese_vits_api_base="${VIETNAMESE_VITS_API_BASE:-https://127.0.0.1:11446}"
+    speech_api_ca_cert="${TCUBE_SPEECH_API_CA_CERT:-}"
+    if [ -z "$speech_api_ca_cert" ]; then
+        for candidate in \
+            "$HOME/Library/Application Support/Caddy/pki/authorities/local/root.crt" \
+            "$HOME/.local/share/caddy/pki/authorities/local/root.crt" \
+            "/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt"; do
+            if [ -r "$candidate" ]; then
+                speech_api_ca_cert="$candidate"
+                break
+            fi
+        done
+    fi
+    export VOXTRAL_API_BASE="$voxtral_api_base"
+    export VIETNAMESE_VITS_API_BASE="$vietnamese_vits_api_base"
+    if [ -n "$speech_api_ca_cert" ]; then
+        export TCUBE_SPEECH_API_CA_CERT="$speech_api_ca_cert"
+    fi
+
     echo "T-Cube admin backend: http://127.0.0.1:8080/"
     echo "Phone/laptop URL via Caddy: https://tcube.local/"
     echo "USB gadget URL via Caddy: https://10.55.0.1/"
@@ -64,6 +84,13 @@ run-pi-admin:
     fi
     echo "Run Caddy separately: caddy run --config deploy/pi-admin-caddy/Caddyfile"
     echo "For phone testing by LAN IP, run: just run-pi-admin-caddy"
+    echo "Voxtral TTS API: $VOXTRAL_API_BASE"
+    echo "Vietnamese VITS API: $VIETNAMESE_VITS_API_BASE"
+    if [ -n "${TCUBE_SPEECH_API_CA_CERT:-}" ]; then
+        echo "Speech API CA certificate: $TCUBE_SPEECH_API_CA_CERT"
+    else
+        echo "Speech API CA certificate: not configured; Caddy tls internal TTS endpoints may appear offline."
+    fi
     echo
 
     cargo run --bin tcube-pi-admin -- --bind 127.0.0.1:8080 --database data/tcube.sqlite3 --ui-dist admin-ui/build --media-root data/audio --content-root content --hostname tcube.local --usb-address 10.55.0.1

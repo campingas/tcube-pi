@@ -91,7 +91,17 @@ Installation, CA trust, service files, URLs, and the complete browser checklist 
 
 `tcube-pi-admin` can request generated speech drafts from external HTTPS speech services. Those workers are intentionally outside this repository.
 
-When changing speech-provider integration, verify the configured provider health and generate one short phrase through the admin API. Confirm that generated files are non-empty, playable, intelligible, and remain inactive until an administrator reviews and activates them on the cube.
+The supported local `tcube-tts` HTTPS contract uses `VOXTRAL_API_BASE=https://127.0.0.1:11445` and `VIETNAMESE_VITS_API_BASE=https://127.0.0.1:11446`. Both services expose `GET /health`; speech generation uses `POST /v1/audio/speech`. If those services are fronted by Caddy `tls internal`, make sure the admin service either trusts that Caddy root CA system-wide or has `TCUBE_SPEECH_API_CA_CERT` pointing at the exported root certificate PEM.
+
+For local macOS development, `just run-pi-admin` auto-detects the user Caddy root certificate at `~/Library/Application Support/Caddy/pki/authorities/local/root.crt` when it exists and exports `TCUBE_SPEECH_API_CA_CERT` for the Rust backend. If running Pi admin and TTS as two separate Caddy processes, make sure one of the Caddy configs uses a non-default admin endpoint; otherwise the second `caddy run` can fail on `localhost:2019` before its HTTPS site starts.
+
+When changing speech-provider integration, verify the configured provider health through the Pi admin API:
+
+```sh
+curl -k 'https://localhost/api/pi/v1/content/generated-speech/status?provider=voxtral&language=French'
+```
+
+Then generate one short phrase from the authenticated admin UI. Confirm that generated files are non-empty, playable, intelligible, and remain inactive until an administrator reviews and activates them on the cube.
 
 ## Maintenance Matrix
 

@@ -5,9 +5,11 @@ import {
   generatedSpeechDisabled,
   generatedSpeechOfflineStatus,
   generatedSpeechStatusKey,
+  generatedSpeechVoices,
   isSpeechProviderOfflineMessage,
   menuGeneratedSpeechStatusKey,
-  nextGeneratedSpeechBackoff
+  nextGeneratedSpeechBackoff,
+  preferredGeneratedSpeechVoice
 } from "../../src/generated-speech-health.ts";
 import {
   defaultDraftTitle,
@@ -72,9 +74,22 @@ describe("generated speech health controller", () => {
     assert.equal(status.provider, "voxtral");
     assert.equal(status.checked_at, "2026-06-30T00:00:00.000Z");
     assert.match(status.message ?? "", /TTS provider is offline or unreachable/);
+    assert.deepEqual(status.voices, []);
 
     assert.equal(isSpeechProviderOfflineMessage("failed to connect to speech provider"), true);
     assert.equal(isSpeechProviderOfflineMessage("validation failed"), false);
+  });
+
+  test("exposes online voices and chooses a safe default", () => {
+    assert.deepEqual(generatedSpeechVoices(null), []);
+    assert.deepEqual(
+      generatedSpeechVoices({ online: true, voices: ["casual_female", "neutral_male"] } as never),
+      ["casual_female", "neutral_male"]
+    );
+    assert.deepEqual(generatedSpeechVoices({ online: false, voices: ["neutral_male"] } as never), []);
+    assert.equal(preferredGeneratedSpeechVoice(["casual_female", "neutral_male"], ""), "neutral_male");
+    assert.equal(preferredGeneratedSpeechVoice(["casual_female", "neutral_male"], "casual_female"), "casual_female");
+    assert.equal(preferredGeneratedSpeechVoice(["casual_female"], "missing"), "casual_female");
   });
 });
 

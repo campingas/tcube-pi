@@ -283,6 +283,45 @@ Latest generated TTS offline handling on 2026-06-29:
 - The main dashboard status strip uses the same generated-speech status API to switch the LLMs chip between offline and online without a tight polling loop.
 - Mobile Playwright coverage now verifies the offline notice, disabled Generate controls, unaffected Record controls, and recovery after a later online status response.
 
+Latest TTS service contract fix on 2026-07-01:
+
+- `tcube-pi-admin` now matches the local `tcube-tts` HTTPS contract for generated speech: Voxtral defaults to `https://127.0.0.1:11445`, Vietnamese VITS defaults to `https://127.0.0.1:11446`, provider health checks call `/health`, and generation calls `/v1/audio/speech`.
+- Speech provider health checks now treat non-2xx health responses as offline instead of accepting any successful TCP/TLS connection.
+- The Pi admin deployment env documents `VOXTRAL_API_BASE`, `VIETNAMESE_VITS_API_BASE`, and `TCUBE_SPEECH_API_CA_CERT` so local Caddy `tls internal` can be trusted by Rust/reqwest.
+- Validation: `cargo test speech_provider --all-features`, `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features`, `just check`, and `just test`.
+
+Latest local TTS launch fix on 2026-07-01:
+
+- `just run-pi-admin` now exports the local generated-speech provider URLs and auto-detects a readable Caddy local root certificate so the Rust backend can validate `tcube-tts` HTTPS endpoints during macOS development.
+- The copied `_tcube-tts` Caddyfile now uses Caddy admin endpoint `localhost:2021`, avoiding the default `localhost:2019` conflict when the Pi admin Caddy and TTS Caddy are run as separate local processes.
+- Assumption: local TTS workers still listen on their worker ports (`10110` for Voxtral and `10111` for Vietnamese VITS) and Caddy exposes their HTTPS ports (`11445` and `11446`).
+- Validation: `just --list`, `just validate-pi-admin-caddy`, `_tcube-tts` `just caddy-validate`, `just check`, and `just test`.
+
+Latest generated voice selection fix on 2026-07-01:
+
+- The Generate content provider selector now stays enabled even when the currently selected provider is offline, so an accidental offline provider choice can be corrected without a hard refresh.
+- Generated-speech status now includes provider voices when the provider exposes them; Voxtral voices are fetched from `/v1/audio/voices`, cached with health state, and shown as a dropdown instead of a free-text voice field.
+- When Voxtral reports voices, the admin UI defaults to `neutral_male` when available and preserves an already-selected valid voice.
+- Validation: `cargo test speech_provider --all-features`, `just check-admin-ui`, `just test-admin-ui-unit`, `just build-admin-ui`, `just test-admin-ui-mobile`, `just check`, and `just test`.
+
+Latest generated audio review cleanup on 2026-07-01:
+
+- The Generate composer resets field text styling so user-entered text and provider/voice values no longer inherit uppercase label styling, and unavailable voice state renders as helper copy instead of a disabled text input.
+- The generated-draft clearing header/action was removed from the button configuration flow to keep the generated audio review list focused on preview, activate, and trash.
+- Draft rows with preview URLs are now clickable and keyboard-playable, so newly generated audio can be reviewed immediately after generation and again from the Drafts list before activation.
+- After a generated-speech request succeeds, the returned inactive draft is previewed immediately while the UI refreshes the Drafts list.
+- Validation: `just check-admin-ui`, `just test-admin-ui-unit`, `just test-admin-ui-mobile`, `just build-admin-ui`, `just check`, and `just test`.
+
+Latest record content copy update on 2026-07-01:
+
+- The Record tab language text input no longer shows a separate `Text spoken` label above the field; its placeholder now reads `Write the text spoken here` while keeping an accessible label for assistive technology.
+- Validation: `just check-admin-ui`, `just test-admin-ui-unit`, `just test-admin-ui-mobile`, and `just build-admin-ui`.
+
+Latest recent activity cap on 2026-07-01:
+
+- `/api/pi/v1/events/recent` now returns only the latest 10 merged runtime/admin activity events after timestamp sorting, so the dashboard Recent activity feed remains compact.
+- Validation: `cargo test versioned_admin_api_aliases_support_session_setup_and_events --all-features`, `just check`, and `just test`.
+
 Latest settings page implementation on 2026-06-29:
 
 - The top-right Settings action now opens a mockup-aligned grouped settings screen with Cube, Account, Manager invitations, Danger zone, logout, and version/status footer sections.

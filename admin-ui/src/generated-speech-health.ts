@@ -27,6 +27,15 @@ export function generatedSpeechDisabled(key: string, status: GeneratedSpeechStat
   return offline || (loading && !status);
 }
 
+export function generatedSpeechVoices(status: GeneratedSpeechStatus | null) {
+  return status?.online ? status.voices ?? [] : [];
+}
+
+export function preferredGeneratedSpeechVoice(voices: string[], currentVoice: string) {
+  if (!voices.length || voices.includes(currentVoice)) return currentVoice;
+  return voices.includes("neutral_male") ? "neutral_male" : voices[0];
+}
+
 export function nextGeneratedSpeechBackoff(online: boolean, current: number, immediate: boolean) {
   if (online) return generatedSpeechMinBackoffSeconds;
   return Math.min(
@@ -58,7 +67,8 @@ export function generatedSpeechOfflineStatus(key: string, detail: string, checke
     cached: false,
     cache_ttl_seconds: 20,
     next_check_after_seconds: generatedSpeechMinBackoffSeconds,
-    message: speechProviderOfflineMessage(detail)
+    message: speechProviderOfflineMessage(detail),
+    voices: []
   };
 }
 

@@ -20,7 +20,8 @@ mod tests {
     use crate::server::routes::setup::setup_review;
     use crate::server::speech::{
         cached_speech_provider_health, probe_speech_provider, speech_http_client_with_ca_cert_path,
-        validate_speech_api_url,
+        speech_provider_default_base_url, speech_provider_health_url, speech_provider_speech_url,
+        speech_provider_voices_url, validate_speech_api_url,
     };
     use axum::body::{to_bytes, Body};
     use axum::http::Request;
@@ -441,13 +442,19 @@ mod tests {
             );",
         )
         .unwrap();
-        conn.execute(
-            "insert into button_events \
-             (occurred_at, button_id, mode, response_id, response_text) \
-             values (?1, 1, 'language', 'hello', 'Hello')",
-            [now()],
-        )
-        .unwrap();
+        for index in 0..12 {
+            conn.execute(
+                "insert into button_events \
+                 (occurred_at, button_id, mode, response_id, response_text) \
+                 values (?1, 1, 'language', ?2, ?3)",
+                params![
+                    format!("2026-07-01T00:{index:02}:00Z"),
+                    format!("hello-{index}"),
+                    format!("Hello {index}")
+                ],
+            )
+            .unwrap();
+        }
         drop(conn);
 
         let session = axum_request(
@@ -485,10 +492,12 @@ mod tests {
         );
         assert_eq!(events.status, 200);
         let body: serde_json::Value = serde_json::from_slice(&events.body).unwrap();
+        assert_eq!(body.as_array().unwrap().len(), 10);
         assert_eq!(body[0]["kind"], "button_pressed");
         assert_eq!(body[0]["button_id"], 1);
         assert_eq!(body[0]["button_label"], "Top");
-        assert_eq!(body[0]["response_text"], "Hello");
+        assert_eq!(body[0]["response_text"], "Hello 11");
+        assert_eq!(body[9]["response_text"], "Hello 2");
     }
 
     #[test]
@@ -1755,18 +1764,61 @@ mod tests {
 
     #[test]
     fn speech_provider_urls_must_use_https() {
-        let secure = validate_speech_api_url("https://localhost:8001/v1").unwrap();
+        let secure = validate_speech_api_url("https://localhost:11445").unwrap();
         assert_eq!(secure.scheme(), "https");
 
-        let insecure = validate_speech_api_url("http://localhost:8001/v1").unwrap_err();
+        let insecure = validate_speech_api_url("http://localhost:11445").unwrap_err();
         assert!(insecure
             .to_string()
             .contains("speech provider URL must use https"));
     }
 
     #[test]
+    fn speech_provider_defaults_match_tts_caddy_contract() {
+        assert_eq!(
+            speech_provider_default_base_url("voxtral").unwrap(),
+            "https://127.0.0.1:11445"
+        );
+        assert_eq!(
+            speech_provider_default_base_url("vietnamese-vits").unwrap(),
+            "https://127.0.0.1:11446"
+        );
+    }
+
+    #[test]
+    fn speech_provider_endpoint_urls_match_tts_contract() {
+        let voxtral_base = speech_provider_default_base_url("voxtral").unwrap();
+        let vietnamese_base = speech_provider_default_base_url("vietnamese-vits").unwrap();
+
+        assert_eq!(
+            speech_provider_health_url(voxtral_base).unwrap(),
+            "https://127.0.0.1:11445/health"
+        );
+        assert_eq!(
+            speech_provider_speech_url("voxtral", voxtral_base).unwrap(),
+            "https://127.0.0.1:11445/v1/audio/speech"
+        );
+        assert_eq!(
+            speech_provider_voices_url("voxtral", voxtral_base).unwrap(),
+            Some("https://127.0.0.1:11445/v1/audio/voices".to_string())
+        );
+        assert_eq!(
+            speech_provider_health_url(vietnamese_base).unwrap(),
+            "https://127.0.0.1:11446/health"
+        );
+        assert_eq!(
+            speech_provider_speech_url("vietnamese-vits", vietnamese_base).unwrap(),
+            "https://127.0.0.1:11446/v1/audio/speech"
+        );
+        assert_eq!(
+            speech_provider_voices_url("vietnamese-vits", vietnamese_base).unwrap(),
+            None
+        );
+    }
+
+    #[test]
     fn speech_provider_probe_rejects_insecure_urls() {
-        let error = probe_speech_provider("http://localhost:8001/v1").unwrap_err();
+        let error = probe_speech_provider("voxtral", "http://localhost:11445").unwrap_err();
 
         assert!(error
             .to_string()
@@ -1780,19 +1832,21 @@ mod tests {
 
         let first = cached_speech_provider_health(key.clone(), "voxtral".to_string(), || {
             probe_count.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+            Ok(vec!["neutral_male".to_string()])
         })
         .unwrap();
         let second = cached_speech_provider_health(key, "voxtral".to_string(), || {
             probe_count.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+            Ok(vec!["neutral_female".to_string()])
         })
         .unwrap();
 
         assert!(first.0.online);
         assert!(!first.1);
+        assert_eq!(first.0.voices, vec!["neutral_male"]);
         assert!(second.0.online);
         assert!(second.1);
+        assert_eq!(second.0.voices, vec!["neutral_male"]);
         assert_eq!(probe_count.load(Ordering::SeqCst), 1);
     }
 

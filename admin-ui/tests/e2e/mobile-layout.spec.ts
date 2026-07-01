@@ -186,6 +186,13 @@ test("button config active rows trim long titles, show summaries, and open the t
   await expect(dialog.getByRole("button", { name: "Move to trash" })).toBeVisible();
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toHaveCount(0);
+
+  await page.getByRole("tab", { name: /Drafts/i }).click();
+  await expect(page.getByRole("button", { name: "Clear generated" })).toHaveCount(0);
+  const draftRow = page.getByRole("button", { name: /Play draft Bonjour/ });
+  await expect(draftRow).toBeVisible();
+  await expect(draftRow).toContainText("tap to preview");
+  await expect(draftRow.getByRole("button", { name: "Activate draft" })).toBeVisible();
 });
 
 test("recording flow shows live microphone feedback and draft guidance", async ({ page }) => {
@@ -209,6 +216,8 @@ test("recording flow shows live microphone feedback and draft guidance", async (
   await expect(page.getByRole("tab", { name: /Record/i })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("tab", { name: /Record/i })).toHaveClass(/active-atab/);
   await expect(page.getByTestId("record-zone")).toBeVisible();
+  await expect(page.getByTestId("record-zone").getByPlaceholder("Write the text spoken here")).toBeVisible();
+  await expect(page.getByTestId("record-zone").getByText("Text spoken")).toHaveCount(0);
   await expect(page.locator(".record-btn-big")).toBeVisible();
   await expect(page.getByTestId("record-status")).toHaveText("Tap record, then speak clearly near your phone.");
   await expect(page.getByText("After recording, preview the audio here before saving.")).toBeVisible();
@@ -261,8 +270,9 @@ test("generated speech disables only generate controls while TTS is offline", as
   await page.getByRole("tab", { name: /Generate/i }).click();
   await expect(page.getByTestId("tts-offline-notice")).toContainText("TTS provider is offline");
   await expect(page.getByLabel("Text to speech")).toBeDisabled();
-  await expect(page.getByLabel("Provider")).toBeDisabled();
+  await expect(page.getByLabel("Provider")).toBeEnabled();
   await expect(page.getByRole("button", { name: "Generate speech" })).toBeDisabled();
+  await page.getByLabel("Provider").selectOption("voxtral");
 
   await page.getByRole("tab", { name: /Record/i }).click();
   await expect(page.getByTestId("record-toggle")).toBeEnabled();
@@ -273,6 +283,9 @@ test("generated speech disables only generate controls while TTS is offline", as
   await expect(page.getByTestId("tts-offline-notice")).toHaveCount(0);
   await page.clock.fastForward(61_000);
   await expect(page.getByLabel("Text to speech")).toBeEnabled();
+  await expect(page.getByLabel("Voice")).toBeEnabled();
+  await expect(page.getByLabel("Voice")).toHaveValue("neutral_male");
+  await expect(page.getByLabel("Voice")).toContainText("cheerful_female");
   await page.getByLabel("Text to speech").fill("Bonjour tout le monde.");
   await expect(page.getByRole("button", { name: "Generate speech" })).toBeEnabled();
   await page.getByRole("button", { name: /go to dashboard/i }).click();
@@ -676,7 +689,8 @@ async function mockAdminApi(page: Page) {
               cached: false,
               cache_ttl_seconds: 20,
               next_check_after_seconds: 20,
-              message: "TTS provider is offline or unreachable: failed to connect to speech provider"
+              message: "TTS provider is offline or unreachable: failed to connect to speech provider",
+              voices: []
             }
           : {
               online: true,
@@ -685,7 +699,8 @@ async function mockAdminApi(page: Page) {
               cached: false,
               cache_ttl_seconds: 20,
               next_check_after_seconds: 20,
-              message: "TTS provider is online and ready for generated speech."
+              message: "TTS provider is online and ready for generated speech.",
+              voices: ["neutral_male", "cheerful_female", "fr_female"]
             }
       });
       return;
