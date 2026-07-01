@@ -105,6 +105,85 @@
   </section>
 
   <section class="settings-group">
+    <div class="settings-group-label">Cube</div>
+    <div class="settings-group-card">
+      <button
+        type="button"
+        class:expanded={state.settingsCubeNameOpen}
+        class="settings-row"
+        on:click={() => actions.setSettingsCubeNameOpen(!state.settingsCubeNameOpen)}
+        disabled={!state.isOwner}
+      >
+        <div class="settings-row-icon si-coral"><Cuboid size={17} strokeWidth={1.5} aria-hidden="true" /></div>
+        <div class="settings-row-body">
+          <div class="settings-row-title">Cube name</div>
+        </div>
+        <div class="settings-row-right">
+          <span class="settings-row-value">{state.setup?.cube_name ?? state.cubeName}</span>
+          {#if state.settingsCubeNameOpen}<ChevronUp size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
+        </div>
+      </button>
+      {#if state.settingsCubeNameOpen}
+        <form class="settings-edit" on:submit|preventDefault={() => actions.saveCubeName(cubeName)}>
+          <label class="field-label">Display name
+            <input class="settings-input" bind:value={cubeName} maxlength="32" disabled={!state.isOwner} />
+          </label>
+          <div class="settings-hint">Shown in this dashboard and in the activity log.</div>
+          <div class="settings-row-actions">
+            <button type="button" class="settings-cancel-btn" on:click={() => (cubeName = state.setup?.cube_name || "T-Cube")} disabled={state.busy}>Cancel</button>
+            <button type="submit" class="settings-save-btn" disabled={state.busy || !state.isOwner}>Save name</button>
+          </div>
+        </form>
+      {/if}
+
+      <button
+        type="button"
+        class:expanded={state.settingsWifiOpen}
+        class="settings-row"
+        on:click={() => actions.setSettingsWifiOpen(!state.settingsWifiOpen)}
+        disabled={!state.isOwner}
+      >
+        <div class="settings-row-icon si-teal"><Wifi size={17} strokeWidth={1.5} aria-hidden="true" /></div>
+        <div class="settings-row-body">
+          <div class="settings-row-title">Wi-Fi</div>
+          <div class="settings-row-desc">{state.setup?.wifi_verified ? state.setup?.wifi_ssid || state.wifiForm.ssid || "wi-fi" : "wi-fi"} · {state.setup?.wifi_verified ? state.setup?.dashboard_ip || "192.168.0.1" : "192.168.0.1"}</div>
+        </div>
+        <div class="settings-row-right">
+          <span class:bs-teal={Boolean(state.setup?.wifi_verified)} class:bs-amber={!Boolean(state.setup?.wifi_verified)} class="settings-badge">{state.setup?.wifi_verified ? "Verified" : "Pending"}</span>
+          {#if state.settingsWifiOpen}<ChevronUp size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
+        </div>
+      </button>
+      {#if state.settingsWifiOpen}
+        <form class="settings-edit" on:submit|preventDefault={() => actions.verifyWifi(wifiSsid, wifiDashboardIp)}>
+          <label class="field-label">Wi-Fi SSID
+            <input class="settings-input" bind:value={wifiSsid} placeholder="Home Wi-Fi" disabled={!state.isOwner} />
+          </label>
+          <label class="field-label">Dashboard IP
+            <input class="settings-input" bind:value={wifiDashboardIp} placeholder="192.168.1.10" disabled={!state.isOwner} />
+          </label>
+          <div class="settings-row-actions">
+            <button type="button" class="settings-cancel-btn" on:click={() => actions.setSettingsWifiOpen(false)} disabled={state.busy}>Cancel</button>
+            <button type="submit" class="settings-save-btn" disabled={state.busy || !state.isOwner}>Mark verified</button>
+          </div>
+        </form>
+      {/if}
+
+      <div class="settings-row no-tap">
+        <div class:si-teal={Boolean(state.status?.usb_connected)} class:si-muted={!Boolean(state.status?.usb_connected)} class="settings-row-icon">
+          <Usb size={17} strokeWidth={1.5} aria-hidden="true" />
+        </div>
+        <div class="settings-row-body">
+          <div class="settings-row-title">USB address</div>
+          <div class="settings-row-desc">Available when connected via USB-C OTG</div>
+        </div>
+        <div class="settings-row-right">
+          <span class="settings-row-value">{state.status?.usb_address ?? "Not connected"}</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-group">
     <div class="settings-group-label">Focus routine · Owner only</div>
     <div class="settings-group-card focus-routine-card">
       <div class="settings-row no-tap">
@@ -210,85 +289,6 @@
         <button type="button" class="settings-save-btn" on:click={actions.savePomodoro} disabled={state.busy || !state.isOwner}>
           Save focus routine
         </button>
-      </div>
-    </div>
-  </section>
-
-  <section class="settings-group">
-    <div class="settings-group-label">Cube</div>
-    <div class="settings-group-card">
-      <button
-        type="button"
-        class:expanded={state.settingsCubeNameOpen}
-        class="settings-row"
-        on:click={() => actions.setSettingsCubeNameOpen(!state.settingsCubeNameOpen)}
-        disabled={!state.isOwner}
-      >
-        <div class="settings-row-icon si-coral"><Cuboid size={17} strokeWidth={1.5} aria-hidden="true" /></div>
-        <div class="settings-row-body">
-          <div class="settings-row-title">Cube name</div>
-        </div>
-        <div class="settings-row-right">
-          <span class="settings-row-value">{state.setup?.cube_name ?? state.cubeName}</span>
-          {#if state.settingsCubeNameOpen}<ChevronUp size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
-        </div>
-      </button>
-      {#if state.settingsCubeNameOpen}
-        <form class="settings-edit" on:submit|preventDefault={() => actions.saveCubeName(cubeName)}>
-          <label class="field-label">Display name
-            <input class="settings-input" bind:value={cubeName} maxlength="32" disabled={!state.isOwner} />
-          </label>
-          <div class="settings-hint">Shown in this dashboard and in the activity log.</div>
-          <div class="settings-row-actions">
-            <button type="button" class="settings-cancel-btn" on:click={() => (cubeName = state.setup?.cube_name || "T-Cube")} disabled={state.busy}>Cancel</button>
-            <button type="submit" class="settings-save-btn" disabled={state.busy || !state.isOwner}>Save name</button>
-          </div>
-        </form>
-      {/if}
-
-      <button
-        type="button"
-        class:expanded={state.settingsWifiOpen}
-        class="settings-row"
-        on:click={() => actions.setSettingsWifiOpen(!state.settingsWifiOpen)}
-        disabled={!state.isOwner}
-      >
-        <div class="settings-row-icon si-teal"><Wifi size={17} strokeWidth={1.5} aria-hidden="true" /></div>
-        <div class="settings-row-body">
-          <div class="settings-row-title">Wi-Fi</div>
-          <div class="settings-row-desc">{state.setup?.wifi_verified ? state.setup?.wifi_ssid || state.wifiForm.ssid || "wi-fi" : "wi-fi"} · {state.setup?.wifi_verified ? state.setup?.dashboard_ip || "192.168.0.1" : "192.168.0.1"}</div>
-        </div>
-        <div class="settings-row-right">
-          <span class:bs-teal={Boolean(state.setup?.wifi_verified)} class:bs-amber={!Boolean(state.setup?.wifi_verified)} class="settings-badge">{state.setup?.wifi_verified ? "Verified" : "Pending"}</span>
-          {#if state.settingsWifiOpen}<ChevronUp size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
-        </div>
-      </button>
-      {#if state.settingsWifiOpen}
-        <form class="settings-edit" on:submit|preventDefault={() => actions.verifyWifi(wifiSsid, wifiDashboardIp)}>
-          <label class="field-label">Wi-Fi SSID
-            <input class="settings-input" bind:value={wifiSsid} placeholder="Home Wi-Fi" disabled={!state.isOwner} />
-          </label>
-          <label class="field-label">Dashboard IP
-            <input class="settings-input" bind:value={wifiDashboardIp} placeholder="192.168.1.10" disabled={!state.isOwner} />
-          </label>
-          <div class="settings-row-actions">
-            <button type="button" class="settings-cancel-btn" on:click={() => actions.setSettingsWifiOpen(false)} disabled={state.busy}>Cancel</button>
-            <button type="submit" class="settings-save-btn" disabled={state.busy || !state.isOwner}>Mark verified</button>
-          </div>
-        </form>
-      {/if}
-
-      <div class="settings-row no-tap">
-        <div class:si-teal={Boolean(state.status?.usb_connected)} class:si-muted={!Boolean(state.status?.usb_connected)} class="settings-row-icon">
-          <Usb size={17} strokeWidth={1.5} aria-hidden="true" />
-        </div>
-        <div class="settings-row-body">
-          <div class="settings-row-title">USB address</div>
-          <div class="settings-row-desc">Available when connected via USB-C OTG</div>
-        </div>
-        <div class="settings-row-right">
-          <span class="settings-row-value">{state.status?.usb_address ?? "Not connected"}</span>
-        </div>
       </div>
     </div>
   </section>

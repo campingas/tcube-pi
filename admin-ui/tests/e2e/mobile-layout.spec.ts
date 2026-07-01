@@ -386,11 +386,13 @@ test("settings page matches grouped setup controls and calls settings APIs", asy
   await page.getByRole("button", { name: "Settings" }).click();
 
   await expect(page.getByRole("navigation").getByText("Settings")).toBeVisible();
-  await expect(page.getByText("Cube", { exact: true })).toBeVisible();
-  await expect(page.getByText("Focus routine · Owner only")).toBeVisible();
-  await expect(page.getByText("Account", { exact: true })).toBeVisible();
-  await expect(page.getByText("Manager invitations · Owner only")).toBeVisible();
-  await expect(page.getByText("Danger zone")).toBeVisible();
+  await expect(page.locator(".settings-group-label")).toHaveText([
+    "Cube",
+    "Focus routine · Owner only",
+    "Account",
+    "Manager invitations · Owner only",
+    "Danger zone"
+  ]);
 
   await page.getByLabel("Child age").fill("10");
   await expect(page.getByLabel("Focus minutes")).toHaveValue("20");
