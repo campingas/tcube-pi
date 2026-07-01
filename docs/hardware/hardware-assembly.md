@@ -1,4 +1,23 @@
-# Assembly instructions
+# Hardware Assembly
+
+This file tracks the physical components selected or seriously considered for T-Cube and the current prototype assembly path.
+
+Maintenance rule: whenever a hardware piece, device, module, or major material is added, removed, or replaced, update this file in the same change.
+
+## Hardware Inventory
+
+| Name | Short description |
+| --- | --- |
+| Raspberry Pi Zero 2 W Basic Kit | Main computer for running the device software and controlling connected hardware. |
+| MakerEdu MKE-M02 Button RGYBW Module | Development button for testing physical input through GPIO. |
+| MAX98357A I2S Class-D 3 W amplifier | Amplifies digital audio from the Raspberry Pi for the speaker. |
+| Mini 3 W 8-ohm speaker with enclosure | Plays speech, animal sounds, music, and device feedback. |
+| MPU6050 GY-521 6-DOF IMU | Detects movement, rotation, impact, and cube orientation. |
+| 830-point solderless breadboard | Holds temporary circuits during prototype testing. |
+| 20 cm male-to-female jumper wires, 40-wire ribbon | Connects Raspberry Pi GPIO pins to prototype modules. |
+| Micro-USB to USB-C OTG cable | Connects a USB-C peripheral to the Raspberry Pi Zero 2 W data port. |
+
+## Assembly Instructions
 
 ---
 
@@ -18,10 +37,10 @@ If your Pi Zero 2W does not have a pre-soldered header, solder a 2×20 male 40-p
 
 ### Step 2: Power the Pi Zero 2W and prepare the OS
 
-Insert a microSD card flashed with Raspberry Pi OS Lite. Power the Pi via the PWR Micro-USB port using a 5V/2.5A supply. Complete initial OS setup (hostname, Wi-Fi, SSH). Then open a terminal and enable I2S audio by editing `/boot/config.txt`: add the lines `dtparam=i2s=on` and `dtoverlay=max98357a`, then reboot.
+Insert a microSD card flashed with Raspberry Pi OS Lite. Power the Pi via the PWR Micro-USB port using a 5V/2.5A supply. Complete initial OS setup for hostname, Wi-Fi, and SSH. Then follow [Raspberry Pi OS Lite Install](pi-os-lite-install.md) for package installation, release-bundle installation, I2S configuration, and service checks.
 
 **Tips**
-- Use `sudo nano /boot/config.txt` to edit. Save with **Ctrl+O**, exit with **Ctrl+X**.
+- Keep the Pi reachable over SSH before enclosing or mounting hardware.
 - After reboot, run `aplay -l` — you should see a `sndrpimaxims` I2S sound card listed.
 
 **Warnings**
@@ -102,29 +121,24 @@ Each MKE-M02 module has a 3-pin XH2.54 connector: VCC, GND, SIG. Wire all five b
 
 ---
 
-### Step 6: Add sound files and run the script
-
-Copy five WAV audio files to the same folder as `main.py` on the Pi and rename them:  
-`sound_red.wav`, `sound_green.wav`, `sound_yellow.wav`, `sound_blue.wav`, `sound_white.wav`.
-
-Then install the required Python libraries and run the script:
-
-```bash
-sudo apt update && sudo apt install -y python3-gpiozero python3-pygame
-python3 main.py
-```
-
-Press each button — the corresponding sound should play through the speaker.
+### Step 6: Validate hardware bring-up
 
 **Tips**
-- 44100 Hz, 16-bit mono WAV files work best. You can convert any audio file with:
-  ```bash
-  ffmpeg -i input.mp3 -ar 44100 -ac 1 -sample_fmt s16 sound_red.wav
-  ```
-- To make the script run automatically at startup, add it to `/etc/rc.local` before the `exit 0` line.
+- Install the Pi software path from [Raspberry Pi OS Lite Install](pi-os-lite-install.md) before validating end-to-end admin service behavior.
+- Use `aplay -l` and `speaker-test` or a short known-good WAV file to validate the MAX98357A and speaker path before relying on the Rust runtime.
+- Use the temporary one-button payload under `deploy/pi-zero-button-smoke` only while the final Rust GPIO backend is pending.
 
 **Warnings**
 - If no audio plays, check `aplay -l` to confirm the I2S sound card is visible. If not, verify the `dtoverlay` lines in `/boot/config.txt` and reboot.
+- Power down before changing amplifier, speaker, or GPIO wiring.
+
+## Recommended Bring-Up Order
+
+1. With power disconnected, verify continuity and confirm there is no short between 5 V and ground.
+2. Connect only Button 1, boot the Pi, and verify low when idle and high when pressed.
+3. Add Buttons 2 through 5 one at a time and verify each assigned GPIO independently.
+4. Power down, connect amplifier power and I2S signals without the speaker, then inspect the wiring again.
+5. Connect the speaker between `OUT+` and `OUT-`, start at low software volume, and run a short playback test.
+6. Test simultaneous button input and audio playback while watching for undervoltage, resets, noise, or false button events.
 
 ---
-

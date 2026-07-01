@@ -85,7 +85,7 @@ Measure admin-load impact while `tcube-pi-admin` is running:
 just measure-pi-admin
 ```
 
-Installation, CA trust, service files, URLs, and the complete browser checklist live in [Pi Admin HTTPS With Caddy](../../deploy/pi-admin-caddy/README.md). Pi packages are tracked in [Raspberry Pi Package List](pi-package-list.md).
+Installation, CA trust, service files, URLs, and the complete browser checklist live in [Pi Admin HTTPS With Caddy](../../deploy/pi-admin-caddy/README.md). Fresh Pi OS setup and packages are tracked in [Raspberry Pi OS Lite Install](../hardware/pi-os-lite-install.md).
 
 ## External Speech Generation
 

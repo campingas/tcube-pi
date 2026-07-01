@@ -4,14 +4,20 @@ This guide explains how to work on `tcube-pi` without drifting from the T-Cube p
 
 ## Project References
 
-Read these before changing behavior or architecture:
+Read these first:
 
 * [VISION.md](VISION.md): Product contract, user experience, AI boundaries, and hardware concept.
-* [docs/developer/architecture-guide.md](docs/developer/architecture-guide.md): Runtime split and technical architecture.
-* [docs/developer/testing-guide.md](docs/developer/testing-guide.md): Validation workflow.
-* [docs/developer/rust-guide.md](docs/developer/rust-guide.md): Rust module, style, safety, and testing rules.
 * [docs/developer/current-state.md](docs/developer/current-state.md): Current implementation status and known risks.
 * [docs/tasks.md](docs/tasks.md): Active and upcoming work.
+
+Then route by task:
+
+* [docs/developer/architecture-guide.md](docs/developer/architecture-guide.md): Runtime split, data boundaries, API boundaries, and deployment architecture.
+* [docs/developer/rust-guide.md](docs/developer/rust-guide.md): Rust implementation rules.
+* [docs/developer/testing-guide.md](docs/developer/testing-guide.md): Validation workflow.
+* [docs/developer/branding-guide.md](docs/developer/branding-guide.md): Admin UI visual design and copy.
+* [docs/hardware/hardware-assembly.md](docs/hardware/hardware-assembly.md): Hardware inventory, wiring, and bring-up.
+* [docs/hardware/pi-os-lite-install.md](docs/hardware/pi-os-lite-install.md): Fresh Pi OS Lite and release-bundle install.
 
 The core product rule is that child-facing button feedback must be immediate, deterministic, local, and never blocked by AI, network, dashboard, or reporting work.
 
@@ -95,7 +101,7 @@ Use [the Caddy deployment guide](deploy/pi-admin-caddy/README.md) for the suppor
 
 Use Raspberry Pi OS Lite 64-bit on Raspberry Pi Zero 2 W.
 
-Track required Pi packages in [docs/developer/pi-package-list.md](docs/developer/pi-package-list.md). For the current baseline:
+Track fresh Pi setup, required packages, and release-bundle installation in [docs/hardware/pi-os-lite-install.md](docs/hardware/pi-os-lite-install.md). For the current baseline:
 
 ```sh
 sudo apt update
@@ -127,7 +133,7 @@ Do not commit secrets, `.env` files, credentials, local databases, or sensitive 
 
 Do not commit generated build output. `target/`, local SQLite databases, local media, and `admin-ui/` are ignored.
 
-When adding, removing, replacing, or seriously considering physical hardware, update [docs/hardware/inventory.md](docs/hardware/inventory.md) in the same change.
+When adding, removing, replacing, or seriously considering physical hardware, update [docs/hardware/hardware-assembly.md](docs/hardware/hardware-assembly.md) in the same change.
 
 Use conventional commit messages if a commit is requested, such as `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, or `chore:`.
 

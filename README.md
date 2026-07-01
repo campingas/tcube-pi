@@ -38,8 +38,9 @@ Use Caddy for HTTPS browser access by following [the Pi admin Caddy guide](deplo
 - [deploy/pi-admin-caddy/](deploy/pi-admin-caddy/): Caddy and systemd deployment files for the Pi admin service
 - [deploy/pi-release/](deploy/pi-release/): release-bundle preparation and Pi installer scripts
 - [deploy/pi-zero-button-smoke/](deploy/pi-zero-button-smoke/): temporary one-button bench smoke payload
-- [docs/developer/](docs/developer/): architecture, testing, Rust, auth, package, and state docs
-- [docs/hardware/inventory.md](docs/hardware/inventory.md): tracked hardware components
+- [docs/developer/](docs/developer/): routed architecture, testing, Rust, branding, and state docs
+- [docs/hardware/hardware-assembly.md](docs/hardware/hardware-assembly.md): tracked hardware components and assembly notes
+- [docs/hardware/pi-os-lite-install.md](docs/hardware/pi-os-lite-install.md): fresh Raspberry Pi OS Lite install and release-bundle setup
 
 ## Binaries
 

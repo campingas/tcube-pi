@@ -1,8 +1,8 @@
 # Tasks
 
-Reviewed: 2026-06-30 (+07)
+Reviewed: 2026-07-01 (+07)
 
-This file tracks only the next useful work, ordered by product impact and implementation risk. Completed history lives in `docs/developer/current-state.md`.
+This file tracks only active next work, ordered by product impact and implementation risk. Completed work belongs in git history; keep only live status in `docs/developer/current-state.md`.
 
 ## Next
 
@@ -10,10 +10,6 @@ This file tracks only the next useful work, ordered by product impact and implem
 - [ ] Implement the real Raspberry Pi GPIO input backend behind a hardware feature gate, including debounce behavior, one physical MakerEdu MKE-M02 button smoke validation, and simulator-safe desktop tests.
 - [ ] Validate MAX98357A I2S audio output from the Rust runtime on the Pi Zero 2 W, then run `just measure-pi-admin` with the admin service under load to confirm button-to-audio latency remains within the product target.
 - [ ] Implement LED output for the five RGB buttons, including normal button feedback, inactive/disabled feedback, setup/error feedback, and the mandatory microphone-active indicator before any mic capture work ships.
-- [x] Harden audio upload and recording validation: add malformed WAV tests for short or truncated `fmt ` chunks, return clean API errors instead of panics, and keep the 25 MB and duration/quietness checks covered.
-- [x] Add real per-content play statistics to the backend and admin UI so active content rows show actual play counts instead of the current `x plays` placeholder.
-- [x] Finish moving admin media and generated-speech orchestration out of `src/server/handler.rs` into native typed Axum route modules, then keep `handler.rs` limited to status/recent-event helpers or remove it entirely.
-- [x] Split `admin-ui/src/App.svelte` into focused route/state components for dashboard, button configuration, inventory, settings, recording, generated speech health, and setup/auth flows; remove stale unused component prototypes while preserving mobile Playwright coverage.
 - [ ] Wire Learning stats and Run curation only after local API contracts exist, keeping disabled UI actions visually distinct until the backend is real.
 - [ ] Define microphone capture privacy rules before implementation: capture lifetime, retention, deletion, upload boundaries, Mac-only processing, physical indicator behavior, and parent consent.
 - [ ] Implement and validate mini USB microphone capture through the Pi Zero 2 W OTG port only after the privacy and LED indicator rules are documented.

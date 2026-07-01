@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Keep this project as agent-agnostic as possible. This file defines stable repo-wide instructions for any coding agent or contributor.
+Keep this project agent-agnostic. This file defines the stable repo-wide contract for coding agents and contributors.
 
 ## Priority Order
 
@@ -9,214 +9,94 @@ When instructions conflict, follow this order:
 1. Direct user request
 2. This `AGENTS.md`
 3. Product direction in `VISION.md`
-4. Repo documentation in `docs/developer/`
+4. Routed repo docs under `docs/`
 5. Existing codebase patterns
-6. Agent-specific adapter files (for example `CLAUDE.md`, `COPILOT.md`)
+6. Agent-specific adapter files such as `CLAUDE.md` or `COPILOT.md`
 
-## New Sessions
+## Session Start
 
-At the start of each session:
+Read only the default context first:
 
-- Read `docs/tasks.md` for task tracking and priorities
-- Read `VISION.md` for the product contract and project constraints
-- Review `docs/developer/README.md` for the documentation index
-- Review `docs/developer/architecture-guide.md` for high-level patterns 
-- Review `docs/developer/testing-guide.md` for repo-specific testing standards
-- Review `docs/developer/current-state.md` for the latest known project state
-- Check `git status`
-- Inspect the relevant project structure before making changes
+- `docs/tasks.md` for active priorities
+- `VISION.md` for product constraints
+- `docs/developer/README.md` for doc routing
+- `docs/developer/current-state.md` for the live implementation snapshot
+- `git status --short`
 
-If any referenced file does not exist, continue and note the missing file rather than failing.
+Then inspect only the files and routed docs relevant to the requested change. If a referenced file is missing, continue and note it rather than failing.
+
+## Doc Routing
+
+- Rust implementation: read `docs/developer/rust-guide.md`.
+- Architecture, API boundaries, runtime/admin split, storage, sync, or privacy behavior: read `docs/developer/architecture-guide.md`.
+- Validation or handoff planning: read `docs/developer/testing-guide.md`.
+- Admin UI visual design, copy, layout, or component styling: read `docs/developer/branding-guide.md`.
+- Hardware parts, wiring, or physical bring-up: read `docs/hardware/hardware-assembly.md`.
+- Fresh Raspberry Pi OS Lite install or release-bundle setup: read `docs/hardware/pi-os-lite-install.md`.
 
 ## Context Maintenance
 
 Do not use `AGENTS.md` as a session log.
 
-At the end of any significant task or session, update `docs/developer/current-state.md` with:
-
-- Current implementation status
-- Architectural decisions made
-- Important assumptions
-- Known issues
-- Pending TODOs
-- Recommended next steps
-
-`AGENTS.md` should remain stable and should only change when repo-wide instructions change.
+At the end of significant work, update `docs/developer/current-state.md` only with live state that future agents need: current status, durable decisions, important assumptions, known issues, pending TODOs, and recommended next steps. Do not append long chronological history.
 
 ## Core Working Rules
 
-### Read Before Editing
+- Read directly related files before editing; do not infer behavior from filenames alone.
+- When changing behavior, inspect relevant tests, config, adjacent modules, and routed documentation.
+- Prefer existing codebase patterns and utilities over new abstractions.
+- Keep changes scoped to the requested behavior; note unrelated issues separately.
+- Do not revert user changes unless explicitly requested.
+- Do not commit unless explicitly asked.
+- Use conventional commit messages if a commit is requested.
+- Never include agent branding, assistant names, or co-authorship metadata unless explicitly requested.
 
-- Read all directly related files before editing
-- Do not infer behavior from filenames alone
-- When changing behavior, also inspect:
-  - tests
-  - config files
-  - adjacent modules
-  - relevant documentation
+## Environment And Safety
 
-### Follow Established Patterns
+- Do not start long-running dev servers, watchers, or background processes unless explicitly requested.
+- Prefer one-shot validation commands.
+- On macOS, use `/usr/bin/open` instead of plain `open`.
+- Never commit secrets, credentials, `.env` files, config secrets, local databases, or sensitive audio/data artifacts.
+- Treat local data stores as sensitive unless clearly intended for version control.
+- Prefer safe, explicit deletion commands and never delete files you have not inspected unless explicitly instructed.
 
-- Prefer existing patterns from the codebase and `docs/developer/`
-- Reuse utilities and abstractions before introducing new ones
-- Avoid parallel implementations of the same concept
-- Prefer established repo conventions over generic framework advice unless the current pattern is clearly broken
+## Tooling Conventions
 
-### Senior Architect Mindset
+- This repository is Rust-first.
+- Use `just` and the `Justfile` for documented project workflows; do not introduce Make or a `Makefile`.
+- The admin UI under `admin-ui/` is an intentional repository-owned JavaScript package and uses `pnpm`; do not use npm, yarn, bun, or ad hoc global JavaScript tooling for it.
+- Use `uv` for Python environments and `uvx` for one-off Python CLI tools when needed.
+- Match existing formatter and lint rules.
+- Use lowercase kebab-case filenames unless the surrounding area uses a different convention.
+- Executable scripts should not use file extensions unless the ecosystem or existing repo conventions require them.
 
-Optimize for:
+## Rust Changes
 
-- Correctness
-- Maintainability
-- Testability
-- Performance
-- Operational simplicity
+For Rust changes, follow `docs/developer/rust-guide.md`, `rustfmt.toml`, and `clippy.toml`.
 
-Prefer small, composable changes over broad rewrites unless explicitly requested.
+Before handoff for Rust changes, run:
 
-### Scope Discipline
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+```
 
-- Do exactly what was requested
-- Do not make unrelated refactors unless they are required for correctness
-- If you notice important issues outside scope, note them separately instead of changing them silently
+Treat rustc and Clippy diagnostics as actionable.
 
-## Commits
+## Validation
 
-- Use conventional commits (for example: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`)
-- Never include agent branding, assistant names, or co-authorship metadata unless explicitly requested
-- Do not commit unless explicitly asked
-- If committing is requested, keep commits focused and minimal
+Run targeted tests first, then repo-level validation where appropriate. If full validation cannot be run, state what was and was not verified.
 
-## Environment & Safety
+For admin UI changes, prefer the documented `just` recipes in `docs/developer/testing-guide.md`.
 
-### Long-Running Processes
+## Documentation
 
-- Do not start long-running dev servers, watchers, or background processes unless explicitly requested
-- Prefer one-shot validation commands
-- If manual browser/app verification is needed, ask the user to run it and report results
-
-### macOS
-
-- On macOS, use `/usr/bin/open` instead of plain `open`
-
-### Secrets & Local Data
-
-- Never commit secrets, credentials, `.env` files, config secrets, or database files
-- Never print secrets into logs or docs
-- Treat local data stores as sensitive unless clearly intended for version control
-
-### File Deletion
-
-- Prefer safe, explicit deletion commands (for example `rm -f` for files when appropriate)
-- Never delete files you have not inspected unless explicitly instructed
-
-## Code Style & Repo Conventions
-
-### Package Manager
-
-- This repository is Rust-first and does not require a JavaScript package manager.
-- Do not introduce npm, pnpm, yarn, or bun unless a concrete repository-owned JavaScript package is added intentionally.
-
-### Python
-
-- Use `uv` for Python virtual environments, dependency installation, and reproducible Python workflows.
-- Use `uvx` for one-off Python CLI tools when a persistent project environment is not needed.
-- Do not use `python -m venv`, bare `pip install`, or ad hoc global Python tooling unless a dependency explicitly requires it; document the reason when an exception is necessary.
-
-### Command Runner
-
-- Use `just` and a `Justfile` for project command orchestration
-- Do not introduce Make or a `Makefile`
-- Prefer documented `just <recipe>` workflows over ad hoc scripts once recipes exist
-
-### Markdown
-
-- Use single-line paragraphs in Markdown
-- Keep headings concise and consistent
-- Update relevant docs when behavior or architecture changes
-
-### Filenames
-
-- Use lowercase kebab-case filenames unless the repo already uses a different convention
-- Avoid spaces in filenames
-- Avoid underscores unless the project already requires them
-
-### Scripts
-
-- Executable scripts should not use file extensions unless the ecosystem or existing repo conventions require them
-
-### Formatting & Modern Patterns
-
-- Match the existing formatter and lint rules
-- Prefer modern language and framework patterns already established in the repo
-- Prefer explicit types at boundaries and inference internally where it improves readability
-- For any Rust change, follow `docs/developer/rust-guide.md`, `rustfmt.toml`, and `clippy.toml`.
-- For any Rust change, run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace --all-features` before handoff. Repository Cargo config forces inherited host C/C++ flags empty.
-- Treat all rustc and Clippy diagnostics as actionable; Rust code should be warning-clean, formatted, and safe before delivery.
-
-## Validation & Quality Gates
-
-After significant changes:
-
-- Run targeted tests first
-- Then run repo-level validation where appropriate
-
-At minimum, validate when relevant:
-
-- Types
-- Lint
-- Tests
-- Build
-
-If the repo defines a full validation command, prefer that before handoff.
-(Example customization: `just check`, `cargo test`, `pytest`)
-
-If full validation cannot be run, clearly state what was and was not verified.
-
-## Testing Expectations
-
-- Add or update tests for business logic changes
-- Prefer focused tests close to the changed behavior
-- Do not rewrite unrelated tests without reason
-- Consult `docs/developer/testing-guide.md` for specific repo patterns
-- If a change is intentionally untested, explain why
-
-## Documentation Expectations
-
-When introducing or changing patterns:
-
-- Update relevant files in `docs/developer/`
-- Keep examples aligned with actual implementation
-- Avoid documenting speculative patterns that are not yet used
-
-## Hardware Inventory
-
-When adding, removing, replacing, or seriously considering any physical component, device, module, or major material, update `docs/hardware/inventory.md` in the same change.
-
-## Current Architecture Patterns
-
-This section should contain only durable, repo-wide patterns.
-Move volatile implementation details to `docs/developer/current-state.md`.
-
-(Example customization: React Compiler, SQL migrations)
-
-### State Management
-
-TODO
-
-### Performance
-
-TODO
-
-### Static Analysis
-
-TODO
+- Use single-line paragraphs in Markdown.
+- Keep headings concise.
+- Update routed docs when behavior, architecture, setup, hardware assumptions, or workflows change.
+- When adding, removing, replacing, or seriously considering any physical component, device, module, or major material, update `docs/hardware/hardware-assembly.md`.
 
 ## Agent Adapters
 
-Agent-specific instructions should live in separate adapter files that reference this file, for example:
-
-- `CLAUDE.md`
-- `COPILOT.md`
-
-Those files should remain thin wrappers and should not duplicate repo-wide rules already defined here.
+Agent-specific instructions should live in thin adapter files that reference this file instead of duplicating repo-wide rules.
