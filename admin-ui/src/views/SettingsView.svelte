@@ -1,6 +1,6 @@
 <script lang="ts">
   import {
-    AlertTriangle,
+    TriangleAlert,
     ChevronRight,
     ChevronUp,
     Copy,
@@ -332,7 +332,7 @@
         <div class="settings-recovery-block">
           {#if state.recoveryCode}
             <div class="settings-secret-code">{state.recoveryCode.code}</div>
-            <div class="settings-warning"><AlertTriangle size={14} strokeWidth={1.5} aria-hidden="true" />Store this once. It expires {state.recoveryCode.expires_at} and can reset the account password.</div>
+            <div class="settings-warning"><TriangleAlert size={14} strokeWidth={1.5} aria-hidden="true" />Store this once. It expires {state.recoveryCode.expires_at} and can reset the account password.</div>
             <button type="button" class="settings-copy-btn" on:click={() => actions.copyText(state.recoveryCode?.code ?? "", "Recovery code")}>
               <Copy size={15} strokeWidth={1.5} aria-hidden="true" />Copy recovery code
             </button>
@@ -385,7 +385,7 @@
     <div class="settings-group-label">Danger zone</div>
     <div class="settings-danger-card">
       <div class="settings-danger-header">
-        <AlertTriangle size={16} strokeWidth={1.5} aria-hidden="true" />
+        <TriangleAlert size={16} strokeWidth={1.5} aria-hidden="true" />
         <div>Irreversible actions</div>
       </div>
       <div class="settings-danger-row">
@@ -435,7 +435,7 @@
         if (event.key === "Escape") actions.cancelFactoryReset();
       }}
     >
-      <div class="trash-dialog-icon"><AlertTriangle size={22} strokeWidth={1.5} aria-hidden="true" /></div>
+      <div class="trash-dialog-icon"><TriangleAlert size={22} strokeWidth={1.5} aria-hidden="true" /></div>
       <div class="trash-dialog-body">
         <div id="factory-reset-dialog-title" class="trash-dialog-title">Factory reset this cube?</div>
         <div id="factory-reset-dialog-desc" class="trash-dialog-desc">This deletes setup, accounts, sessions, activity, drafts, and parent-created audio. Type FACTORY RESET to continue.</div>

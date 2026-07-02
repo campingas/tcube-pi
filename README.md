@@ -27,7 +27,13 @@ Run the Pi-hosted admin service:
 just run-pi-admin
 ```
 
-Use Caddy for HTTPS browser access by following [the Pi admin Caddy guide](deploy/pi-admin-caddy/README.md).
+In a second terminal, start local HTTPS for browser and phone testing:
+
+```bash
+just run-pi-admin-lan-caddy
+```
+
+Then open `https://127.0.0.1:8443/` on the same machine or the printed `https://<lan-ip>:8443/` URL from a phone on the same network. Use [the Pi admin Caddy guide](deploy/pi-admin-caddy/README.md) for installed Pi HTTPS details.
 
 ## Repository Map
 

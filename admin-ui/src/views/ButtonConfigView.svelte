@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, Check, Languages, Minus, Music, PawPrint, Play, SlidersHorizontal, Upload, Wrench } from "@lucide/svelte";
+  import { TriangleAlert, Check, Languages, Minus, Music, PawPrint, Play, SlidersHorizontal, Upload, Wrench } from "@lucide/svelte";
   import type { ActiveContentItem, AuthSession, ButtonMode } from "../api";
   import type { RecordedWav } from "../audio";
   import type { ButtonConfigViewModel } from "../button-config-controller";
@@ -203,7 +203,7 @@
           </div>
           {#if state.selectedContent?.error}
             <div class="content-api-error" role="alert">
-              <AlertTriangle size={15} strokeWidth={1.5} aria-hidden="true" />
+              <TriangleAlert size={15} strokeWidth={1.5} aria-hidden="true" />
               <span>{state.selectedContent.error}</span>
             </div>
           {/if}
@@ -292,7 +292,7 @@
         if (event.key === "Escape") actions.cancelTrashContent();
       }}
     >
-      <div class="trash-dialog-icon"><AlertTriangle size={22} strokeWidth={1.5} aria-hidden="true" /></div>
+      <div class="trash-dialog-icon"><TriangleAlert size={22} strokeWidth={1.5} aria-hidden="true" /></div>
       <div class="trash-dialog-body">
         <div id="trash-dialog-title" class="trash-dialog-title">Move audio to trash?</div>
         <div id="trash-dialog-desc" class="trash-dialog-desc">{state.trashPrompt.title} will be removed from the active list and deleted from disk.</div>
@@ -300,7 +300,7 @@
       <div class="trash-dialog-actions">
         <button type="button" class="btn-secondary" on:click={actions.cancelTrashContent}>Cancel</button>
         <button type="button" class="btn-primary trash-confirm" on:click={actions.confirmTrashContent}>
-          <AlertTriangle size={16} strokeWidth={1.5} aria-hidden="true" />Move to trash
+          <TriangleAlert size={16} strokeWidth={1.5} aria-hidden="true" />Move to trash
         </button>
       </div>
     </div>

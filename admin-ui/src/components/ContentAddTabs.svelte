@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check, FileAudio, Mic, Play, Upload, WandSparkles, X } from "@lucide/svelte";
+  import { Check, FileVolume, Mic, Play, Upload, WandSparkles, X } from "@lucide/svelte";
   import type { RecordedWav } from "../audio";
   import { recordingHint, recordingSaveHint, uploadFileSize, uploadHint, uploadStepLabel } from "../recording-controller";
   import type { ButtonConfig, DraftForm } from "../types";
@@ -158,7 +158,7 @@
 
       <label class="upload-picker" aria-label="Choose audio file">
         <span class="upload-icon-big">
-          <FileAudio size={24} strokeWidth={1.5} aria-hidden="true" />
+          <FileVolume size={24} strokeWidth={1.5} aria-hidden="true" />
         </span>
         <strong>{uploadStepLabel(uploadFile, uploadReadyToSave)}</strong>
         <span>{uploadHint(uploadFile, uploadReadyToSave)}</span>
@@ -169,7 +169,7 @@
         <div class="upload-review">
           <div class="upload-file-row">
             <div class="upload-file-icon">
-              <FileAudio size={18} strokeWidth={1.5} aria-hidden="true" />
+              <FileVolume size={18} strokeWidth={1.5} aria-hidden="true" />
             </div>
             <div class="upload-file-meta">
               <strong title={uploadFile.name}>{uploadFile.name}</strong>

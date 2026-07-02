@@ -70,6 +70,8 @@ Run `tcube-pi-admin` and Caddy in separate terminals. Start Caddy with:
 caddy run --config deploy/pi-admin-caddy/Caddyfile
 ```
 
+For same-network phone testing from a development machine, prefer `just run-pi-admin-lan-caddy` instead of the static Caddyfile. It adds the detected LAN IP to a temporary high-port Caddy config; if detection is wrong, run `TCUBE_LAN_ADDRESS=<host-lan-ip> just run-pi-admin-lan-caddy` and open the printed `https://<host-lan-ip>:8443/` URL. Use `just run-pi-admin-caddy` only when specifically testing the port-443 local Caddy path.
+
 Verify the direct backend and HTTPS boundary:
 
 ```sh

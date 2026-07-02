@@ -5,7 +5,7 @@ use axum::extract::{DefaultBodyLimit, Multipart, OriginalUri, Path, Query, State
 use axum::http::header::SET_COOKIE;
 use axum::http::HeaderValue;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, post, put, MethodRouter};
 use axum::Json;
 use axum::Router;
 use serde::{Deserialize, Serialize};
@@ -42,106 +42,64 @@ struct OkResponse {
 }
 
 pub(crate) fn router() -> Router<AdminState> {
-    Router::new()
+    // Versioned-only routes without a legacy alias.
+    let mut router = Router::new()
         .route("/api/pi/v1/status", get(status))
-        .route("/api/auth/session", get(auth_session))
-        .route("/api/pi/v1/auth/session", get(auth_session))
-        .route("/api/auth/login/password", post(login_password))
-        .route("/api/pi/v1/auth/login/password", post(login_password))
-        .route("/api/auth/bootstrap", post(bootstrap_owner))
-        .route("/api/pi/v1/auth/bootstrap", post(bootstrap_owner))
-        .route("/api/auth/recover", post(recover_password))
-        .route("/api/pi/v1/auth/recover", post(recover_password))
-        .route("/api/auth/recovery-code", post(create_recovery_code))
-        .route("/api/pi/v1/auth/recovery-code", post(create_recovery_code))
-        .route("/api/auth/invitations", post(create_invitation))
-        .route("/api/pi/v1/auth/invitations", post(create_invitation))
-        .route("/api/auth/invitations/accept", post(accept_invitation))
-        .route(
-            "/api/pi/v1/auth/invitations/accept",
-            post(accept_invitation),
-        )
-        .route("/api/auth/logout", post(logout))
-        .route("/api/pi/v1/auth/logout", post(logout))
-        .route("/api/setup/review", get(setup_review))
-        .route("/api/pi/v1/setup/review", get(setup_review))
         .route("/api/pi/v1/setup/pomodoro", get(pomodoro_settings))
-        .route("/api/pi/v1/setup/pomodoro", put(save_pomodoro_settings))
-        .route("/api/setup/name", post(set_cube_name))
-        .route("/api/pi/v1/setup/name", post(set_cube_name))
-        .route("/api/setup/wifi/verified", post(verify_wifi))
-        .route("/api/pi/v1/setup/wifi/verified", post(verify_wifi))
-        .route("/api/setup/complete", post(complete_setup))
-        .route("/api/pi/v1/setup/complete", post(complete_setup))
-        .route("/api/setup/factory-reset", post(factory_reset))
-        .route("/api/pi/v1/setup/factory-reset", post(factory_reset))
-        .route("/api/setup/buttons/{button_id}/mode", post(set_button_mode))
-        .route(
-            "/api/pi/v1/setup/buttons/{button_id}/mode",
-            post(set_button_mode),
-        )
-        .route("/api/content/recordings", post(save_recording))
-        .route("/api/pi/v1/content/recordings", post(save_recording))
-        .route("/api/content/uploads", post(save_upload))
-        .route("/api/pi/v1/content/uploads", post(save_upload))
-        .route("/api/content/generated-speech", post(save_generated_speech))
-        .route(
-            "/api/pi/v1/content/generated-speech",
-            post(save_generated_speech),
-        )
-        .route(
-            "/api/content/generated-speech/status",
+        .route("/api/pi/v1/setup/pomodoro", put(save_pomodoro_settings));
+
+    // API routes registered at both the legacy /api/... path and the versioned /api/pi/v1/... path.
+    let dual_routes: Vec<(&str, MethodRouter<AdminState>)> = vec![
+        ("/auth/session", get(auth_session)),
+        ("/auth/login/password", post(login_password)),
+        ("/auth/bootstrap", post(bootstrap_owner)),
+        ("/auth/recover", post(recover_password)),
+        ("/auth/recovery-code", post(create_recovery_code)),
+        ("/auth/invitations", post(create_invitation)),
+        ("/auth/invitations/accept", post(accept_invitation)),
+        ("/auth/logout", post(logout)),
+        ("/setup/review", get(setup_review)),
+        ("/setup/name", post(set_cube_name)),
+        ("/setup/wifi/verified", post(verify_wifi)),
+        ("/setup/complete", post(complete_setup)),
+        ("/setup/factory-reset", post(factory_reset)),
+        ("/setup/buttons/{button_id}/mode", post(set_button_mode)),
+        ("/content/recordings", post(save_recording)),
+        ("/content/uploads", post(save_upload)),
+        ("/content/generated-speech", post(save_generated_speech)),
+        (
+            "/content/generated-speech/status",
             get(generated_speech_status),
-        )
-        .route(
-            "/api/pi/v1/content/generated-speech/status",
-            get(generated_speech_status),
-        )
-        .route("/api/content/inventory", get(content_inventory))
-        .route("/api/pi/v1/content/inventory", get(content_inventory))
-        .route(
-            "/api/content/buttons/{button_id}/{content_type}/active",
+        ),
+        ("/content/inventory", get(content_inventory)),
+        (
+            "/content/buttons/{button_id}/{content_type}/active",
             get(list_active_content),
-        )
-        .route(
-            "/api/pi/v1/content/buttons/{button_id}/{content_type}/active",
-            get(list_active_content),
-        )
-        .route(
-            "/api/content/buttons/{button_id}/{content_type}/inactive",
+        ),
+        (
+            "/content/buttons/{button_id}/{content_type}/inactive",
             get(list_inactive_content),
-        )
-        .route(
-            "/api/pi/v1/content/buttons/{button_id}/{content_type}/inactive",
-            get(list_inactive_content),
-        )
-        .route(
-            "/api/content/items/{item_id}/activate",
+        ),
+        (
+            "/content/items/{item_id}/activate",
             post(activate_content_item),
-        )
-        .route(
-            "/api/pi/v1/content/items/{item_id}/activate",
-            post(activate_content_item),
-        )
-        .route(
-            "/api/content/generated-speech/unused",
+        ),
+        (
+            "/content/generated-speech/unused",
             delete(trash_unused_generated_speech),
-        )
-        .route(
-            "/api/pi/v1/content/generated-speech/unused",
-            delete(trash_unused_generated_speech),
-        )
-        .route("/api/content/unused", delete(trash_unused_content))
-        .route("/api/pi/v1/content/unused", delete(trash_unused_content))
-        .route("/api/content/items/{item_id}", delete(trash_content_item))
-        .route(
-            "/api/pi/v1/content/items/{item_id}",
-            delete(trash_content_item),
-        )
-        .route("/api/events/recent", get(recent_button_events))
-        .route("/api/pi/v1/events/recent", get(recent_button_events))
-        .route("/api/media/{*path}", get(serve_media))
-        .route("/api/pi/v1/media/{*path}", get(serve_media))
+        ),
+        ("/content/unused", delete(trash_unused_content)),
+        ("/content/items/{item_id}", delete(trash_content_item)),
+        ("/events/recent", get(recent_button_events)),
+        ("/media/{*path}", get(serve_media)),
+    ];
+    for (path, method_router) in dual_routes {
+        router = router
+            .route(&format!("/api{path}"), method_router.clone())
+            .route(&format!("/api/pi/v1{path}"), method_router);
+    }
+
+    router
         .route("/media/{*path}", get(serve_media))
         .route("/content/{*path}", get(serve_content))
         .fallback(get(serve_static))

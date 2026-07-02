@@ -11,9 +11,3 @@ pub struct AdminConfig {
     pub usb_address: String,
     pub usb_connected: bool,
 }
-
-#[derive(Debug)]
-pub struct DeviceApiConfig {
-    pub bind: String,
-    pub database: PathBuf,
-}

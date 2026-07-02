@@ -1,15 +1,14 @@
 <script lang="ts">
   import {
     Activity,
-    AlertTriangle,
+    TriangleAlert,
     ArrowRight,
-    BarChart3,
     Bolt,
     Check,
     CircleCheck,
     Cuboid,
     Database,
-    FileAudio,
+    FileVolume,
     Folder,
     Hand,
     HardDrive,
@@ -24,7 +23,8 @@
     Settings,
     Trash2,
     Upload,
-    Usb,
+    UsbIcon,
+    UsersRound,
     WandSparkles,
     Wifi,
     Wrench
@@ -174,7 +174,7 @@
     {:else if state.menuLlmStatusLoading}
       <RefreshCw class="status-warn" size={14} strokeWidth={1.5} aria-hidden="true" />
     {:else}
-      <AlertTriangle class="status-warn" size={14} strokeWidth={1.5} aria-hidden="true" />
+      <TriangleAlert class="status-warn" size={14} strokeWidth={1.5} aria-hidden="true" />
     {/if}
     <span class:status-ok={state.menuLlmOnline} class:status-warn={!state.menuLlmOnline}>{state.menuLlmLabel}</span>
   </div>
@@ -188,7 +188,7 @@
   {#if !state.setupReady}
     <section class="setup-banner" aria-label="Setup checklist">
       <div class="setup-banner-hdr">
-        <AlertTriangle size={18} strokeWidth={1.5} aria-hidden="true" />
+        <TriangleAlert size={18} strokeWidth={1.5} aria-hidden="true" />
         <div class="setup-banner-title">Setup incomplete</div>
         <div class="setup-pct">{state.prerequisites.filter((item) => item.complete).length} of {state.prerequisites.length} done</div>
       </div>
@@ -251,7 +251,7 @@
             class="cube-sub-icon"
             data-testid="hero-usb-icon"
           >
-            <Usb size={13} strokeWidth={1.5} aria-hidden="true" />
+            <UsbIcon size={13} strokeWidth={1.5} aria-hidden="true" />
           </span>
           <span class="cube-sub-text">
             <span class="cube-sub-label">USB</span>
@@ -316,8 +316,17 @@
       <div class="sec-title"><Bolt size={15} strokeWidth={1.5} aria-hidden="true" />Quick actions</div>
     </div>
     <div class="actions-grid">
-      <button type="button" class="action-card primary-action" disabled>
+    <!-- Keep this button disabled for now. For later use of that class. -->
+      <!-- <button type="button" class="action-card primary-action" disabled>
         <div class="ac-icon ac-icon-white"><RefreshCw size={20} strokeWidth={1.5} aria-hidden="true" /></div>
+        <div class="ac-body">
+          <div class="ac-title">Run curation</div>
+          <div class="ac-desc">Update schedule with LLM</div>
+        </div>
+        <ArrowRight class="ac-arrow" size={18} strokeWidth={1.5} aria-hidden="true" />
+      </button> -->
+      <button type="button" class="action-card" disabled>
+        <div class="ac-icon ac-icon-violet"><RefreshCw size={20} strokeWidth={1.5} aria-hidden="true" /></div>
         <div class="ac-body">
           <div class="ac-title">Run curation</div>
           <div class="ac-desc">Update schedule with LLM</div>
@@ -325,7 +334,7 @@
         <ArrowRight class="ac-arrow" size={18} strokeWidth={1.5} aria-hidden="true" />
       </button>
       <button type="button" class="action-card" disabled>
-        <div class="ac-icon ac-icon-violet"><BarChart3 size={20} strokeWidth={1.5} aria-hidden="true" /></div>
+        <div class="ac-icon ac-icon-violet"><UsersRound size={20} strokeWidth={1.5} aria-hidden="true" /></div>
         <div class="ac-body">
           <div class="ac-title">Learning stats</div>
           <div class="ac-desc">Words heard, repetitions</div>
@@ -365,7 +374,7 @@
               {:else if event.kind === "content_deleted"}
                 <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" />
               {:else}
-                <FileAudio size={14} strokeWidth={1.5} aria-hidden="true" />
+                <FileVolume size={14} strokeWidth={1.5} aria-hidden="true" />
               {/if}
             </div>
             <div class="feed-body">

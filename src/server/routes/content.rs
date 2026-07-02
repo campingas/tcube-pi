@@ -399,7 +399,7 @@ pub(crate) fn save_generated_speech(
     if text.is_empty() {
         anyhow::bail!("generated speech text is required");
     }
-    if text.len() > 240 {
+    if text.chars().count() > 240 {
         anyhow::bail!("generated speech text must be 240 characters or fewer");
     }
     if language.is_empty() {

@@ -138,9 +138,21 @@ pub(crate) fn validate_speech_api_url(url: &str) -> Result<reqwest::Url> {
 pub(crate) fn speech_http_client_with_ca_cert_path(
     ca_cert_path: Option<&Path>,
 ) -> Result<reqwest::blocking::Client> {
+    build_speech_http_client(
+        Duration::from_secs(120),
+        Duration::from_secs(30),
+        ca_cert_path,
+    )
+}
+
+fn build_speech_http_client(
+    timeout: Duration,
+    connect_timeout: Duration,
+    ca_cert_path: Option<&Path>,
+) -> Result<reqwest::blocking::Client> {
     let mut builder = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .connect_timeout(Duration::from_secs(30));
+        .timeout(timeout)
+        .connect_timeout(connect_timeout);
     if let Some(path) = ca_cert_path {
         let pem = fs::read(path).with_context(|| {
             format!(
@@ -381,30 +393,13 @@ fn speech_http_client() -> Result<reqwest::blocking::Client> {
 }
 
 fn speech_http_client_with_timeout(timeout: Duration) -> Result<reqwest::blocking::Client> {
-    let mut builder = reqwest::blocking::Client::builder()
-        .timeout(timeout)
-        .connect_timeout(timeout);
-    if let Some(path) = std::env::var_os("TCUBE_SPEECH_API_CA_CERT")
-        .as_deref()
-        .map(Path::new)
-    {
-        let pem = fs::read(path).with_context(|| {
-            format!(
-                "failed to read speech API CA certificate {}",
-                path.display()
-            )
-        })?;
-        let certificate = reqwest::Certificate::from_pem(&pem).with_context(|| {
-            format!(
-                "failed to parse speech API CA certificate {}",
-                path.display()
-            )
-        })?;
-        builder = builder.add_root_certificate(certificate);
-    }
-    builder
-        .build()
-        .context("failed to build speech API HTTP client")
+    build_speech_http_client(
+        timeout,
+        timeout,
+        std::env::var_os("TCUBE_SPEECH_API_CA_CERT")
+            .as_deref()
+            .map(Path::new),
+    )
 }
 
 fn model_name_for_file(model: &str) -> String {

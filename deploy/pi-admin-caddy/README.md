@@ -5,7 +5,7 @@ This deployment shape keeps `tcube-pi-admin` as a loopback-only HTTP service and
 ## Process Boundary
 
 - `tcube-pi-admin` listens on `127.0.0.1:8080`.
-- Caddy listens on HTTPS for `tcube.local`, `10.55.0.1`, `localhost`, and `127.0.0.1`.
+- Caddy listens on HTTPS for `tcube.local`, `10.55.0.1`, `localhost`, `127.0.0.1`, and any LAN IP added to `/etc/caddy/Caddyfile` by the release installer.
 - Caddy uses `tls internal`, so admin devices must trust Caddy's local root CA before browsers accept the certificate.
 
 ## Install Packages
@@ -41,7 +41,7 @@ cd tcube-pi-v0.1.0-linux-arm64
 sudo ./install.sh
 ```
 
-The installer writes files under `/opt/tcube`, `/etc/tcube`, and `/etc/systemd/system`, then enables `tcube-pi-admin` and Caddy. It does not install Debian packages, so install `caddy` before running it.
+The installer writes files under `/opt/tcube`, `/etc/tcube`, and `/etc/systemd/system`, adds the current detected Pi LAN IP to `/etc/caddy/Caddyfile` when available, then enables `tcube-pi-admin` and Caddy. It does not install Debian packages, so install `caddy` before running it.
 
 ## Install Files
 
@@ -93,11 +93,11 @@ Caddy stores its internal CA material under its application data directory. On D
 sudo caddy environ
 ```
 
-Export or copy Caddy's internal root certificate to each admin phone/laptop and mark it trusted for websites. Without that trust step, browsers will reject `https://tcube.local/`, `https://10.55.0.1/`, `https://localhost/`, and `https://127.0.0.1/`.
+Export or copy Caddy's internal root certificate to each admin phone/laptop and mark it trusted for websites. Without that trust step, browsers will reject `https://tcube.local/`, `https://10.55.0.1/`, `https://localhost/`, `https://127.0.0.1/`, and configured LAN IP URLs.
 
 On macOS local validation, Caddy may prompt for an administrator password while trying to install its internal root CA into the system trust store. It is acceptable to skip that local trust-store installation for a command-line smoke test and use `curl -k`, but real admin browser and phone testing must trust the Caddy root CA instead of bypassing certificate verification.
 
-For local Mac browser testing, prefer `https://localhost/`. The `tcube.local` name only works when mDNS or a hosts-file entry resolves it to the machine running Caddy.
+For local Mac browser testing, prefer `just run-pi-admin-lan-caddy` and open `https://127.0.0.1:8443/`. The `tcube.local` name only works when mDNS or a hosts-file entry resolves it to the machine running Caddy.
 
 ## Smoke Test
 
@@ -106,6 +106,8 @@ curl http://127.0.0.1:8080/api/pi/v1/status
 curl -k https://localhost/api/pi/v1/status
 curl -k https://tcube.local/api/pi/v1/status
 curl -k https://10.55.0.1/api/pi/v1/status
+# If the release installer printed a detected Pi LAN URL:
+curl -k https://<pi-lan-ip>/api/pi/v1/status
 ```
 
 Use the `-k` command only for a quick Pi-local smoke test. Real admin browsers should trust the local CA instead of bypassing certificate verification.
@@ -113,9 +115,11 @@ Use the `-k` command only for a quick Pi-local smoke test. Real admin browsers s
 ## Browser Test Checklist
 
 - Run `just run-pi-admin` and leave it open.
-- For phone testing, run `just run-pi-admin-caddy` in a second terminal and leave it open; it adds the detected LAN IP to a temporary Caddy config.
-- From a phone on the same Wi-Fi/network, open `https://tcube.local/` or the printed `https://<lan-ip>/` URL; do not use `https://localhost/` from the phone because that points at the phone itself.
-- If you use the static deployment config instead, run `caddy run --config deploy/pi-admin-caddy/Caddyfile` and make sure `tcube.local` resolves to the machine running Caddy.
+- For local development phone testing, run `just run-pi-admin-lan-caddy` in a second terminal and leave it open; it prints `https://127.0.0.1:8443/` for the same machine and `https://<mac-lan-ip>:8443/` for same-network phones.
+- If the detected LAN IP is wrong, run `TCUBE_LAN_ADDRESS=<mac-lan-ip> just run-pi-admin-lan-caddy` and open the printed `https://<mac-lan-ip>:8443/` URL from the phone.
+- `just run-pi-admin-caddy` remains available for port-443 local testing, but `just run-pi-admin-lan-caddy` is the preferred development path because it avoids privileged port 443 and disables Caddy's local admin endpoint for the dev process.
+- From a phone on the same Wi-Fi/network, open the printed development URL `https://<mac-lan-ip>:8443/`; on an installed Pi, open `https://tcube.local/`, `https://10.55.0.1/`, or the installer-printed `https://<pi-lan-ip>/` URL.
+- If you use the static deployment config instead, run `caddy run --config deploy/pi-admin-caddy/Caddyfile` and make sure `tcube.local` resolves to the machine running Caddy or that the target LAN IP is present in the Caddyfile site list.
 - Direct backend smoke: open or curl `http://127.0.0.1:8080/api/pi/v1/status`.
 - Caddy HTTPS smoke: open `https://localhost/` for local Mac browser testing.
 - Confirm login, navigation, recording, upload, and generated-speech screens load through HTTPS.

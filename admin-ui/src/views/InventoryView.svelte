@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, FileAudio, Hand } from "@lucide/svelte";
+  import { TriangleAlert, FileVolume, Hand } from "@lucide/svelte";
   import type { AuthSession, ContentInventory, ContentInventoryItem, RecentActivityEvent } from "../api";
   import type { InventoryFilter, MessageType } from "../types";
   import TopBar from "../components/TopBar.svelte";
@@ -84,7 +84,7 @@
           {#if state.filter === "presses_today"}
             <Hand size={16} strokeWidth={1.5} aria-hidden="true" />
           {:else}
-            <FileAudio size={16} strokeWidth={1.5} aria-hidden="true" />
+            <FileVolume size={16} strokeWidth={1.5} aria-hidden="true" />
           {/if}
           {title(state.filter)}
         </div>
@@ -96,7 +96,7 @@
     </div>
     {#if state.filter !== "presses_today" && state.inventoryError}
       <div class="content-api-error" role="alert">
-        <AlertTriangle size={15} strokeWidth={1.5} aria-hidden="true" />
+        <TriangleAlert size={15} strokeWidth={1.5} aria-hidden="true" />
         <span>{state.inventoryError}</span>
       </div>
     {:else if count === 0}
@@ -104,7 +104,7 @@
         {#if state.filter === "presses_today"}
           <Hand size={24} strokeWidth={1.5} aria-hidden="true" />
         {:else}
-          <FileAudio size={24} strokeWidth={1.5} aria-hidden="true" />
+          <FileVolume size={24} strokeWidth={1.5} aria-hidden="true" />
         {/if}
         <strong>{emptyTitle(state.filter)}</strong>
         <p>{detail(state.filter)}</p>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowRight, FileAudio, Mic, Trash2, Upload, WandSparkles } from "@lucide/svelte";
+  import { ArrowRight, FileVolume, Mic, Trash2, Upload, WandSparkles } from "@lucide/svelte";
 
   export let item: AudioRowSource;
   export let displayTitle: string | null = null;
@@ -48,7 +48,7 @@
       {:else if item.source === "recorded"}
         <Mic size={16} strokeWidth={1.5} aria-hidden="true" />
       {:else}
-        <FileAudio size={16} strokeWidth={1.5} aria-hidden="true" />
+        <FileVolume size={16} strokeWidth={1.5} aria-hidden="true" />
       {/if}
     </div>
     <div class="ci-meta">
@@ -83,7 +83,7 @@
       {:else if item.source === "recorded"}
         <Mic size={16} strokeWidth={1.5} aria-hidden="true" />
       {:else}
-        <FileAudio size={16} strokeWidth={1.5} aria-hidden="true" />
+        <FileVolume size={16} strokeWidth={1.5} aria-hidden="true" />
       {/if}
     </div>
     <div class="ci-meta">

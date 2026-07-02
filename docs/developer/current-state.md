@@ -26,6 +26,8 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - Focus routine settings are stored locally in SQLite and exposed under `/api/pi/v1/setup/pomodoro`; managers can view the state, owners can save/validate it, and the runtime skips the Pomodoro shortcut until the saved settings are enabled and validated.
 - The runtime includes Pomodoro routine orchestration with generated `rodio` focus audio and transition chimes, silent breaks, and a tested Top + Front left + Front right hold recognizer for the future GPIO backend; the simulator exposes `p` as the manual routine shortcut.
 - Release workflow builds Linux arm64 bundles with Rust binaries, prebuilt admin UI, content, Caddy/systemd files, installer, and SHA-256 checksums.
+- Admin API integration tests live in `src/server/tests.rs` (moved from the former `src/server/handler.rs`); API routes register once in `src/server/routes/mod.rs` through a legacy-plus-versioned dual table.
+- Admin UI dark theme uses the warm graphite palette documented in `docs/developer/branding-guide.md` (updated 2026-07-02); all status colors come from tokens in `admin-ui/src/styles.css`.
 
 ## Not Complete
 
@@ -45,6 +47,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - Child-facing playback stays local, deterministic, and independent of network, AI, dashboard requests, or reporting work.
 - Runtime, admin service, and measurement harness stay separate binaries backed by reusable library modules.
 - Caddy remains the HTTPS browser boundary; Rust admin listens loopback-only.
+- Caddy listens on LAN interfaces for browser traffic; local development phone testing should use `just run-pi-admin-lan-caddy` and `https://<host-lan-ip>:8443/`, with `TCUBE_LAN_ADDRESS=<host-lan-ip>` when automatic LAN IP detection is wrong. The release installer injects the current detected Pi LAN IP into `/etc/caddy/Caddyfile` so installed Pi access can use `https://<pi-lan-ip>/` when DHCP has not changed.
 - Admin UI uses relative API paths so it works behind Caddy without hardcoded backend URLs.
 - Admin UI is mobile-first and dark-mode-only.
 - Admin UI source intentionally uses `pnpm`; Node/pnpm are development-time tools and are not required on the Pi.
@@ -57,7 +60,6 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 ## Known Issues
 
 - Physical GPIO, I2S, LED, and installed service behavior still need target-hardware validation.
-- `src/server/handler.rs` still exists; inspect current route ownership before adding admin endpoints.
 - Existing SQLite content package and failure tables remain after device-sync removal; schema cleanup needs a separate migration decision.
 - Password change and session revocation controls are visually present in settings but disabled because local API contracts are not implemented.
 
@@ -80,6 +82,6 @@ just test-admin-ui-unit
 just test-admin-ui-mobile
 ```
 
-Latest broad validation recorded on 2026-07-01 included `just check`, `just test`, `just check-admin-ui`, `just build-admin-ui`, `just test-admin-ui-unit`, and `just test-admin-ui-mobile`.
+Latest broad validation recorded on 2026-07-02 included `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features` (67 passed), `just build-admin-ui`, `just check-admin-ui`, `just test-admin-ui-unit` (14 passed), and `just test-admin-ui-mobile` (12 passed).
 
 Latest documentation consolidation on 2026-07-01 removed redundant feature/auth/package/inventory docs, moved hardware and Pi install docs under `docs/hardware/`, and optimized default agent context routing.

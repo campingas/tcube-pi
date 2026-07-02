@@ -95,7 +95,13 @@ Run the Pi-hosted Rust admin API:
 just run-pi-admin
 ```
 
-Use [the Caddy deployment guide](deploy/pi-admin-caddy/README.md) for the supported HTTPS boundary.
+In a second terminal, start local HTTPS for browser and phone testing:
+
+```sh
+just run-pi-admin-lan-caddy
+```
+
+Open `https://127.0.0.1:8443/` on the same machine or the printed `https://<lan-ip>:8443/` URL from a phone on the same network. Use [the Caddy deployment guide](deploy/pi-admin-caddy/README.md) for the installed Pi HTTPS boundary.
 
 ## Raspberry Pi Setup
 

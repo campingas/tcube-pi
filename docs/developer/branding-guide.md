@@ -17,23 +17,26 @@ This guide governs the admin UI served by `tcube-pi-admin`. Load it for admin UI
 
 ## Color Tokens
 
-The admin UI uses the T-Cube Wada palette in a dark dashboard mapping.
+The admin UI uses the T-Cube Wada palette in a dark dashboard mapping. Updated 2026-07-02: surfaces moved to warm graphite and accents lifted one step so the dark theme reads softer and less bleak.
 
 | Role | Token | Value | Use |
 | --- | --- | --- | --- |
-| Base surface | `--surface-base` | `#0d0f10` | Page background |
-| Primary surface | `--surface-0` | `#111314` | Cards, nav, panels |
-| Raised surface | `--surface-1` | `#1a1e20` | Inputs, rows, raised panels |
-| Elevated surface | `--surface-2` | `#22282b` | Modals, dropdowns, tooltips |
-| Strong surface | `--surface-3` | `#34454c` | Focused or selected surfaces |
+| Base surface | `--surface-base` | `#131110` | Page background |
+| Primary surface | `--surface-0` | `#1b1917` | Cards, nav, panels |
+| Raised surface | `--surface-1` | `#252220` | Inputs, rows, raised panels |
+| Elevated surface | `--surface-2` | `#302c29` | Modals, dropdowns, tooltips |
+| Strong surface | `--surface-3` | `#3e3833` | Focused or selected surfaces |
 | Primary text | `--text-primary` | `#f0ece4` | Headings and body |
-| Secondary text | `--text-secondary` | `#b8b4ac` | Descriptions |
-| Muted text | `--text-muted` | `#a1a39a` | Labels and metadata |
-| Primary/action/error | `--accent-coral` | `#c55347` | CTAs, destructive, errors |
-| Active/success | `--accent-teal` | `#00908a` | Active content, success |
-| Draft/warning | `--accent-amber` | `#bc892b` | Drafts, pending, warnings |
-| Teacher/older | `--accent-violet` | `#66629c` | Teacher or older-child cues |
-| Trusted/open | `--accent-sage` | `#648f7b` | Trusted/open secondary success |
+| Secondary text | `--text-secondary` | `#bcb7ae` | Descriptions |
+| Muted text | `--text-muted` | `#a8a296` | Labels and metadata |
+| Primary/action/error | `--accent-coral` | `#d5604e` | CTAs, destructive, errors |
+| Active/success | `--accent-teal` | `#17a49b` | Active content, success |
+| Draft/warning | `--accent-amber` | `#cf9a35` | Drafts, pending, warnings |
+| Teacher/older | `--accent-violet` | `#837fbd` | Teacher or older-child cues |
+| Trusted/open | `--accent-sage` | `#74a18c` | Trusted/open secondary success |
+| Recording live | `--accent-ember` | `#ec875c` | Active recording states only |
+
+Supporting tokens live in `admin-ui/src/styles.css`: per-accent `--glow-*` washes, `--border-coral`/`--border-teal` status borders, `--overlay` for modal backdrops, and `--shadow-card`/`--shadow-modal` elevation.
 
 Never introduce arbitrary hex values unless the design system is intentionally updated.
 

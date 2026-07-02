@@ -8,12 +8,12 @@ use tower_http::trace::TraceLayer;
 use crate::config::AdminConfig;
 use crate::db::admin::schema;
 
-#[cfg(test)]
-pub mod handler;
 pub mod media;
 pub mod pages;
 pub mod routes;
 pub mod speech;
+#[cfg(test)]
+mod tests;
 
 pub async fn run(config: AdminConfig) -> Result<()> {
     schema::open_admin_database(&config).context("failed to initialize Pi admin database")?;

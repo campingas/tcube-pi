@@ -104,7 +104,7 @@ To install a specific version:
 curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/main/deploy/pi-release/install-latest | sudo env TCUBE_PI_VERSION=v0.0.3 bash
 ```
 
-The bootstrap script downloads the selected release archive and `SHA256SUMS`, verifies the archive plus bundled installer and binaries, extracts the bundle in a temporary directory, then runs the bundled installer. The installer writes application files under `/opt/tcube`, configuration under `/etc/tcube`, data under `/var/lib/tcube`, and systemd service files under `/etc/systemd/system`. It enables `tcube-pi-admin` and Caddy.
+The bootstrap script downloads the selected release archive and `SHA256SUMS`, verifies the archive plus bundled installer and binaries, extracts the bundle in a temporary directory, then runs the bundled installer. The installer writes application files under `/opt/tcube`, configuration under `/etc/tcube`, data under `/var/lib/tcube`, and systemd service files under `/etc/systemd/system`. It adds the current detected Pi LAN IP to `/etc/caddy/Caddyfile` when available, then enables `tcube-pi-admin` and Caddy.
 
 ## Post-Install Checks
 
@@ -120,6 +120,7 @@ Check the loopback backend and Caddy HTTPS boundary:
 ```sh
 curl http://127.0.0.1:8080/api/pi/v1/status
 curl -k https://localhost/api/pi/v1/status
+curl -k https://<pi-lan-ip>/api/pi/v1/status
 ```
 
 Use `curl -k` only for a Pi-local smoke test. Real admin browsers and phones must trust Caddy's internal root CA before using `https://tcube.local/`, `https://10.55.0.1/`, or local LAN HTTPS URLs.
@@ -131,5 +132,6 @@ Open the admin UI through Caddy, not the loopback Rust service:
 - Pi-local browser or SSH tunnel smoke: `https://localhost/`
 - Home-network browser after name resolution is configured: `https://tcube.local/`
 - USB gadget path when configured: `https://10.55.0.1/`
+- Home-network browser by IP when the release installer detected and added the Pi's current LAN IP to Caddy: `https://<pi-lan-ip>/`
 
 Do not open `https://127.0.0.1:8080/`; port `8080` is plain HTTP and intended only for the local Caddy reverse proxy.
