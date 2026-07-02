@@ -1,0 +1,33 @@
+# Merge this fragment into ~/.hermes/config.yaml on the Mac Mini.
+# Frontier default rides the ChatGPT/Codex subscription (authenticate once with: hermes auth add codex-oauth).
+# The webhook route receives HMAC-signed job envelopes from tcube-pi and hands them to the tcube skills.
+
+model:
+  provider: openai-codex
+  default: gpt-5.5
+
+# Optional: expose the local Voxtral server as a switchable provider for future audio-understanding jobs.
+# TTS itself never rides an LLM route; the tcube-tts-batch skill script calls /v1/audio/speech directly.
+custom_providers:
+  - name: voxtral-local
+    base_url: https://127.0.0.1:11445/v1
+
+platforms:
+  webhook:
+    enabled: true
+    extra:
+      port: 8644
+      rate_limit: 30
+      max_body_bytes: 1048576
+      routes:
+        tcube-jobs:
+          secret: "${TCUBE_WEBHOOK_SECRET}"
+          prompt: |
+            A tcube-pi device submitted orchestration job {job_id} of kind {kind} (attempt {attempt}).
+            Reply base URL: {reply_to.base_url}
+            Full envelope: {__raw__}
+            Follow the matching tcube skill exactly (tcube-tts-batch for kind tts.batch,
+            tcube-complexity-sort for kind analysis.complexity_sort).
+            Deliver results ONLY via the Pi ingest API described in the skill. Never activate content.
+          skills: ["tcube-tts-batch", "tcube-complexity-sort"]
+          deliver: "log"

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Serve mistralai/Voxtral-4B-TTS-2603 as an OpenAI-compatible endpoint for tcube orchestration.
+# The tcube contract expects: GET /health, POST /v1/audio/speech, GET /v1/audio/voices.
+# The Pi and the skills expect HTTPS on 11445; run plain HTTP here and front it with Caddy tls internal.
+#
+# Usage:
+#   ./serve-voxtral-tts            start the inference server on http://127.0.0.1:${VOXTRAL_HTTP_PORT}
+#   ./serve-voxtral-tts caddyfile  print a Caddyfile snippet that fronts it as https://127.0.0.1:11445
+#
+# Any OpenAI-compatible server that exposes the three routes above works; vLLM is the default here.
+# On Apple Silicon, if vLLM is unavailable for this model, use an MLX- or llama.cpp-based server
+# that implements /v1/audio/speech and keep the same ports.
+
+MODEL="${VOXTRAL_TTS_MODEL:-mistralai/Voxtral-4B-TTS-2603}"
+HTTP_PORT="${VOXTRAL_HTTP_PORT:-11455}"
+TLS_PORT="${VOXTRAL_TLS_PORT:-11445}"
+
+if [[ "${1:-}" == "caddyfile" ]]; then
+    cat <<EOF
+# Append to your Caddyfile, then: caddy reload
+https://127.0.0.1:${TLS_PORT} {
+    tls internal
+    reverse_proxy 127.0.0.1:${HTTP_PORT}
+}
+EOF
+    exit 0
+fi
+
+echo "Serving ${MODEL} on http://127.0.0.1:${HTTP_PORT} (front with Caddy on :${TLS_PORT}, see: $0 caddyfile)"
+exec uvx vllm serve "${MODEL}" \
+    --host 127.0.0.1 \
+    --port "${HTTP_PORT}" \
+    --served-model-name "${MODEL}"

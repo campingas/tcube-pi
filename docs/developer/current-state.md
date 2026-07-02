@@ -54,6 +54,10 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - GitHub `dev` is the default development branch for pull requests; `main` is the stable branch used for release-ready promotion and raw install bootstrap URLs.
 - Release version bumps happen before tags; release workflows verify manifest/tag consistency instead of mutating manifests after tag push.
 
+## Proposals Under Evaluation
+
+- `docs/developer/orchestration-blueprint.md` proposes a Mac Mini Hermes Agent orchestration pipeline (local Voxtral TTS plus GPT-5.5 via the Codex subscription) that deviates from the VISION.md offline-only posture; the Mac stack ships in `deploy/mac-hermes/`, the Pi-side Rust work is tracked as ordered tasks in `docs/tasks.md`, and nothing is enabled by default.
+
 ## Known Issues
 
 - Physical GPIO, I2S, LED, and installed service behavior still need target-hardware validation.
