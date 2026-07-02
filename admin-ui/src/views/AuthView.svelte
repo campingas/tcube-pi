@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { KeyRound, LogIn, ShieldCheck, User } from "@lucide/svelte";
+  import { ChevronRight, ChevronUp, KeyRound, LogIn, ShieldCheck, User } from "@lucide/svelte";
   import type { AuthSession } from "../api";
   import type { MessageType } from "../types";
+  import { isIpLiteralHost } from "../view-utils";
 
   export let state: {
     session: AuthSession | null;
@@ -21,6 +22,10 @@
     submitLogin: () => void | Promise<void>;
     submitRecovery: () => void | Promise<void>;
   };
+
+  // Auto-expand certificate help when parents browse by raw IP, the
+  // strongest signal that the cube's root CA is not trusted yet.
+  let certHelpOpen = isIpLiteralHost(window.location.hostname);
 </script>
 
 <nav class="topbar">
@@ -87,4 +92,21 @@
       </form>
     </section>
   {/if}
+
+  <section class="card auth-card">
+    <button type="button" class="sec-hdr auth-cert-toggle" aria-expanded={certHelpOpen} on:click={() => (certHelpOpen = !certHelpOpen)}>
+      <div class="sec-title"><ShieldCheck size={16} strokeWidth={1.5} aria-hidden="true" />Secure this device</div>
+      {#if certHelpOpen}<ChevronUp size={16} strokeWidth={1.5} aria-hidden="true" />{:else}<ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />{/if}
+    </button>
+    {#if certHelpOpen}
+      <div class="form-stack">
+        <p class="hint auth-cert-steps">The cube secures this dashboard with its own local certificate. Trust it once on each parent phone or laptop to remove browser warnings and unlock microphone recording.</p>
+        <a class="btn-secondary auth-cert-download" href="/ca/root.crt" download="tcube-root-ca.crt">Download cube certificate</a>
+        <p class="hint auth-cert-steps">iPhone/iPad: allow the download, install the profile under Settings, General, VPN &amp; Device Management, then enable full trust under Settings, General, About, Certificate Trust Settings.</p>
+        <p class="hint auth-cert-steps">Android: install the file under Settings, Security, Encryption &amp; credentials, Install a certificate, CA certificate.</p>
+        <p class="hint auth-cert-steps">macOS: open the file with Keychain Access, add it to the System keychain, and set it to Always Trust.</p>
+        <p class="hint auth-cert-steps">Once trusted, open https://tcube.local/ from the home network.</p>
+      </div>
+    {/if}
+  </section>
 </div>

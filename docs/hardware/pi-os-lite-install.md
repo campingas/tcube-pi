@@ -17,11 +17,12 @@ Install the packages required by the release installer and Pi-hosted admin servi
 
 ```sh
 sudo apt update
-sudo apt install -y ca-certificates caddy curl git just sqlite3
+sudo apt install -y avahi-utils ca-certificates caddy curl git just sqlite3
 ```
 
 Package purpose:
 
+- `avahi-utils`: publishes the `tcube.local` mDNS alias when the Pi hostname is not `tcube`.
 - `ca-certificates`: TLS certificate roots for package and release downloads.
 - `caddy`: HTTPS reverse proxy for the local admin UI and API.
 - `curl`: release download helper.
@@ -104,7 +105,13 @@ To install a specific version:
 curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/main/deploy/pi-release/install-latest | sudo env TCUBE_PI_VERSION=v0.0.3 bash
 ```
 
-The bootstrap script downloads the selected release archive and `SHA256SUMS`, verifies the archive plus bundled installer and binaries, extracts the bundle in a temporary directory, then runs the bundled installer. The installer writes application files under `/opt/tcube`, configuration under `/etc/tcube`, data under `/var/lib/tcube`, and systemd service files under `/etc/systemd/system`. It adds the current detected Pi LAN IP to `/etc/caddy/Caddyfile` when available, then enables `tcube-pi-admin` and Caddy.
+The bootstrap script downloads the selected release archive and `SHA256SUMS`, verifies the archive plus bundled installer and binaries, extracts the bundle in a temporary directory, then runs the bundled installer. The installer writes application files under `/opt/tcube`, configuration under `/etc/tcube`, data under `/var/lib/tcube`, and systemd service files under `/etc/systemd/system`. It adds the current detected Pi LAN IP and `<hostname>.local` to `/etc/caddy/Caddyfile` when available, then enables `tcube-pi-admin` and Caddy.
+
+The installer also wires up device trust and naming:
+
+- It exports Caddy's internal root certificate to `/opt/tcube/ca/root.crt`, which Caddy serves to the network at `http://<pi-address>/ca/root.crt`.
+- It enables `tcube-mdns-alias.service` so `https://tcube.local/` resolves even when the Pi hostname is not `tcube`; this needs the `avahi-utils` base package.
+- It prints per-platform steps for trusting the cube certificate on macOS, Linux, iPhone/iPad, and Android admin devices.
 
 ## Post-Install Checks
 
@@ -121,16 +128,32 @@ Check the loopback backend and Caddy HTTPS boundary:
 curl http://127.0.0.1:8080/api/pi/v1/status
 curl -k https://localhost/api/pi/v1/status
 curl -k https://<pi-lan-ip>/api/pi/v1/status
+curl http://localhost/ca/root.crt
+```
+
+Check that `tcube.local` is announced over mDNS:
+
+```sh
+systemctl status tcube-mdns-alias --no-pager
+avahi-resolve-host-name -4 tcube.local
 ```
 
 Use `curl -k` only for a Pi-local smoke test. Real admin browsers and phones must trust Caddy's internal root CA before using `https://tcube.local/`, `https://10.55.0.1/`, or local LAN HTTPS URLs.
+
+Trust the cube certificate on each admin device by downloading `http://<pi-address>/ca/root.crt` and marking it trusted; the installer output and the admin UI login screen both list the per-platform steps. After trusting it, verify without `-k` from the admin device:
+
+```sh
+curl https://tcube.local/api/pi/v1/status
+curl https://<pi-lan-ip>/api/pi/v1/status
+```
 
 ## Admin Access
 
 Open the admin UI through Caddy, not the loopback Rust service:
 
 - Pi-local browser or SSH tunnel smoke: `https://localhost/`
-- Home-network browser after name resolution is configured: `https://tcube.local/`
+- Home-network browser: `https://tcube.local/` (announced by avahi directly or by `tcube-mdns-alias.service`)
+- Home-network browser fallback: `https://<hostname>.local/` when the alias service is unavailable
 - USB gadget path when configured: `https://10.55.0.1/`
 - Home-network browser by IP when the release installer detected and added the Pi's current LAN IP to Caddy: `https://<pi-lan-ip>/`
 

@@ -5,8 +5,10 @@ This deployment shape keeps `tcube-pi-admin` as a loopback-only HTTP service and
 ## Process Boundary
 
 - `tcube-pi-admin` listens on `127.0.0.1:8080`.
-- Caddy listens on HTTPS for `tcube.local`, `10.55.0.1`, `localhost`, `127.0.0.1`, and any LAN IP added to `/etc/caddy/Caddyfile` by the release installer.
+- Caddy listens on HTTPS for `tcube.local`, `10.55.0.1`, `localhost`, `127.0.0.1`, plus the LAN IP and `<hostname>.local` names added to `/etc/caddy/Caddyfile` by the release installer.
+- Caddy also listens on plain HTTP port 80, where it serves only the root CA download at `/ca/root.crt` and redirects every other request to HTTPS.
 - Caddy uses `tls internal`, so admin devices must trust Caddy's local root CA before browsers accept the certificate.
+- `tcube-mdns-alias.service` publishes the `tcube.local` mDNS name through `avahi-publish` when the Pi hostname is not `tcube`.
 
 ## Install Packages
 
@@ -41,7 +43,7 @@ cd tcube-pi-v0.1.0-linux-arm64
 sudo ./install.sh
 ```
 
-The installer writes files under `/opt/tcube`, `/etc/tcube`, and `/etc/systemd/system`, adds the current detected Pi LAN IP to `/etc/caddy/Caddyfile` when available, then enables `tcube-pi-admin` and Caddy. It does not install Debian packages, so install `caddy` before running it.
+The installer writes files under `/opt/tcube`, `/etc/tcube`, and `/etc/systemd/system`, adds the current detected Pi LAN IP and `<hostname>.local` to `/etc/caddy/Caddyfile` when available, then enables `tcube-pi-admin` and Caddy. It also exports Caddy's internal root CA to `/opt/tcube/ca/root.crt`, enables `tcube-mdns-alias.service` when the hostname is not `tcube` and `avahi-publish` is available, and prints per-platform certificate trust instructions. It does not install Debian packages, so install `caddy` (and `avahi-utils` for the `tcube.local` alias) before running it.
 
 ## Install Files
 
@@ -85,15 +87,36 @@ sudo systemctl enable --now tcube-pi-admin.service
 sudo systemctl reload caddy
 ```
 
+## Reach The Cube At tcube.local
+
+`tcube.local` only resolves when something on the Pi announces it over mDNS. avahi-daemon announces `<hostname>.local` on its own, so the name works out of the box only when the Pi hostname is `tcube`.
+
+For any other hostname, the release installer enables `tcube-mdns-alias.service`, which runs `/opt/tcube/bin/tcube-mdns-alias` to publish `tcube.local` for the current LAN address through `avahi-publish`. That command comes from the `avahi-utils` package, so install it before the release bundle:
+
+```sh
+sudo apt install -y avahi-utils
+```
+
+If the alias service cannot start, the installer still adds `<hostname>.local` to the Caddy site list, so `https://<hostname>.local/` and the LAN IP URL keep working.
+
 ## Trust The Local CA
 
-Caddy stores its internal CA material under its application data directory. On Debian/Raspberry Pi OS package installs, inspect the current location with:
+On installed Pis, the installer exports Caddy's internal root certificate to `/opt/tcube/ca/root.crt`, and Caddy serves it to any device on the network at `http://<pi-address>/ca/root.crt`. The admin UI login screen also links to the same download with per-OS install steps.
+
+Trust that certificate on each admin phone/laptop:
+
+- macOS: `curl -fsSL http://<pi-address>/ca/root.crt -o ~/Downloads/tcube-root-ca.crt`, then `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/Downloads/tcube-root-ca.crt`.
+- Linux: `sudo curl -fsSL http://<pi-address>/ca/root.crt -o /usr/local/share/ca-certificates/tcube-root-ca.crt`, then `sudo update-ca-certificates`.
+- iPhone/iPad: open the URL in Safari, install the profile under Settings, General, VPN and Device Management, then enable full trust under Settings, General, About, Certificate Trust Settings.
+- Android: download the file, then install it under Settings, Security, Encryption and credentials, Install a certificate, CA certificate.
+
+Without that trust step, browsers will reject `https://tcube.local/`, `https://10.55.0.1/`, `https://localhost/`, `https://127.0.0.1/`, and configured LAN IP URLs.
+
+For manual installs, Caddy stores its internal CA material under its application data directory. On Debian/Raspberry Pi OS package installs, inspect the current location with:
 
 ```sh
 sudo caddy environ
 ```
-
-Export or copy Caddy's internal root certificate to each admin phone/laptop and mark it trusted for websites. Without that trust step, browsers will reject `https://tcube.local/`, `https://10.55.0.1/`, `https://localhost/`, `https://127.0.0.1/`, and configured LAN IP URLs.
 
 On macOS local validation, Caddy may prompt for an administrator password while trying to install its internal root CA into the system trust store. It is acceptable to skip that local trust-store installation for a command-line smoke test and use `curl -k`, but real admin browser and phone testing must trust the Caddy root CA instead of bypassing certificate verification.
 
@@ -101,14 +124,26 @@ For local Mac browser testing, prefer `just run-pi-admin-lan-caddy` and open `ht
 
 ## Smoke Test
 
+On the Pi:
+
 ```sh
 curl http://127.0.0.1:8080/api/pi/v1/status
 curl -k https://localhost/api/pi/v1/status
 curl -k https://tcube.local/api/pi/v1/status
 curl -k https://10.55.0.1/api/pi/v1/status
+curl http://localhost/ca/root.crt
 # If the release installer printed a detected Pi LAN URL:
 curl -k https://<pi-lan-ip>/api/pi/v1/status
 ```
+
+From an admin device that has trusted the root CA (no `-k`):
+
+```sh
+curl https://tcube.local/api/pi/v1/status
+curl https://<pi-lan-ip>/api/pi/v1/status
+```
+
+If `tcube.local` does not resolve from the admin device, check `systemctl status tcube-mdns-alias --no-pager` and `avahi-resolve-host-name -4 tcube.local` on the Pi.
 
 Use the `-k` command only for a quick Pi-local smoke test. Real admin browsers should trust the local CA instead of bypassing certificate verification.
 

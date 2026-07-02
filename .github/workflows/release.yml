@@ -138,6 +138,8 @@ jobs:
           cp deploy/pi-admin-caddy/Caddyfile "${payload_dir}/deploy/pi-admin-caddy/Caddyfile"
           cp deploy/pi-admin-caddy/tcube-pi-admin.env "${payload_dir}/deploy/pi-admin-caddy/tcube-pi-admin.env"
           cp deploy/pi-admin-caddy/tcube-pi-admin.service "${payload_dir}/deploy/pi-admin-caddy/tcube-pi-admin.service"
+          install -m 0755 deploy/pi-admin-caddy/tcube-mdns-alias "${payload_dir}/deploy/pi-admin-caddy/tcube-mdns-alias"
+          cp deploy/pi-admin-caddy/tcube-mdns-alias.service "${payload_dir}/deploy/pi-admin-caddy/tcube-mdns-alias.service"
 
           tar -C dist -czf "dist/${ARCHIVE_NAME}" "tcube-pi-${VERSION}-linux-arm64"
 

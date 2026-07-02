@@ -36,6 +36,7 @@ import {
   waveformLevels
 } from "../../src/recording-controller.ts";
 import type { ButtonConfig, DraftForm } from "../../src/types.ts";
+import { isIpLiteralHost } from "../../src/view-utils.ts";
 
 const languageButton: ButtonConfig = {
   id: 1,
@@ -58,6 +59,17 @@ describe("button config controller", () => {
     assert.deepEqual(next, { ...baseDraft, text: "Bonjour", provider: "voxtral" });
     assert.equal(baseDraft.text, "");
     assert.notEqual(next, baseDraft);
+  });
+});
+
+describe("view utils", () => {
+  test("detects IP literal hosts for certificate trust help", () => {
+    assert.equal(isIpLiteralHost("192.168.50.25"), true);
+    assert.equal(isIpLiteralHost("10.55.0.1"), true);
+    assert.equal(isIpLiteralHost("[::1]"), true);
+    assert.equal(isIpLiteralHost("tcube.local"), false);
+    assert.equal(isIpLiteralHost("localhost"), false);
+    assert.equal(isIpLiteralHost(""), false);
   });
 });
 

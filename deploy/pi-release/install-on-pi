@@ -24,6 +24,8 @@ require_path "${SCRIPT_DIR}/content/content.json"
 require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/Caddyfile"
 require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.env"
 require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.service"
+require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias"
+require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias.service"
 
 detect_lan_address() {
   local candidate=""
@@ -39,6 +41,45 @@ detect_lan_address() {
   fi
 }
 
+add_caddy_site_address() {
+  local site_address="$1"
+  if [[ -z "${site_address}" ]]; then
+    return 0
+  fi
+  local tmp_caddy
+  tmp_caddy="$(mktemp)"
+  awk -v site_address="${site_address}" '
+    !updated && $0 ~ /^tcube\.local,/ && index($0, site_address) == 0 {
+      sub(/ \{/, ", " site_address " {")
+      updated = 1
+    }
+    { print }
+  ' /etc/caddy/Caddyfile > "${tmp_caddy}"
+  install -m 0644 "${tmp_caddy}" /etc/caddy/Caddyfile
+  rm -f "${tmp_caddy}"
+}
+
+export_caddy_root_ca() {
+  local ca_source=""
+  local default_source="/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt"
+  for _ in $(seq 1 15); do
+    if [[ -f "${default_source}" ]]; then
+      ca_source="${default_source}"
+      break
+    fi
+    ca_source="$(find /var/lib/caddy -type f -path '*/pki/authorities/local/root.crt' 2>/dev/null | head -n 1 || true)"
+    if [[ -n "${ca_source}" ]]; then
+      break
+    fi
+    sleep 1
+  done
+  if [[ -z "${ca_source}" ]]; then
+    return 1
+  fi
+  install -d -o root -g root -m 0755 /opt/tcube/ca
+  install -m 0644 "${ca_source}" /opt/tcube/ca/root.crt
+}
+
 echo "Installing T-Cube Pi release from ${SCRIPT_DIR}"
 
 if ! id -u tcube >/dev/null 2>&1; then
@@ -51,6 +92,7 @@ install -d -o root -g root -m 0755 /opt/tcube/bin /opt/tcube/admin-ui /opt/tcube
 install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi" /opt/tcube/bin/tcube-pi
 install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi-admin" /opt/tcube/bin/tcube-pi-admin
 install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi-admin-measure" /opt/tcube/bin/tcube-pi-admin-measure
+install -m 0755 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias" /opt/tcube/bin/tcube-mdns-alias
 
 rm -rf /opt/tcube/admin-ui/.new
 install -d -o root -g root -m 0755 /opt/tcube/admin-ui/.new
@@ -68,19 +110,16 @@ rm -rf /opt/tcube/content/.new
 
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.env" /etc/tcube/tcube-pi-admin.env
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.service" /etc/systemd/system/tcube-pi-admin.service
+install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias.service" /etc/systemd/system/tcube-mdns-alias.service
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/Caddyfile" /etc/caddy/Caddyfile
+
+device_hostname="$(hostname 2>/dev/null || true)"
+device_hostname="${device_hostname%%.*}"
+
 installed_lan_address="$(detect_lan_address || true)"
-if [[ -n "${installed_lan_address}" ]]; then
-  tmp_caddy="$(mktemp)"
-  awk -v lan_address="${installed_lan_address}" '
-    !updated && $0 ~ /^tcube\.local,/ && index($0, lan_address) == 0 {
-      sub(/ \{/, ", " lan_address " {")
-      updated = 1
-    }
-    { print }
-  ' /etc/caddy/Caddyfile > "${tmp_caddy}"
-  install -m 0644 "${tmp_caddy}" /etc/caddy/Caddyfile
-  rm -f "${tmp_caddy}"
+add_caddy_site_address "${installed_lan_address}"
+if [[ -n "${device_hostname}" && "${device_hostname}" != "tcube" ]]; then
+  add_caddy_site_address "${device_hostname}.local"
 fi
 
 systemctl daemon-reload
@@ -91,19 +130,106 @@ else
   systemctl enable --now caddy
 fi
 
-cat <<'MESSAGE'
+mdns_notes=()
+if ! systemctl is-active --quiet avahi-daemon; then
+  mdns_notes+=("avahi-daemon is not active, so .local names will not resolve. Fix: sudo apt install -y avahi-daemon")
+fi
+
+if [[ "${device_hostname}" == "tcube" ]]; then
+  mdns_notes+=("Hostname is tcube, so avahi announces tcube.local directly.")
+  if systemctl is-enabled --quiet tcube-mdns-alias.service 2>/dev/null; then
+    systemctl disable --now tcube-mdns-alias.service
+  fi
+elif command -v avahi-publish >/dev/null 2>&1; then
+  if systemctl enable --now tcube-mdns-alias.service; then
+    mdns_notes+=("Hostname is ${device_hostname}; tcube-mdns-alias.service publishes tcube.local for this cube.")
+  else
+    mdns_notes+=("tcube-mdns-alias.service failed to start; check: systemctl status tcube-mdns-alias --no-pager")
+  fi
+else
+  mdns_notes+=("Hostname is ${device_hostname} and avahi-publish is missing, so https://tcube.local/ will NOT resolve yet.")
+  mdns_notes+=("Fix: sudo apt install -y avahi-utils && sudo systemctl enable --now tcube-mdns-alias.service")
+  if [[ -n "${device_hostname}" ]]; then
+    mdns_notes+=("Until then, use https://${device_hostname}.local/ or the LAN IP URL below.")
+  fi
+fi
+
+if command -v avahi-resolve-host-name >/dev/null 2>&1; then
+  sleep 2
+  resolved_tcube="$(avahi-resolve-host-name -4 tcube.local 2>/dev/null | awk '{ print $2 }' || true)"
+  if [[ -n "${resolved_tcube}" ]]; then
+    mdns_notes+=("Verified: tcube.local currently resolves to ${resolved_tcube}.")
+  else
+    mdns_notes+=("tcube.local did not resolve via mDNS yet; allow a few seconds after service start and re-check with: avahi-resolve-host-name -4 tcube.local")
+  fi
+fi
+
+if export_caddy_root_ca; then
+  ca_exported=1
+else
+  ca_exported=0
+fi
+
+ca_host="${installed_lan_address:-tcube.local}"
+
+cat <<MESSAGE
 T-Cube Pi release installed.
 
-Next checks:
+Service checks (on the Pi):
   systemctl status tcube-pi-admin --no-pager
   systemctl status caddy --no-pager
   curl http://127.0.0.1:8080/api/pi/v1/status
   curl -k https://localhost/api/pi/v1/status
 
-Admin browsers and phones must trust Caddy's internal root CA before using https://tcube.local/.
+Admin URLs:
+  https://tcube.local/
 MESSAGE
+if [[ -n "${device_hostname}" && "${device_hostname}" != "tcube" ]]; then
+  echo "  https://${device_hostname}.local/"
+fi
+if [[ -n "${installed_lan_address}" ]]; then
+  echo "  https://${installed_lan_address}/  (current LAN IP; can change with DHCP)"
+fi
 
-if [[ -n "${installed_lan_address:-}" ]]; then
-  echo "Detected Pi LAN URL: https://${installed_lan_address}/"
-  echo "LAN smoke check: curl -k https://${installed_lan_address}/api/pi/v1/status"
+echo ""
+echo "mDNS status:"
+for note in "${mdns_notes[@]}"; do
+  echo "  ${note}"
+done
+
+echo ""
+if [[ "${ca_exported}" -eq 1 ]]; then
+  echo "Certificate trust (one time per admin phone or laptop):"
+  echo "  The cube serves its root certificate at http://${ca_host}/ca/root.crt"
+  echo "  (also stored on the Pi at /opt/tcube/ca/root.crt)."
+  echo ""
+  echo "  macOS:"
+  echo "    curl -fsSL http://${ca_host}/ca/root.crt -o ~/Downloads/tcube-root-ca.crt"
+  echo "    sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/Downloads/tcube-root-ca.crt"
+  echo ""
+  echo "  Linux:"
+  echo "    sudo curl -fsSL http://${ca_host}/ca/root.crt -o /usr/local/share/ca-certificates/tcube-root-ca.crt"
+  echo "    sudo update-ca-certificates"
+  echo ""
+  echo "  iPhone/iPad:"
+  echo "    Open http://${ca_host}/ca/root.crt in Safari and allow the download."
+  echo "    Install it under Settings > General > VPN & Device Management."
+  echo "    Enable full trust under Settings > General > About > Certificate Trust Settings."
+  echo ""
+  echo "  Android:"
+  echo "    Download http://${ca_host}/ca/root.crt, then install it under"
+  echo "    Settings > Security > Encryption & credentials > Install a certificate > CA certificate."
+else
+  echo "WARNING: Caddy's internal root CA was not found under /var/lib/caddy, so it was not"
+  echo "exported to /opt/tcube/ca/root.crt and http://${ca_host}/ca/root.crt will 404."
+  echo "After Caddy has fully started, re-run this installer or copy it manually:"
+  echo "  sudo install -d -m 0755 /opt/tcube/ca"
+  echo "  sudo install -m 0644 /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt /opt/tcube/ca/root.crt"
+fi
+
+echo ""
+echo "From an admin device after trusting the certificate:"
+echo "  curl https://tcube.local/api/pi/v1/status"
+if [[ -n "${installed_lan_address}" ]]; then
+  echo "  curl https://${installed_lan_address}/api/pi/v1/status"
 fi
