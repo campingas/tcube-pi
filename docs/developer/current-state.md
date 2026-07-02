@@ -51,6 +51,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - Mac-hosted speech and AI workers stay outside this repository; generated speech is always an inactive draft until parent activation.
 - Hardware inventory and physical assembly maintenance live in `docs/hardware/hardware-assembly.md`.
 - Fresh Raspberry Pi OS Lite setup and release-bundle installation live in `docs/hardware/pi-os-lite-install.md`.
+- GitHub `dev` is the default development branch for pull requests; `main` is the stable branch used for release-ready promotion and raw install bootstrap URLs.
 - Release version bumps happen before tags; release workflows verify manifest/tag consistency instead of mutating manifests after tag push.
 
 ## Known Issues

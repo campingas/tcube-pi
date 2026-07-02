@@ -125,6 +125,8 @@ just test
 
 Keep changes small and scoped to the requested behavior.
 
+Use `dev` as the default development branch for day-to-day work and pull requests. Keep `main` as the stable branch for release-ready promotion; merge `dev` into `main` when preparing stable releases or install-doc-visible changes.
+
 Prefer established project patterns over new abstractions. Reuse the existing Rust runtime split, `just` recipes, SQLite event path, and docs structure before adding alternatives.
 
 Do not introduce Makefiles or duplicate command runners. Add or update `Justfile` recipes when a workflow becomes reusable.

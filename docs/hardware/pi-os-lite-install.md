@@ -95,13 +95,13 @@ The expected prototype card name includes `sndrpimaxims`. If no I2S card appears
 Install the latest release bundle directly from GitHub Releases:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/master/deploy/pi-release/install-latest | sudo bash
+curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/main/deploy/pi-release/install-latest | sudo bash
 ```
 
 To install a specific version:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/master/deploy/pi-release/install-latest | sudo env TCUBE_PI_VERSION=v0.0.3 bash
+curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/main/deploy/pi-release/install-latest | sudo env TCUBE_PI_VERSION=v0.0.3 bash
 ```
 
 The bootstrap script downloads the selected release archive and `SHA256SUMS`, verifies the archive plus bundled installer and binaries, extracts the bundle in a temporary directory, then runs the bundled installer. The installer writes application files under `/opt/tcube`, configuration under `/etc/tcube`, data under `/var/lib/tcube`, and systemd service files under `/etc/systemd/system`. It enables `tcube-pi-admin` and Caddy.
