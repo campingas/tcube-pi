@@ -79,6 +79,12 @@ export function relativeTime(value: string) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+export function isIpLiteralHost(hostname: string) {
+  if (!hostname) return false;
+  if (hostname.startsWith("[") || hostname.includes(":")) return true;
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
+}
+
 export function contentTypeLabel(contentType: ContentType | null) {
   if (contentType === "language") return "Language";
   if (contentType === "animals") return "Animals";

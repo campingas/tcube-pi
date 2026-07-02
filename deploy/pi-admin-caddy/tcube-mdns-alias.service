@@ -1,0 +1,15 @@
+[Unit]
+Description=T-Cube mDNS alias publisher for tcube.local
+Wants=network-online.target
+After=network-online.target avahi-daemon.service
+
+[Service]
+Type=simple
+ExecStart=/opt/tcube/bin/tcube-mdns-alias
+Restart=on-failure
+RestartSec=10
+User=tcube
+Group=tcube
+
+[Install]
+WantedBy=multi-user.target

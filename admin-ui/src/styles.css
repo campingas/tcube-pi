@@ -335,6 +335,22 @@ audio {
   padding: 0;
 }
 
+.auth-cert-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.auth-cert-steps {
+  text-align: left;
+}
+
+.auth-cert-download {
+  text-decoration: none;
+}
+
 .cube-hero {
   display: flex;
   align-items: flex-start;

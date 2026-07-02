@@ -1,6 +1,6 @@
 # Current Project State
 
-Last updated: 2026-07-01 (+07)
+Last updated: 2026-07-02 (+07)
 
 This file is the live implementation snapshot for agents. Keep it concise; do not append chronological session history.
 
@@ -26,6 +26,9 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - Focus routine settings are stored locally in SQLite and exposed under `/api/pi/v1/setup/pomodoro`; managers can view the state, owners can save/validate it, and the runtime skips the Pomodoro shortcut until the saved settings are enabled and validated.
 - The runtime includes Pomodoro routine orchestration with generated `rodio` focus audio and transition chimes, silent breaks, and a tested Top + Front left + Front right hold recognizer for the future GPIO backend; the simulator exposes `p` as the manual routine shortcut.
 - Release workflow builds Linux arm64 bundles with Rust binaries, prebuilt admin UI, content, Caddy/systemd files, installer, and SHA-256 checksums.
+- The release installer exports Caddy's internal root CA to `/opt/tcube/ca/root.crt`; Caddy serves it at `/ca/root.crt` over both HTTPS and a port-80 HTTP listener that otherwise redirects to HTTPS, and the installer prints per-platform certificate trust steps (macOS, Linux, iPhone/iPad, Android).
+- `tcube-mdns-alias.service` runs `/opt/tcube/bin/tcube-mdns-alias` (`avahi-publish` from `avahi-utils`) so `https://tcube.local/` resolves when the Pi hostname is not `tcube`; the installer also injects the LAN IP and `<hostname>.local` into the Caddy site list and reports mDNS status.
+- The admin UI login screen includes a collapsible "Secure this device" card linking to `/ca/root.crt` with per-OS trust steps; it auto-expands when the page is opened from an IP-literal origin (`isIpLiteralHost` in `admin-ui/src/view-utils.ts`).
 - Admin API integration tests live in `src/server/tests.rs` (moved from the former `src/server/handler.rs`); API routes register once in `src/server/routes/mod.rs` through a legacy-plus-versioned dual table.
 - Admin UI dark theme uses the warm graphite palette documented in `docs/developer/branding-guide.md` (updated 2026-07-02); all status colors come from tokens in `admin-ui/src/styles.css`.
 
@@ -82,6 +85,8 @@ just test-admin-ui-unit
 just test-admin-ui-mobile
 ```
 
-Latest broad validation recorded on 2026-07-02 included `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features` (67 passed), `just build-admin-ui`, `just check-admin-ui`, `just test-admin-ui-unit` (14 passed), and `just test-admin-ui-mobile` (12 passed).
+Latest broad validation recorded on 2026-07-02 included `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features` (67 passed), `just build-admin-ui`, `just check-admin-ui`, `just test-admin-ui-unit` (15 passed), and `just test-admin-ui-mobile` (12 passed).
+
+Deploy script validation for the installer trust/mDNS work used `bash -n`, `shellcheck` on `deploy/pi-release/install-on-pi` and `deploy/pi-admin-caddy/tcube-mdns-alias`, `caddy validate` on the deployment Caddyfile (including the installer's address injection), and a local Caddy run confirming `/ca/root.crt` serves with `application/x-x509-ca-cert` while other HTTP requests redirect to HTTPS.
 
 Latest documentation consolidation on 2026-07-01 removed redundant feature/auth/package/inventory docs, moved hardware and Pi install docs under `docs/hardware/`, and optimized default agent context routing.

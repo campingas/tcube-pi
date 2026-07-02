@@ -2,5 +2,28 @@ tcube.local, 10.55.0.1, localhost, 127.0.0.1 {
 	bind 0.0.0.0
 	tls internal
 	encode zstd gzip
-	reverse_proxy 127.0.0.1:8080
+
+	handle /ca/root.crt {
+		root * /opt/tcube
+		header Content-Type application/x-x509-ca-cert
+		file_server
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+}
+
+http:// {
+	bind 0.0.0.0
+
+	handle /ca/root.crt {
+		root * /opt/tcube
+		header Content-Type application/x-x509-ca-cert
+		file_server
+	}
+
+	handle {
+		redir https://{host}{uri}
+	}
 }
