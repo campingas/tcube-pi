@@ -80,7 +80,37 @@ export_caddy_root_ca() {
   install -m 0644 "${ca_source}" /opt/tcube/ca/root.crt
 }
 
+file_digest() {
+  if [[ -f "$1" ]]; then
+    sha256sum "$1" | awk '{ print $1 }'
+  fi
+}
+
+admin_service_state() {
+  printf '%s|%s|%s\n' \
+    "$(file_digest /opt/tcube/bin/tcube-pi-admin)" \
+    "$(file_digest /etc/systemd/system/tcube-pi-admin.service)" \
+    "$(file_digest /etc/tcube/tcube-pi-admin.env)"
+}
+
+mdns_service_state() {
+  printf '%s|%s\n' \
+    "$(file_digest /opt/tcube/bin/tcube-mdns-alias)" \
+    "$(file_digest /etc/systemd/system/tcube-mdns-alias.service)"
+}
+
+release_version="${TCUBE_PI_VERSION:-}"
+if [[ -z "${release_version}" ]]; then
+  payload_dir_name="$(basename "${SCRIPT_DIR}")"
+  if [[ "${payload_dir_name}" =~ ^tcube-pi-(v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?)-linux-arm64$ ]]; then
+    release_version="${BASH_REMATCH[1]}"
+  fi
+fi
+
 echo "Installing T-Cube Pi release from ${SCRIPT_DIR}"
+
+admin_state_before="$(admin_service_state)"
+mdns_state_before="$(mdns_service_state)"
 
 if ! id -u tcube >/dev/null 2>&1; then
   useradd --system --home /var/lib/tcube --shell /usr/sbin/nologin tcube
@@ -108,7 +138,13 @@ rm -rf /opt/tcube/content/audio /opt/tcube/content/content.json
 cp -R /opt/tcube/content/.new/. /opt/tcube/content/
 rm -rf /opt/tcube/content/.new
 
-install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.env" /etc/tcube/tcube-pi-admin.env
+env_note=""
+if [[ -f /etc/tcube/tcube-pi-admin.env ]]; then
+  install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.env" /etc/tcube/tcube-pi-admin.env.dist
+  env_note="Kept existing /etc/tcube/tcube-pi-admin.env; new release defaults written to /etc/tcube/tcube-pi-admin.env.dist"
+else
+  install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.env" /etc/tcube/tcube-pi-admin.env
+fi
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.service" /etc/systemd/system/tcube-pi-admin.service
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias.service" /etc/systemd/system/tcube-mdns-alias.service
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/Caddyfile" /etc/caddy/Caddyfile
@@ -122,12 +158,26 @@ if [[ -n "${device_hostname}" && "${device_hostname}" != "tcube" ]]; then
   add_caddy_site_address "${device_hostname}.local"
 fi
 
+admin_state_after="$(admin_service_state)"
+mdns_state_after="$(mdns_service_state)"
+
 systemctl daemon-reload
-systemctl enable --now tcube-pi-admin.service
+systemctl enable tcube-pi-admin.service
+if ! systemctl is-active --quiet tcube-pi-admin.service; then
+  systemctl start tcube-pi-admin.service
+elif [[ "${admin_state_before}" != "${admin_state_after}" ]]; then
+  echo "Restarting tcube-pi-admin.service to apply the updated release..."
+  systemctl restart tcube-pi-admin.service
+fi
 if systemctl is-active --quiet caddy; then
   systemctl reload caddy
 else
   systemctl enable --now caddy
+fi
+
+if [[ -n "${release_version}" ]]; then
+  printf '%s\n' "${release_version}" > /opt/tcube/VERSION
+  chmod 0644 /opt/tcube/VERSION
 fi
 
 mdns_notes=()
@@ -141,6 +191,9 @@ if [[ "${device_hostname}" == "tcube" ]]; then
     systemctl disable --now tcube-mdns-alias.service
   fi
 elif command -v avahi-publish >/dev/null 2>&1; then
+  if systemctl is-active --quiet tcube-mdns-alias.service && [[ "${mdns_state_before}" != "${mdns_state_after}" ]]; then
+    systemctl restart tcube-mdns-alias.service
+  fi
   if systemctl enable --now tcube-mdns-alias.service; then
     mdns_notes+=("Hostname is ${device_hostname}; tcube-mdns-alias.service publishes tcube.local for this cube.")
   else
@@ -173,7 +226,12 @@ fi
 ca_host="${installed_lan_address:-tcube.local}"
 
 cat <<MESSAGE
-T-Cube Pi release installed.
+T-Cube Pi release installed${release_version:+ (${release_version})}.
+MESSAGE
+if [[ -n "${env_note}" ]]; then
+  echo "  ${env_note}"
+fi
+cat <<MESSAGE
 
 Service checks (on the Pi):
   systemctl status tcube-pi-admin --no-pager

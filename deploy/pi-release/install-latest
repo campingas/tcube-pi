@@ -35,9 +35,21 @@ if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
   exit 1
 fi
 
+installed_version=""
+if [[ -f /opt/tcube/VERSION ]]; then
+  installed_version="$(head -n 1 /opt/tcube/VERSION || true)"
+fi
+if [[ "${TCUBE_PI_FORCE:-0}" != "1" && "${installed_version}" == "${version}" ]]; then
+  echo "T-Cube Pi ${version} is already installed; nothing to do."
+  echo "Re-run with TCUBE_PI_FORCE=1 to reinstall the same version."
+  exit 0
+fi
+
 archive_name="tcube-pi-${version}-linux-arm64.tar.gz"
 release_base="https://github.com/${repo}/releases/download/${version}"
-work_dir="$(mktemp -d)"
+# Use disk-backed /var/tmp so the download and extraction do not consume RAM
+# when /tmp is tmpfs.
+work_dir="$(TMPDIR="${TMPDIR:-/var/tmp}" mktemp -d)"
 
 cleanup() {
   rm -rf "${work_dir}"
@@ -60,4 +72,4 @@ echo "Verifying installer and binaries..."
 grep -E ' (bin/|install\.sh$)' ../SHA256SUMS | sha256sum -c -
 
 echo "Installing T-Cube Pi ${version}..."
-./install.sh
+TCUBE_PI_VERSION="${version}" ./install.sh
