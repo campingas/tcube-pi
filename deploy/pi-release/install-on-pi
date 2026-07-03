@@ -118,7 +118,9 @@ ensure_i2s_boot_config() {
     echo "WARNING: no boot config.txt found; enable the MAX98357A I2S overlay manually." >&2
     return 1
   fi
-  if grep -q "T-Cube MAX98357A I2S audio" "${boot_config}"; then
+  # Detect any existing overlay line, not just the T-Cube marker comment, so
+  # a Pi configured manually or by the smoke payload is never double-appended.
+  if grep -Eq '^[[:space:]]*dtoverlay=max98357a' "${boot_config}"; then
     return 1
   fi
   cat >> "${boot_config}" <<'CONFIG'
