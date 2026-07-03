@@ -6,6 +6,7 @@ export function modeClass(mode: ButtonMode) {
   if (mode === "language") return "lang";
   if (mode === "animals") return "animal";
   if (mode === "music") return "music";
+  if (mode === "soundbox") return "soundbox";
   if (mode === "setup_help") return "setup";
   return "off";
 }
@@ -18,6 +19,7 @@ export function contentLabel(mode: ButtonMode, language: string) {
   if (mode === "language") return shortLanguage(language);
   if (mode === "animals") return "Animals";
   if (mode === "music") return "Music";
+  if (mode === "soundbox") return "SoundBox";
   if (mode === "setup_help") return "Setup";
   return "Off";
 }

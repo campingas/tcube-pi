@@ -1,189 +1,227 @@
-<svg width="100%" viewBox="0 0 680 720" role="img" style="" xmlns="http://www.w3.org/2000/svg">
-  <title style="fill:rgb(0, 0, 0);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">Breadboard wiring — Pi Zero 2W, 1 button, MAX98357A, speaker</title>
-  <desc style="fill:rgb(0, 0, 0);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">Physical breadboard-style wiring diagram showing a Raspberry Pi Zero 2W connected to one tactile button, a MAX98357A I2S amplifier breakout on an 830-point breadboard, and a 3W 8-ohm speaker.</desc>
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    
-    <pattern id="holes" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
-      <circle cx="5" cy="5" r="1.5" fill="var(--color-border-secondary)" opacity="0.5"/>
-    </pattern>
-  <mask id="imagine-text-gaps-35ftdz" maskUnits="userSpaceOnUse"><rect x="0" y="0" width="680" height="720" fill="white"/><rect x="52" y="314" width="15.6875" height="19" fill="black" rx="2"/><rect x="52" y="466" width="15.6875" height="19" fill="black" rx="2"/><rect x="351.7421875" y="383" width="112.2578125" height="19" fill="black" rx="2"/><rect x="70.1953125" y="101.25" width="79.609375" height="21.5" fill="black" rx="2"/><rect x="99.1484375" y="130.5" width="52.8515625" height="19" fill="black" rx="2"/><rect x="106.078125" y="145.5" width="45.921875" height="19" fill="black" rx="2"/><rect x="93.921875" y="160.5" width="58.078125" height="19" fill="black" rx="2"/><rect x="84.9609375" y="175.5" width="67.0390625" height="19" fill="black" rx="2"/><rect x="78.640625" y="190.5" width="73.359375" height="19" fill="black" rx="2"/><rect x="76.5390625" y="205.5" width="75.4609375" height="19" fill="black" rx="2"/><rect x="75.2265625" y="220.5" width="76.7734375" height="19" fill="black" rx="2"/><rect x="382.01953125" y="345.25" width="35.9609375" height="21.5" fill="black" rx="2"/><rect x="377.9609375" y="362.5" width="44.078125" height="19" fill="black" rx="2"/><rect x="164.49609375" y="417.25" width="91.0078125" height="21.5" fill="black" rx="2"/><rect x="156.90625" y="436.5" width="106.1875" height="19" fill="black" rx="2"/><rect x="107.22265625" y="389" width="29.5546875" height="19" fill="black" rx="2"/><rect x="130.0546875" y="389" width="35.890625" height="19" fill="black" rx="2"/><rect x="156.3828125" y="389" width="35.234375" height="19" fill="black" rx="2"/><rect x="180.55859375" y="389" width="38.8828125" height="19" fill="black" rx="2"/><rect x="205.91015625" y="389" width="40.1796875" height="19" fill="black" rx="2"/><rect x="231.85546875" y="389" width="40.2890625" height="19" fill="black" rx="2"/><rect x="263.1875" y="389" width="29.625" height="19" fill="black" rx="2"/><rect x="127.4375" y="454" width="41.125" height="19" fill="black" rx="2"/><rect x="153.4375" y="454" width="41.125" height="19" fill="black" rx="2"/><rect x="553.61328125" y="389.25" width="62.7734375" height="21.5" fill="black" rx="2"/><rect x="560.4140625" y="408.5" width="49.171875" height="19" fill="black" rx="2"/><rect x="539.29296875" y="424.5" width="91.4140625" height="19" fill="black" rx="2"/><rect x="528.15625" y="348" width="15.6875" height="19" fill="black" rx="2"/><rect x="548.15625" y="348" width="15.6875" height="19" fill="black" rx="2"/><rect x="240" y="304" width="33.03125" height="19" fill="black" rx="2"/><rect x="250" y="294" width="23.59375" height="19" fill="black" rx="2"/><rect x="202" y="360" width="76.6171875" height="19" fill="black" rx="2"/><rect x="340" y="168" width="84.1015625" height="19" fill="black" rx="2"/><rect x="442.875" y="483" width="41.125" height="19" fill="black" rx="2"/><rect x="374.6953125" y="511" width="109.3046875" height="19" fill="black" rx="2"/><rect x="42" y="629.25" width="87.8203125" height="21.5" fill="black" rx="2"/><rect x="78" y="648" width="33.03125" height="19" fill="black" rx="2"/><rect x="162" y="648" width="23.59375" height="19" fill="black" rx="2"/><rect x="242" y="648" width="35.890625" height="19" fill="black" rx="2"/><rect x="332" y="648" width="118.28125" height="19" fill="black" rx="2"/><rect x="78" y="672" width="113.375" height="19" fill="black" rx="2"/><rect x="242" y="672" width="120.515625" height="19" fill="black" rx="2"/><rect x="422" y="672" width="103.0546875" height="19" fill="black" rx="2"/><rect x="78" y="686" width="91.5078125" height="19" fill="black" rx="2"/><rect x="242" y="686" width="153.0859375" height="19" fill="black" rx="2"/><rect x="462" y="686" width="108.5703125" height="19" fill="black" rx="2"/></mask></defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 806" width="100%" role="img" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Breadboard wiring: Pi Zero 2 W, MKE-M02 button, MAX98357A amplifier, speaker</title>
+  <desc>Wiring diagram showing a Raspberry Pi Zero 2 W 40-pin header connected to one MKE-M02 button module (3V3 on pin 1, GND on pin 9, SIG on pin 11 GPIO17) and a MAX98357A I2S amplifier on a breadboard (VIN 5V pin 2, GND pin 6, SD GPIO4 pin 7, BCLK GPIO18 pin 12, LRC GPIO19 pin 35, DIN GPIO21 pin 40), with a 3 watt 8 ohm speaker on the amplifier screw terminals.</desc>
 
-  
-  
-  <rect x="30" y="300" width="440" height="200" rx="8" fill="var(--color-background-secondary)" stroke="var(--color-border-secondary)" stroke-width="1" style="fill:rgb(245, 244, 237);stroke:rgba(31, 30, 29, 0.3);color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  
-  <rect x="50" y="318" width="400" height="164" rx="4" fill="url(#holes)" style="stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <!-- background -->
+  <rect x="0" y="0" width="960" height="806" fill="#f7f6f1"/>
 
-  
-  <rect x="50" y="318" width="400" height="12" rx="3" fill="#FFE5E5" stroke="#E24B4A" stroke-width="0.5" opacity="0.7" style="fill:rgb(255, 229, 229);stroke:rgb(226, 75, 74);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.7;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="56" y="328" fill="#A32D2D" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">+</text>
-  
-  <rect x="50" y="470" width="400" height="12" rx="3" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5" opacity="0.7" style="fill:rgb(230, 241, 251);stroke:rgb(55, 138, 221);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.7;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="56" y="480" fill="#0C447C" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">−</text>
+  <!-- titles -->
+  <text x="48" y="38" font-size="17" font-weight="600" fill="#26251f">Breadboard wiring · Pi Zero 2 W + MKE-M02 button + MAX98357A + speaker</text>
+  <text x="48" y="60" font-size="12" fill="#6b6a63">Pin numbers are the physical numbers on the 40-pin header. Full pin reference: pinout.xyz</text>
 
-  
-  <rect x="50" y="392" width="400" height="6" rx="0" fill="var(--color-background-primary)" opacity="0.8" style="fill:rgb(255, 255, 255);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.8;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="460" y="397" text-anchor="end" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:end;dominant-baseline:auto">830 pt breadboard</text>
-
-  
-  <g style="fill:rgb(0, 0, 0);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">
-    <rect x="30" y="80" width="160" height="190" rx="8" stroke-width="0.5" style="fill:rgb(238, 237, 254);stroke:rgb(83, 74, 183);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="110" y="112" text-anchor="middle" dominant-baseline="central" style="fill:rgb(60, 52, 137);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:14px;font-weight:500;text-anchor:middle;dominant-baseline:central">Pi Zero 2W</text>
-    
-    <text x="148" y="140" text-anchor="end" dominant-baseline="central" style="fill:rgb(83, 74, 183);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:end;dominant-baseline:central">3.3V  · p1</text>
-    <text x="148" y="155" text-anchor="end" dominant-baseline="central" style="fill:rgb(83, 74, 183);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:end;dominant-baseline:central">5V     · p2</text>
-    <text x="148" y="170" text-anchor="end" dominant-baseline="central" style="fill:rgb(83, 74, 183);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:end;dominant-baseline:central">GND  · p6</text>
-    <text x="148" y="185" text-anchor="end" dominant-baseline="central" style="fill:rgb(83, 74, 183);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:end;dominant-baseline:central">GPIO4 · p7</text>
-    <text x="148" y="200" text-anchor="end" dominant-baseline="central" style="fill:rgb(83, 74, 183);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:end;dominant-baseline:central">GPIO18· p12</text>
-    <text x="148" y="215" text-anchor="end" dominant-baseline="central" style="fill:rgb(83, 74, 183);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:end;dominant-baseline:central">GPIO19· p35</text>
-    <text x="148" y="230" text-anchor="end" dominant-baseline="central" style="fill:rgb(83, 74, 183);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:end;dominant-baseline:central">GPIO21· p40</text>
+  <!-- ==================== breadboard ==================== -->
+  <g>
+    <rect x="430" y="430" width="350" height="300" rx="8" fill="#efeee8" stroke="#c9c7bc"/>
+    <text x="772" y="448" font-size="10" fill="#8a887d" text-anchor="end">830-point breadboard</text>
+    <!-- power rails -->
+    <line x1="446" y1="470" x2="764" y2="470" stroke="#d5604e" stroke-width="3"/>
+    <line x1="446" y1="492" x2="764" y2="492" stroke="#4a7bd5" stroke-width="3"/>
+    <text x="438" y="475" font-size="13" font-weight="700" fill="#d5604e" text-anchor="end">+</text>
+    <text x="438" y="497" font-size="13" font-weight="700" fill="#4a7bd5" text-anchor="end">&#8722;</text>
+    <text x="770" y="475" font-size="10" fill="#d5604e">5V rail</text>
+    <text x="770" y="497" font-size="10" fill="#4a7bd5">GND rail</text>
+    <!-- hint of holes -->
+    <g fill="#c9c7bc" opacity="0.55">
+      <circle cx="450" cy="520" r="1.6"/><circle cx="465" cy="520" r="1.6"/><circle cx="480" cy="520" r="1.6"/><circle cx="495" cy="520" r="1.6"/><circle cx="510" cy="520" r="1.6"/><circle cx="525" cy="520" r="1.6"/><circle cx="540" cy="520" r="1.6"/>
+      <circle cx="450" cy="537" r="1.6"/><circle cx="465" cy="537" r="1.6"/><circle cx="480" cy="537" r="1.6"/><circle cx="495" cy="537" r="1.6"/><circle cx="510" cy="537" r="1.6"/><circle cx="525" cy="537" r="1.6"/><circle cx="540" cy="537" r="1.6"/>
+      <circle cx="450" cy="554" r="1.6"/><circle cx="465" cy="554" r="1.6"/><circle cx="480" cy="554" r="1.6"/><circle cx="495" cy="554" r="1.6"/><circle cx="510" cy="554" r="1.6"/><circle cx="525" cy="554" r="1.6"/><circle cx="540" cy="554" r="1.6"/>
+      <circle cx="450" cy="571" r="1.6"/><circle cx="465" cy="571" r="1.6"/><circle cx="480" cy="571" r="1.6"/><circle cx="495" cy="571" r="1.6"/><circle cx="525" cy="571" r="1.6"/><circle cx="540" cy="571" r="1.6"/>
+      <circle cx="450" cy="640" r="1.6"/><circle cx="465" cy="640" r="1.6"/><circle cx="480" cy="640" r="1.6"/><circle cx="495" cy="640" r="1.6"/><circle cx="510" cy="640" r="1.6"/><circle cx="525" cy="640" r="1.6"/><circle cx="540" cy="640" r="1.6"/>
+      <circle cx="450" cy="657" r="1.6"/><circle cx="465" cy="657" r="1.6"/><circle cx="480" cy="657" r="1.6"/><circle cx="495" cy="657" r="1.6"/><circle cx="510" cy="657" r="1.6"/><circle cx="525" cy="657" r="1.6"/><circle cx="540" cy="657" r="1.6"/>
+      <circle cx="730" cy="520" r="1.6"/><circle cx="745" cy="520" r="1.6"/><circle cx="760" cy="520" r="1.6"/>
+      <circle cx="730" cy="537" r="1.6"/><circle cx="745" cy="537" r="1.6"/><circle cx="760" cy="537" r="1.6"/>
+      <circle cx="730" cy="554" r="1.6"/><circle cx="745" cy="554" r="1.6"/><circle cx="760" cy="554" r="1.6"/>
+      <circle cx="730" cy="690" r="1.6"/><circle cx="745" cy="690" r="1.6"/><circle cx="760" cy="690" r="1.6"/>
+      <circle cx="730" cy="707" r="1.6"/><circle cx="745" cy="707" r="1.6"/><circle cx="760" cy="707" r="1.6"/>
+    </g>
   </g>
-  
-  <circle cx="190" cy="140" r="4" fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5" style="fill:rgb(181, 212, 244);stroke:rgb(24, 95, 165);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <circle cx="190" cy="155" r="4" fill="#F0997B" stroke="#993C1D" stroke-width="0.5" style="fill:rgb(240, 153, 123);stroke:rgb(153, 60, 29);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <circle cx="190" cy="170" r="4" fill="#888780" stroke="#444441" stroke-width="0.5" style="fill:rgb(136, 135, 128);stroke:rgb(68, 68, 65);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <circle cx="190" cy="185" r="4" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5" style="fill:rgb(159, 225, 203);stroke:rgb(15, 110, 86);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <circle cx="190" cy="200" r="4" fill="#AFA9EC" stroke="#3C3489" stroke-width="0.5" style="fill:rgb(175, 169, 236);stroke:rgb(60, 52, 137);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <circle cx="190" cy="215" r="4" fill="#AFA9EC" stroke="#3C3489" stroke-width="0.5" style="fill:rgb(175, 169, 236);stroke:rgb(60, 52, 137);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <circle cx="190" cy="230" r="4" fill="#AFA9EC" stroke="#3C3489" stroke-width="0.5" style="fill:rgb(175, 169, 236);stroke:rgb(60, 52, 137);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
 
-  
-  
-  <g style="fill:rgb(0, 0, 0);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">
-    <rect x="370" y="340" width="60" height="44" rx="4" stroke-width="0.5" style="fill:rgb(241, 239, 232);stroke:rgb(95, 94, 90);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="400" y="356" text-anchor="middle" dominant-baseline="central" style="fill:rgb(68, 68, 65);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:14px;font-weight:500;text-anchor:middle;dominant-baseline:central">BTN</text>
-    <text x="400" y="372" text-anchor="middle" dominant-baseline="central" style="fill:rgb(95, 94, 90);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:central">tactile</text>
+  <!-- ==================== wires (drawn first, under components) ==================== -->
+  <g fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 5V: pin 2 to red rail -->
+    <path d="M208,104 H246 V470 H446" stroke="#d5604e"/>
+    <!-- GND: pin 6 to blue rail -->
+    <path d="M208,162 H232 V492 H446" stroke="#3a3a37"/>
+    <!-- 3V3: pin 1 to button VCC -->
+    <path d="M178,107 L206,122 H340 V128 H458" stroke="#e8923a"/>
+    <!-- button GND: pin 9 -->
+    <path d="M180,220 H388 V188 H458" stroke="#3a3a37"/>
+    <!-- button SIG: pin 11 GPIO17 -->
+    <path d="M180,249 H372 V158 H458" stroke="#8a8f98"/>
+    <!-- SD: pin 7 GPIO4 to amp SD -->
+    <path d="M180,191 H260 V616 H550" stroke="#7d5bd0"/>
+    <!-- BCLK: pin 12 GPIO18 -->
+    <path d="M206,252 L230,266 H276 V660 H550" stroke="#d9a824"/>
+    <!-- LRC: pin 35 GPIO19 -->
+    <path d="M180,597 H292 V682 H550" stroke="#3f9e63"/>
+    <!-- DIN: pin 40 GPIO21 -->
+    <path d="M200,663 V704 H550" stroke="#4a7bd5"/>
+    <!-- amp VIN to red rail -->
+    <path d="M550,572 H510 V470" stroke="#d5604e"/>
+    <!-- amp GND to blue rail -->
+    <path d="M550,594 H496 V492" stroke="#3a3a37"/>
+    <!-- speaker wires -->
+    <path d="M728,616 H792" stroke="#d5604e"/>
+    <path d="M728,644 H792" stroke="#3a3a37"/>
   </g>
-  
-  <line x1="375" y1="384" x2="375" y2="398" stroke="var(--color-border-primary)" stroke-width="1.5" style="fill:rgb(0, 0, 0);stroke:rgba(31, 30, 29, 0.4);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <line x1="395" y1="384" x2="395" y2="390" stroke="var(--color-border-primary)" stroke-width="1.5" style="fill:rgb(0, 0, 0);stroke:rgba(31, 30, 29, 0.4);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <line x1="415" y1="384" x2="415" y2="390" stroke="var(--color-border-primary)" stroke-width="1.5" style="fill:rgb(0, 0, 0);stroke:rgba(31, 30, 29, 0.4);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <line x1="425" y1="384" x2="425" y2="398" stroke="var(--color-border-primary)" stroke-width="1.5" style="fill:rgb(0, 0, 0);stroke:rgba(31, 30, 29, 0.4);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
 
-  
-  <g style="fill:rgb(0, 0, 0);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">
-    <rect x="110" y="408" width="200" height="52" rx="4" stroke-width="0.5" style="fill:rgb(250, 236, 231);stroke:rgb(153, 60, 29);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="210" y="428" text-anchor="middle" dominant-baseline="central" style="fill:rgb(113, 43, 19);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:14px;font-weight:500;text-anchor:middle;dominant-baseline:central">MAX98357A</text>
-    <text x="210" y="446" text-anchor="middle" dominant-baseline="central" style="fill:rgb(153, 60, 29);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:central">I2S amp breakout</text>
+  <!-- ==================== Raspberry Pi ==================== -->
+  <g>
+    <rect x="48" y="84" width="176" height="592" rx="10" fill="#356a48" stroke="#274d35"/>
+    <text transform="rotate(-90 66 380)" x="66" y="380" font-size="13" font-weight="600" fill="#cfe0d4" text-anchor="middle">Raspberry Pi Zero 2 W</text>
+    <!-- header block -->
+    <rect x="158" y="92" width="56" height="576" rx="4" fill="#23221f"/>
+    <!-- pin 1 marker -->
+    <rect x="165" y="97" width="14" height="14" fill="none" stroke="#ffffff" stroke-width="1.2"/>
+    <text x="150" y="78" font-size="11" fill="#26251f" text-anchor="middle">pin 1</text>
+    <line x1="155" y1="81" x2="168" y2="96" stroke="#26251f" stroke-width="1"/>
+    <text x="212" y="78" font-size="11" fill="#26251f" text-anchor="middle">pin 2</text>
+    <line x1="207" y1="81" x2="201" y2="96" stroke="#26251f" stroke-width="1"/>
+    <text x="240" y="688" font-size="11" fill="#26251f">pin 40</text>
+    <line x1="238" y1="684" x2="207" y2="662" stroke="#26251f" stroke-width="1"/>
+
+    <!-- all 40 pins: odd column x=172, even column x=200, rows every 29px from y=104 -->
+    <g fill="#d9b64a" stroke="#8a6d1f" stroke-width="0.8">
+      <circle cx="172" cy="104" r="5"/><circle cx="200" cy="104" r="5"/>
+      <circle cx="172" cy="133" r="5"/><circle cx="200" cy="133" r="5"/>
+      <circle cx="172" cy="162" r="5"/><circle cx="200" cy="162" r="5"/>
+      <circle cx="172" cy="191" r="5"/><circle cx="200" cy="191" r="5"/>
+      <circle cx="172" cy="220" r="5"/><circle cx="200" cy="220" r="5"/>
+      <circle cx="172" cy="249" r="5"/><circle cx="200" cy="249" r="5"/>
+      <circle cx="172" cy="278" r="5"/><circle cx="200" cy="278" r="5"/>
+      <circle cx="172" cy="307" r="5"/><circle cx="200" cy="307" r="5"/>
+      <circle cx="172" cy="336" r="5"/><circle cx="200" cy="336" r="5"/>
+      <circle cx="172" cy="365" r="5"/><circle cx="200" cy="365" r="5"/>
+      <circle cx="172" cy="394" r="5"/><circle cx="200" cy="394" r="5"/>
+      <circle cx="172" cy="423" r="5"/><circle cx="200" cy="423" r="5"/>
+      <circle cx="172" cy="452" r="5"/><circle cx="200" cy="452" r="5"/>
+      <circle cx="172" cy="481" r="5"/><circle cx="200" cy="481" r="5"/>
+      <circle cx="172" cy="510" r="5"/><circle cx="200" cy="510" r="5"/>
+      <circle cx="172" cy="539" r="5"/><circle cx="200" cy="539" r="5"/>
+      <circle cx="172" cy="568" r="5"/><circle cx="200" cy="568" r="5"/>
+      <circle cx="172" cy="597" r="5"/><circle cx="200" cy="597" r="5"/>
+      <circle cx="172" cy="626" r="5"/><circle cx="200" cy="626" r="5"/>
+      <circle cx="172" cy="655" r="5"/><circle cx="200" cy="655" r="5"/>
+    </g>
+
+    <!-- connection dots on used pins -->
+    <circle cx="172" cy="104" r="3" fill="#e8923a"/>
+    <circle cx="200" cy="104" r="3" fill="#d5604e"/>
+    <circle cx="200" cy="162" r="3" fill="#3a3a37"/>
+    <circle cx="172" cy="191" r="3" fill="#7d5bd0"/>
+    <circle cx="172" cy="220" r="3" fill="#3a3a37"/>
+    <circle cx="172" cy="249" r="3" fill="#8a8f98"/>
+    <circle cx="200" cy="249" r="3" fill="#d9a824"/>
+    <circle cx="172" cy="597" r="3" fill="#3f9e63"/>
+    <circle cx="200" cy="655" r="3" fill="#4a7bd5"/>
+
+    <!-- used pin labels -->
+    <g font-size="10.5" fill="#ffffff" text-anchor="end">
+      <text x="160" y="101">3V3 &#183; 1</text>
+      <text x="160" y="124">5V &#183; 2</text>
+      <text x="160" y="166">GND &#183; 6</text>
+      <text x="160" y="187">GPIO4 &#183; 7</text>
+      <text x="160" y="224">GND &#183; 9</text>
+      <text x="160" y="245">GPIO17 &#183; 11</text>
+      <text x="160" y="268">GPIO18 &#183; 12</text>
+      <text x="160" y="601">GPIO19 &#183; 35</text>
+      <text x="160" y="644">GPIO21 &#183; 40</text>
+    </g>
+    <g stroke="#ffffff" stroke-width="0.9" stroke-dasharray="2 2">
+      <line x1="163" y1="120" x2="194" y2="107"/>
+      <line x1="163" y1="163" x2="193" y2="162"/>
+      <line x1="163" y1="264" x2="194" y2="253"/>
+      <line x1="163" y1="641" x2="193" y2="652"/>
+    </g>
   </g>
-  
-  
-  <circle cx="122" cy="408" r="3" fill="#F0997B" stroke="#993C1D" stroke-width="0.5" style="fill:rgb(240, 153, 123);stroke:rgb(153, 60, 29);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="122" y="403" text-anchor="middle" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:auto">VIN</text>
-  
-  <circle cx="148" cy="408" r="3" fill="#888780" stroke="#444441" stroke-width="0.5" style="fill:rgb(136, 135, 128);stroke:rgb(68, 68, 65);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="148" y="403" text-anchor="middle" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:auto">GND</text>
-  
-  <circle cx="174" cy="408" r="3" fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5" style="fill:rgb(181, 212, 244);stroke:rgb(24, 95, 165);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="174" y="403" text-anchor="middle" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:auto">SDM</text>
-  
-  <circle cx="200" cy="408" r="3" fill="#888780" stroke="#444441" stroke-width="0.5" style="fill:rgb(136, 135, 128);stroke:rgb(68, 68, 65);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="200" y="403" text-anchor="middle" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:auto">GAIN</text>
-  
-  <circle cx="226" cy="408" r="3" fill="#AFA9EC" stroke="#3C3489" stroke-width="0.5" style="fill:rgb(175, 169, 236);stroke:rgb(60, 52, 137);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="226" y="403" text-anchor="middle" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:auto">BCLK</text>
-  
-  <circle cx="252" cy="408" r="3" fill="#AFA9EC" stroke="#3C3489" stroke-width="0.5" style="fill:rgb(175, 169, 236);stroke:rgb(60, 52, 137);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="252" y="403" text-anchor="middle" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:auto">LRCK</text>
-  
-  <circle cx="278" cy="408" r="3" fill="#AFA9EC" stroke="#3C3489" stroke-width="0.5" style="fill:rgb(175, 169, 236);stroke:rgb(60, 52, 137);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="278" y="403" text-anchor="middle" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:auto">DIN</text>
-  
-  <circle cx="148" cy="460" r="3" fill="#D85A30" stroke="#712B13" stroke-width="0.5" style="fill:rgb(216, 90, 48);stroke:rgb(113, 43, 19);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="148" y="468" text-anchor="middle" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:auto">OUT+</text>
-  <circle cx="174" cy="460" r="3" fill="#D85A30" stroke="#712B13" stroke-width="0.5" style="fill:rgb(216, 90, 48);stroke:rgb(113, 43, 19);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="174" y="468" text-anchor="middle" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:auto">OUT−</text>
 
-  
-  <g style="fill:rgb(0, 0, 0);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">
-    <rect x="520" y="370" width="130" height="80" rx="8" stroke-width="0.5" style="fill:rgb(250, 238, 218);stroke:rgb(133, 79, 11);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-    <text x="585" y="400" text-anchor="middle" dominant-baseline="central" style="fill:rgb(99, 56, 6);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:14px;font-weight:500;text-anchor:middle;dominant-baseline:central">Speaker</text>
-    <text x="585" y="418" text-anchor="middle" dominant-baseline="central" style="fill:rgb(133, 79, 11);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:central">3W · 8Ω</text>
-    <text x="585" y="434" text-anchor="middle" dominant-baseline="central" style="fill:rgb(133, 79, 11);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:central">with enclosure</text>
+  <!-- ==================== MKE-M02 button module ==================== -->
+  <g>
+    <text x="560" y="88" font-size="12" font-weight="600" fill="#26251f" text-anchor="middle">MKE-M02 button module (any colour)</text>
+    <rect x="470" y="96" width="180" height="132" rx="10" fill="#27567b" stroke="#1b3c57"/>
+    <circle cx="575" cy="162" r="34" fill="#b9bcc2"/>
+    <circle cx="575" cy="162" r="27" fill="#c94a42"/>
+    <circle cx="575" cy="162" r="27" fill="none" stroke="#8f2f29" stroke-width="2"/>
+    <!-- pins -->
+    <g fill="#d9b64a" stroke="#8a6d1f" stroke-width="0.8">
+      <rect x="458" y="122" width="12" height="12"/>
+      <rect x="458" y="152" width="12" height="12"/>
+      <rect x="458" y="182" width="12" height="12"/>
+    </g>
+    <g font-size="11" font-weight="600" fill="#ffffff">
+      <text x="478" y="132">VCC</text>
+      <text x="478" y="162">SIG</text>
+      <text x="478" y="192">GND</text>
+    </g>
+    <text x="560" y="246" font-size="10" fill="#6b6a63" text-anchor="middle">Pin order varies. Always follow the letters printed on your module.</text>
   </g>
-  
-  <circle cx="536" cy="370" r="4" fill="#D85A30" stroke="#712B13" stroke-width="0.5" style="fill:rgb(216, 90, 48);stroke:rgb(113, 43, 19);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="536" y="362" text-anchor="middle" fill="#993C1D" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:auto">+</text>
-  <circle cx="556" cy="370" r="4" fill="#888780" stroke="#444441" stroke-width="0.5" style="fill:rgb(136, 135, 128);stroke:rgb(68, 68, 65);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="556" y="362" text-anchor="middle" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:middle;dominant-baseline:auto">−</text>
 
-  
+  <!-- ==================== MAX98357A amplifier ==================== -->
+  <g>
+    <text x="630" y="540" font-size="12" font-weight="600" fill="#26251f" text-anchor="middle">MAX98357A &#183; I2S 3 W amp</text>
+    <rect x="556" y="548" width="154" height="172" rx="6" fill="#7a2437" stroke="#541726"/>
+    <!-- left pins -->
+    <g fill="#d9b64a" stroke="#8a6d1f" stroke-width="0.8">
+      <rect x="550" y="566" width="12" height="12"/>
+      <rect x="550" y="588" width="12" height="12"/>
+      <rect x="550" y="610" width="12" height="12"/>
+      <rect x="550" y="632" width="12" height="12"/>
+      <rect x="550" y="654" width="12" height="12"/>
+      <rect x="550" y="676" width="12" height="12"/>
+      <rect x="550" y="698" width="12" height="12"/>
+    </g>
+    <g font-size="10" font-weight="600" fill="#ffffff">
+      <text x="570" y="576">VIN</text>
+      <text x="570" y="598">GND</text>
+      <text x="570" y="620">SD</text>
+      <text x="570" y="642">GAIN &#183; leave empty</text>
+      <text x="570" y="664">BCLK</text>
+      <text x="570" y="686">LRC</text>
+      <text x="570" y="708">DIN</text>
+    </g>
+    <!-- screw terminal -->
+    <rect x="702" y="600" width="26" height="60" rx="3" fill="#2e8f8f" stroke="#1d6363"/>
+    <circle cx="715" cy="616" r="6" fill="#1d6363"/>
+    <circle cx="715" cy="644" r="6" fill="#1d6363"/>
+    <text x="736" y="606" font-size="10" fill="#26251f">SPK+</text>
+    <text x="736" y="662" font-size="10" fill="#26251f">SPK&#8722;</text>
+  </g>
 
-  
-  <path d="M190 140 L240 140 L240 322" stroke="#B5D4F4" stroke-width="1.5" fill="none" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(181, 212, 244);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <path d="M240 322 L174 322 L174 405" stroke="#B5D4F4" stroke-width="1.5" fill="none" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(181, 212, 244);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="244" y="318" fill="#185FA5" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">3.3V</text>
+  <!-- ==================== speaker ==================== -->
+  <g>
+    <text x="859" y="532" font-size="12" font-weight="600" fill="#26251f" text-anchor="middle">Mini 3 W 8 &#937; speaker</text>
+    <rect x="800" y="540" width="118" height="150" rx="10" fill="#3a3a37" stroke="#26251f"/>
+    <circle cx="859" cy="615" r="46" fill="#57544d"/>
+    <circle cx="859" cy="615" r="28" fill="#6e6a62"/>
+    <circle cx="859" cy="615" r="10" fill="#8a867d"/>
+    <g fill="#d9b64a" stroke="#8a6d1f" stroke-width="0.8">
+      <rect x="792" y="610" width="12" height="12"/>
+      <rect x="792" y="638" width="12" height="12"/>
+    </g>
+  </g>
 
-  
-  <path d="M190 155 L250 155 L250 310 L122 310 L122 405" stroke="#F0997B" stroke-width="1.5" fill="none" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(240, 153, 123);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="254" y="308" fill="#993C1D" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">5V</text>
-
-  
-  <path d="M190 170 L260 170 L260 474" stroke="#888780" stroke-width="1.5" fill="none" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(136, 135, 128);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  
-  <path d="M260 474 L148 474 L148 463" stroke="#888780" stroke-width="1.5" fill="none" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(136, 135, 128);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  
-  <path d="M200 405 L200 380 L260 380 L260 474" stroke="#888780" stroke-width="1" fill="none" stroke-dasharray="4 2" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(136, 135, 128);color:rgb(0, 0, 0);stroke-width:1px;stroke-dasharray:4px, 2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="206" y="374" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">GAIN→GND</text>
-  
-  <path d="M375 398 L375 474" stroke="#888780" stroke-width="1.5" fill="none" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(136, 135, 128);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-
-  
-  <path d="M190 185 L340 185 L340 340 L425 340 L425 398" stroke="#9FE1CB" stroke-width="1.5" fill="none" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(159, 225, 203);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="344" y="182" fill="#0F6E56" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">GPIO4 → BTN</text>
-
-  
-  <path d="M190 200 L226 200 L226 405" stroke="#AFA9EC" stroke-width="1.5" fill="none" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(175, 169, 236);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-
-  
-  <path d="M190 215 L272 215 L272 360 L252 360 L252 405" stroke="#7F77DD" stroke-width="1.5" fill="none" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(127, 119, 221);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-
-  
-  <path d="M190 230 L290 230 L290 370 L278 370 L278 405" stroke="#534AB7" stroke-width="1.5" fill="none" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(83, 74, 183);color:rgb(0, 0, 0);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-
-  
-  <path d="M148 463 L148 500 L510 500 L510 375 L533 375" stroke="#D85A30" stroke-width="2" fill="none" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(216, 90, 48);color:rgb(0, 0, 0);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="480" y="497" text-anchor="end" fill="#993C1D" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:end;dominant-baseline:auto">OUT+</text>
-
-  
-  <path d="M174 463 L174 510 L520 510 L520 385 L553 385" stroke="#888780" stroke-width="2" fill="none" stroke-dasharray="5 3" mask="url(#imagine-text-gaps-35ftdz)" style="fill:none;stroke:rgb(136, 135, 128);color:rgb(0, 0, 0);stroke-width:2px;stroke-dasharray:5px, 3px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="480" y="525" text-anchor="end" fill="var(--color-text-tertiary)" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:end;dominant-baseline:auto">OUT− (NOT GND)</text>
-
-  
-  <rect x="30" y="620" width="620" height="82" rx="6" fill="none" stroke="var(--color-border-tertiary)" stroke-width="0.5" style="fill:none;stroke:rgba(31, 30, 29, 0.15);color:rgb(0, 0, 0);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="46" y="640" dominant-baseline="central" style="fill:rgb(20, 20, 19);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:14px;font-weight:500;text-anchor:start;dominant-baseline:central">Wire legend</text>
-
-  <line x1="46" y1="658" x2="76" y2="658" stroke="#B5D4F4" stroke-width="2" style="fill:rgb(0, 0, 0);stroke:rgb(181, 212, 244);color:rgb(0, 0, 0);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="82" y="662" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">3.3V</text>
-
-  <line x1="130" y1="658" x2="160" y2="658" stroke="#F0997B" stroke-width="2" style="fill:rgb(0, 0, 0);stroke:rgb(240, 153, 123);color:rgb(0, 0, 0);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="166" y="662" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">5V</text>
-
-  <line x1="210" y1="658" x2="240" y2="658" stroke="#888780" stroke-width="2" style="fill:rgb(0, 0, 0);stroke:rgb(136, 135, 128);color:rgb(0, 0, 0);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="246" y="662" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">GND</text>
-
-  <line x1="300" y1="658" x2="330" y2="658" stroke="#9FE1CB" stroke-width="2" style="fill:rgb(0, 0, 0);stroke:rgb(159, 225, 203);color:rgb(0, 0, 0);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="336" y="662" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">GPIO4 (button SIG)</text>
-
-  <line x1="46" y1="682" x2="76" y2="682" stroke="#AFA9EC" stroke-width="2" style="fill:rgb(0, 0, 0);stroke:rgb(175, 169, 236);color:rgb(0, 0, 0);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="82" y="686" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">I2S BCLK (GPIO18)</text>
-
-  <line x1="210" y1="682" x2="240" y2="682" stroke="#7F77DD" stroke-width="2" style="fill:rgb(0, 0, 0);stroke:rgb(127, 119, 221);color:rgb(0, 0, 0);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="246" y="686" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">I2S LRCLK (GPIO19)</text>
-
-  <line x1="390" y1="682" x2="420" y2="682" stroke="#534AB7" stroke-width="2" style="fill:rgb(0, 0, 0);stroke:rgb(83, 74, 183);color:rgb(0, 0, 0);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="426" y="686" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">I2S DIN (GPIO21)</text>
-
-  <line x1="46" y1="696" x2="76" y2="696" stroke="#D85A30" stroke-width="2" style="fill:rgb(0, 0, 0);stroke:rgb(216, 90, 48);color:rgb(0, 0, 0);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="82" y="700" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">OUT+ → spkr +</text>
-
-  <line x1="210" y1="696" x2="240" y2="696" stroke="#888780" stroke-width="2" stroke-dasharray="5 3" style="fill:rgb(0, 0, 0);stroke:rgb(136, 135, 128);color:rgb(0, 0, 0);stroke-width:2px;stroke-dasharray:5px, 3px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="246" y="700" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">OUT− → spkr − (not GND)</text>
-
-  <line x1="430" y1="696" x2="460" y2="696" stroke="#888780" stroke-width="1" stroke-dasharray="4 2" style="fill:rgb(0, 0, 0);stroke:rgb(136, 135, 128);color:rgb(0, 0, 0);stroke-width:1px;stroke-dasharray:4px, 2px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
-  <text x="466" y="700" style="fill:rgb(61, 61, 58);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:12px;font-weight:400;text-anchor:start;dominant-baseline:auto">GAIN→GND strap</text>
-
+  <!-- ==================== legend ==================== -->
+  <g>
+    <rect x="48" y="742" width="872" height="52" rx="8" fill="#efeee8" stroke="#c9c7bc"/>
+    <g stroke-width="4" stroke-linecap="round">
+      <line x1="64" y1="758" x2="86" y2="758" stroke="#d5604e"/>
+      <line x1="264" y1="758" x2="286" y2="758" stroke="#3a3a37"/>
+      <line x1="464" y1="758" x2="486" y2="758" stroke="#e8923a"/>
+      <line x1="664" y1="758" x2="686" y2="758" stroke="#8a8f98"/>
+      <line x1="64" y1="780" x2="86" y2="780" stroke="#7d5bd0"/>
+      <line x1="264" y1="780" x2="286" y2="780" stroke="#d9a824"/>
+      <line x1="464" y1="780" x2="486" y2="780" stroke="#3f9e63"/>
+      <line x1="664" y1="780" x2="686" y2="780" stroke="#4a7bd5"/>
+    </g>
+    <g font-size="11" fill="#26251f">
+      <text x="92" y="762">5 V power (pin 2)</text>
+      <text x="292" y="762">Ground (pins 6, 9)</text>
+      <text x="492" y="762">3.3 V power (pin 1)</text>
+      <text x="692" y="762">Button SIG &#8594; GPIO17 (pin 11)</text>
+      <text x="92" y="784">Amp SD &#8594; GPIO4 (pin 7)</text>
+      <text x="292" y="784">I2S BCLK &#8594; GPIO18 (pin 12)</text>
+      <text x="492" y="784">I2S LRC &#8594; GPIO19 (pin 35)</text>
+      <text x="692" y="784">I2S DIN &#8594; GPIO21 (pin 40)</text>
+    </g>
+  </g>
 </svg>

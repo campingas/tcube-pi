@@ -38,7 +38,7 @@ Install ALSA tools before validating the MAX98357A amplifier and speaker:
 sudo apt install -y alsa-utils
 ```
 
-For the temporary one-button smoke payload under `deploy/pi-zero-button-smoke`, also install:
+For low-level GPIO and MP3 diagnostics (optional; the Rust runtime needs neither), also install:
 
 ```sh
 sudo apt install -y gpiod mpg123
@@ -47,8 +47,8 @@ sudo apt install -y gpiod mpg123
 Package purpose:
 
 - `alsa-utils`: sound device inspection, mixer control, and command-line playback diagnostics.
-- `gpiod`: `gpiomon` command-line GPIO edge detection for the temporary physical-button smoke test.
-- `mpg123`: command-line MP3 playback for stock music content while the final Rust Pi GPIO backend is pending.
+- `gpiod`: `gpiomon` command-line GPIO edge detection for wiring diagnostics independent of the runtime.
+- `mpg123`: command-line MP3 playback diagnostics independent of the runtime.
 
 ## Optional Native Build Tools
 
@@ -75,21 +75,21 @@ Do not install Node.js, pnpm, Vite, Python model workers, or ML tooling on the P
 
 ## Enable I2S Audio
 
-For the MAX98357A prototype output path, enable I2S in `/boot/config.txt`:
+The release installer appends this MAX98357A I2S block to the boot config automatically when it is missing, and prints a reboot reminder:
 
 ```text
 dtparam=i2s=on
 dtoverlay=max98357a
 ```
 
-Reboot, then confirm the card appears:
+To enable it manually before installing, add the same lines to `/boot/firmware/config.txt` (older images use `/boot/config.txt`). Reboot, then confirm the card appears:
 
 ```sh
 sudo reboot
 aplay -l
 ```
 
-The expected prototype card name includes `sndrpimaxims`. If no I2S card appears, power down and re-check the wiring and config before connecting or driving the speaker.
+The expected prototype card name includes `sndrpimaxims` with card id `MAX98357A`. If no I2S card appears, power down and re-check the wiring and config before connecting or driving the speaker.
 
 ## Install Latest Release
 
@@ -111,9 +111,9 @@ The same command also updates an existing installation. If the Pi already runs t
 curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/main/deploy/pi-release/install-latest | sudo env TCUBE_PI_FORCE=1 bash
 ```
 
-On update, `tcube-pi-admin.service` is restarted automatically when its binary, unit file, or env file changed, so the new version is live immediately. An existing `/etc/tcube/tcube-pi-admin.env` is preserved and the new release defaults are written to `/etc/tcube/tcube-pi-admin.env.dist`; data under `/var/lib/tcube` is never touched.
+On update, `tcube-pi-admin.service` and `tcube-pi.service` are restarted automatically when their binaries, unit files, env files, or (for the runtime) content pack changed, so the new version is live immediately. Existing `/etc/tcube/tcube-pi-admin.env` and `/etc/tcube/tcube-pi.env` files are preserved and the new release defaults are written to matching `.env.dist` files; data under `/var/lib/tcube` is never touched.
 
-The bootstrap script downloads the selected release archive and `SHA256SUMS`, verifies the archive plus bundled installer and binaries, extracts the bundle in a temporary directory, then runs the bundled installer. The installer writes application files under `/opt/tcube`, configuration under `/etc/tcube`, data under `/var/lib/tcube`, and systemd service files under `/etc/systemd/system`. It adds the current detected Pi LAN IP and `<hostname>.local` to `/etc/caddy/Caddyfile` when available, then enables `tcube-pi-admin` and Caddy.
+The bootstrap script downloads the selected release archive and `SHA256SUMS`, verifies the archive plus bundled installer and binaries, extracts the bundle in a temporary directory, then runs the bundled installer. The installer writes application files under `/opt/tcube`, configuration under `/etc/tcube`, data under `/var/lib/tcube`, and systemd service files under `/etc/systemd/system`. It adds the current detected Pi LAN IP and `<hostname>.local` to `/etc/caddy/Caddyfile` when available, then enables `tcube-pi-admin`, the `tcube-pi` child runtime, and Caddy. When the installer had to add the I2S overlay to the boot config it defers starting `tcube-pi.service` to the next boot and prints a reboot reminder; it also disables the temporary `tcube-button-smoke.service` if the bench payload was installed earlier.
 
 The installer also wires up device trust and naming:
 
@@ -126,9 +126,18 @@ The installer also wires up device trust and naming:
 Check the services:
 
 ```sh
+systemctl status tcube-pi --no-pager
 systemctl status tcube-pi-admin --no-pager
 systemctl status caddy --no-pager
 ```
+
+Check the child runtime and press a button:
+
+```sh
+journalctl -u tcube-pi -f
+```
+
+Press the button wired to BCM GPIO17 (button 1); the speaker plays the mapped content and the journal logs the press. If your buttons use different lines, edit `TCUBE_PI_BUTTON_GPIOS` in `/etc/tcube/tcube-pi.env` and run `sudo systemctl restart tcube-pi`.
 
 Check the loopback backend and Caddy HTTPS boundary:
 

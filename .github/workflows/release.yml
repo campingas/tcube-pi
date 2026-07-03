@@ -126,7 +126,7 @@ jobs:
         run: |
           set -euo pipefail
           payload_dir="dist/tcube-pi-${VERSION}-linux-arm64"
-          mkdir -p "${payload_dir}/bin" "${payload_dir}/admin-ui" "${payload_dir}/content" "${payload_dir}/deploy/pi-admin-caddy"
+          mkdir -p "${payload_dir}/bin" "${payload_dir}/admin-ui" "${payload_dir}/content" "${payload_dir}/deploy/pi-admin-caddy" "${payload_dir}/deploy/pi-runtime"
 
           install -m 0755 target/release/tcube-pi "${payload_dir}/bin/tcube-pi"
           install -m 0755 target/release/tcube-pi-admin "${payload_dir}/bin/tcube-pi-admin"
@@ -140,6 +140,8 @@ jobs:
           cp deploy/pi-admin-caddy/tcube-pi-admin.service "${payload_dir}/deploy/pi-admin-caddy/tcube-pi-admin.service"
           install -m 0755 deploy/pi-admin-caddy/tcube-mdns-alias "${payload_dir}/deploy/pi-admin-caddy/tcube-mdns-alias"
           cp deploy/pi-admin-caddy/tcube-mdns-alias.service "${payload_dir}/deploy/pi-admin-caddy/tcube-mdns-alias.service"
+          cp deploy/pi-runtime/tcube-pi.env "${payload_dir}/deploy/pi-runtime/tcube-pi.env"
+          cp deploy/pi-runtime/tcube-pi.service "${payload_dir}/deploy/pi-runtime/tcube-pi.service"
 
           tar -C dist -czf "dist/${ARCHIVE_NAME}" "tcube-pi-${VERSION}-linux-arm64"
 

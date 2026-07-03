@@ -26,6 +26,8 @@ require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.env"
 require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.service"
 require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias"
 require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias.service"
+require_path "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.env"
+require_path "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.service"
 
 detect_lan_address() {
   local candidate=""
@@ -99,6 +101,35 @@ mdns_service_state() {
     "$(file_digest /etc/systemd/system/tcube-mdns-alias.service)"
 }
 
+runtime_service_state() {
+  printf '%s|%s|%s|%s\n' \
+    "$(file_digest /opt/tcube/bin/tcube-pi)" \
+    "$(file_digest /etc/systemd/system/tcube-pi.service)" \
+    "$(file_digest /etc/tcube/tcube-pi.env)" \
+    "$(file_digest /opt/tcube/content/content.json)"
+}
+
+ensure_i2s_boot_config() {
+  local boot_config="/boot/firmware/config.txt"
+  if [[ ! -f "${boot_config}" ]] && [[ -f /boot/config.txt ]]; then
+    boot_config="/boot/config.txt"
+  fi
+  if [[ ! -f "${boot_config}" ]]; then
+    echo "WARNING: no boot config.txt found; enable the MAX98357A I2S overlay manually." >&2
+    return 1
+  fi
+  if grep -q "T-Cube MAX98357A I2S audio" "${boot_config}"; then
+    return 1
+  fi
+  cat >> "${boot_config}" <<'CONFIG'
+
+# T-Cube MAX98357A I2S audio
+dtparam=i2s=on
+dtoverlay=max98357a
+CONFIG
+  return 0
+}
+
 release_version="${TCUBE_PI_VERSION:-}"
 if [[ -z "${release_version}" ]]; then
   payload_dir_name="$(basename "${SCRIPT_DIR}")"
@@ -111,6 +142,7 @@ echo "Installing T-Cube Pi release from ${SCRIPT_DIR}"
 
 admin_state_before="$(admin_service_state)"
 mdns_state_before="$(mdns_service_state)"
+runtime_state_before="$(runtime_service_state)"
 
 if ! id -u tcube >/dev/null 2>&1; then
   useradd --system --home /var/lib/tcube --shell /usr/sbin/nologin tcube
@@ -145,9 +177,28 @@ if [[ -f /etc/tcube/tcube-pi-admin.env ]]; then
 else
   install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.env" /etc/tcube/tcube-pi-admin.env
 fi
+runtime_env_note=""
+if [[ -f /etc/tcube/tcube-pi.env ]]; then
+  install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.env" /etc/tcube/tcube-pi.env.dist
+  runtime_env_note="Kept existing /etc/tcube/tcube-pi.env; new release defaults written to /etc/tcube/tcube-pi.env.dist"
+else
+  install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.env" /etc/tcube/tcube-pi.env
+fi
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.service" /etc/systemd/system/tcube-pi-admin.service
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias.service" /etc/systemd/system/tcube-mdns-alias.service
+install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.service" /etc/systemd/system/tcube-pi.service
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/Caddyfile" /etc/caddy/Caddyfile
+
+reboot_needed=0
+if ensure_i2s_boot_config; then
+  reboot_needed=1
+fi
+
+if systemctl is-enabled --quiet tcube-button-smoke.service 2>/dev/null \
+  || systemctl is-active --quiet tcube-button-smoke.service 2>/dev/null; then
+  echo "Disabling the temporary tcube-button-smoke.service; tcube-pi.service supersedes it."
+  systemctl disable --now tcube-button-smoke.service || true
+fi
 
 device_hostname="$(hostname 2>/dev/null || true)"
 device_hostname="${device_hostname%%.*}"
@@ -160,6 +211,7 @@ fi
 
 admin_state_after="$(admin_service_state)"
 mdns_state_after="$(mdns_service_state)"
+runtime_state_after="$(runtime_service_state)"
 
 systemctl daemon-reload
 systemctl enable tcube-pi-admin.service
@@ -168,6 +220,15 @@ if ! systemctl is-active --quiet tcube-pi-admin.service; then
 elif [[ "${admin_state_before}" != "${admin_state_after}" ]]; then
   echo "Restarting tcube-pi-admin.service to apply the updated release..."
   systemctl restart tcube-pi-admin.service
+fi
+systemctl enable tcube-pi.service
+if [[ "${reboot_needed}" -eq 1 ]]; then
+  echo "The MAX98357A I2S overlay was added to the boot config; tcube-pi.service starts after the reboot."
+elif ! systemctl is-active --quiet tcube-pi.service; then
+  systemctl start tcube-pi.service
+elif [[ "${runtime_state_before}" != "${runtime_state_after}" ]]; then
+  echo "Restarting tcube-pi.service to apply the updated release..."
+  systemctl restart tcube-pi.service
 fi
 if systemctl is-active --quiet caddy; then
   systemctl reload caddy
@@ -231,13 +292,24 @@ MESSAGE
 if [[ -n "${env_note}" ]]; then
   echo "  ${env_note}"
 fi
+if [[ -n "${runtime_env_note}" ]]; then
+  echo "  ${runtime_env_note}"
+fi
+if [[ "${reboot_needed}" -eq 1 ]]; then
+  echo "  REBOOT REQUIRED: the I2S audio overlay only loads at boot. Run: sudo reboot"
+fi
 cat <<MESSAGE
 
 Service checks (on the Pi):
+  systemctl status tcube-pi --no-pager
+  journalctl -u tcube-pi -f
   systemctl status tcube-pi-admin --no-pager
   systemctl status caddy --no-pager
   curl http://127.0.0.1:8080/api/pi/v1/status
   curl -k https://localhost/api/pi/v1/status
+
+Button check: press the button on BCM GPIO17 (button 1) and listen for audio.
+Edit /etc/tcube/tcube-pi.env if your buttons use different GPIO lines.
 
 Admin URLs:
   https://tcube.local/

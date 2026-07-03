@@ -195,7 +195,10 @@ fn active_button_mappings(content: &ContentPack) -> Result<Vec<ButtonMapping>> {
         .filter(|mapping| {
             matches!(
                 mapping.behavior,
-                ButtonBehavior::Language | ButtonBehavior::Animals | ButtonBehavior::Music
+                ButtonBehavior::Language
+                    | ButtonBehavior::Animals
+                    | ButtonBehavior::Music
+                    | ButtonBehavior::Soundbox
             )
         })
         .cloned()

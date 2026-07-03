@@ -65,6 +65,8 @@
     listActiveContent,
     listInactiveContent,
     listRecentEvents,
+    listSoundboxCatalog,
+    setSoundboxSelection,
     loginPassword,
     logout,
     recoverPassword,
@@ -88,7 +90,8 @@
     PomodoroSettings,
     RecentActivityEvent,
     ServiceStatus,
-    SetupReview
+    SetupReview,
+    SoundboxItem
   } from "./api";
   import { blobToWav, canRecordAudio, isSecureRecorderContext } from "./audio";
   import type { RecordedWav } from "./audio";
@@ -140,7 +143,7 @@
   type ContentListItem = ActiveContentItem | InactiveContentItem;
   type ContentAction = (id: string) => Promise<void>;
 
-  const modes: ButtonMode[] = ["language", "animals", "music", "setup_help", "disabled"];
+  const modes: ButtonMode[] = ["language", "animals", "music", "soundbox", "setup_help", "disabled"];
   const languages = [
     "English",
     "French",
@@ -182,6 +185,7 @@
   let selectedTab: ContentTab = "record";
   let contentListTab: ContentListTab = "active";
   let contentState: Record<string, ContentState> = {};
+  let soundboxState: Record<number, { items: SoundboxItem[]; loading: boolean; error: string | null }> = {};
   let draftForm: DraftForm = { title: "", text: "", language: "English", provider: "auto", voice: "" };
   let uploadFile: File | null = null;
   let uploadPreviewUrl: string | null = null;
@@ -226,6 +230,9 @@
   $: buttons = buttonViewModels(buildButtonConfigs(setup), contentState);
   $: selectedButton = buttons.find((button) => button.id === selectedButtonId) ?? buttons[0] ?? null;
   $: selectedContent = selectedButton?.contentType ? contentState[contentKey(selectedButton)] : null;
+  $: if (session?.authenticated && selectedButton?.mode === "soundbox" && !soundboxState[selectedButton.id]) {
+    void refreshSoundbox(selectedButton.id);
+  }
   $: currentRole = session?.cubes?.[0]?.role ?? "";
   $: isOwner = currentRole === "owner";
   $: roleLabel = currentRole === "owner" ? "owner" : currentRole === "manager" ? "manager" : currentRole || "member";
@@ -391,6 +398,43 @@
           error: errorText(error)
         }
       };
+    }
+  }
+
+  async function refreshSoundbox(buttonId: number) {
+    soundboxState = {
+      ...soundboxState,
+      [buttonId]: { items: soundboxState[buttonId]?.items ?? [], loading: true, error: null }
+    };
+    try {
+      const catalog = await listSoundboxCatalog(buttonId);
+      soundboxState = {
+        ...soundboxState,
+        [buttonId]: { items: catalog.items, loading: false, error: null }
+      };
+    } catch (error) {
+      soundboxState = {
+        ...soundboxState,
+        [buttonId]: { items: [], loading: false, error: errorText(error) }
+      };
+    }
+  }
+
+  async function toggleSoundboxSound(slug: string, active: boolean) {
+    if (!selectedButton) return;
+    const buttonId = selectedButton.id;
+    busy = true;
+    try {
+      const catalog = await setSoundboxSelection(buttonId, slug, active);
+      soundboxState = {
+        ...soundboxState,
+        [buttonId]: { items: catalog.items, loading: false, error: null }
+      };
+      setMessage(active ? "SoundBox sound turned on." : "SoundBox sound turned off.", "success");
+    } catch (error) {
+      setError(error);
+    } finally {
+      busy = false;
     }
   }
 
@@ -619,6 +663,9 @@
       if (button.contentType) {
         await refreshContent(button);
       }
+      if (button.mode === "soundbox") {
+        await refreshSoundbox(button.id);
+      }
       await refreshEvents();
     } catch (error) {
       setError(error);
@@ -711,6 +758,7 @@
       pomodoro = null;
       pomodoroForm = settingsToPomodoroForm(null);
       contentState = {};
+      soundboxState = {};
       recoveryCode = null;
       invitation = null;
       factoryResetPromptOpen = false;
@@ -1116,6 +1164,7 @@
         generatedSpeechStatusError,
         generatedSpeechVoiceOptions,
         trashPrompt,
+        soundbox: selectedButton ? soundboxState[selectedButton.id] ?? null : null,
         busy
       }}
       actions={{
@@ -1141,6 +1190,7 @@
         submitUpload,
         submitGeneration,
         playContentPreview,
+        toggleSoundboxSound,
         promptTrashContent,
         cancelTrashContent,
         confirmTrashContent

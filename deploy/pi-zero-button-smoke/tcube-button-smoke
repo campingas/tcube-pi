@@ -8,8 +8,9 @@ if [[ -f "$config_file" ]]; then
 fi
 
 : "${GPIO_CHIP:=gpiochip0}"
-: "${BUTTON_GPIO:=5}"
+: "${BUTTON_GPIO:=17}"
 : "${AUDIO_DIR:=/opt/tcube/content/audio/english}"
+: "${ALSA_DEVICE:=plughw:CARD=MAX98357A,DEV=0}"
 : "${DEBOUNCE_MS:=250}"
 : "${VOLUME_PERCENT:=80}"
 
@@ -42,6 +43,14 @@ if [[ "${#audio_files[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+wait_for_button_press() {
+  if gpiomon --help 2>&1 | grep -q -- "--edges"; then
+    gpiomon --chip "$GPIO_CHIP" --num-events=1 --edges=rising "$BUTTON_GPIO" >/dev/null
+  else
+    gpiomon -n 1 -r "$GPIO_CHIP" "$BUTTON_GPIO" >/dev/null
+  fi
+}
+
 amixer -q sset Master "${VOLUME_PERCENT}%" >/dev/null 2>&1 || true
 
 printf -v debounce_sleep '%d.%03d' "$((DEBOUNCE_MS / 1000))" "$((DEBOUNCE_MS % 1000))"
@@ -49,12 +58,13 @@ printf -v debounce_sleep '%d.%03d' "$((DEBOUNCE_MS / 1000))" "$((DEBOUNCE_MS % 1
 echo "T-Cube button smoke test"
 echo "GPIO line: $GPIO_CHIP $BUTTON_GPIO"
 echo "Audio dir: $AUDIO_DIR"
+echo "ALSA device: $ALSA_DEVICE"
 echo "Audio files: ${#audio_files[@]}"
 
 index=0
 while true; do
   echo "waiting for rising edge on BCM GPIO $BUTTON_GPIO"
-  gpiomon -n 1 -r "$GPIO_CHIP" "$BUTTON_GPIO" >/dev/null
+  wait_for_button_press
 
   file="${audio_files[$index]}"
   index=$(( (index + 1) % ${#audio_files[@]} ))
@@ -62,10 +72,14 @@ while true; do
   echo "playing: $file"
   case "${file,,}" in
     *.wav)
-      aplay -q "$file"
+      if ! aplay -q -D "$ALSA_DEVICE" "$file"; then
+        echo "playback failed: $file" >&2
+      fi
       ;;
     *.mp3)
-      mpg123 -q "$file"
+      if ! mpg123 -q "$file"; then
+        echo "playback failed: $file" >&2
+      fi
       ;;
     *)
       echo "unsupported audio file: $file" >&2
@@ -74,4 +88,3 @@ while true; do
 
   sleep "$debounce_sleep"
 done
-

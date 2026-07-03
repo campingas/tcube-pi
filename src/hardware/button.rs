@@ -4,12 +4,15 @@ use std::fs::File;
 use std::io::{self, BufReader};
 use std::num::{NonZeroU16, NonZeroU32};
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::db::admin::pomodoro::{runtime_enabled_settings, PomodoroSettings};
+use crate::db::runtime as runtime_db;
 use crate::events::types::{ButtonBehavior, ButtonEvent, ButtonMapping, ContentPack, Response};
+use crate::hardware::gpio;
+use crate::hardware::soundbox;
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use clap::{Parser, ValueEnum};
@@ -36,12 +39,13 @@ const FOCUS_RIGHT_HZ: f32 = 226.0;
 const FOCUS_VOLUME: f32 = 0.10;
 const FOCUS_FADE_SECONDS: f32 = 3.0;
 const FOCUS_SLOW_MOD_HZ: f32 = 0.035;
-#[allow(dead_code)]
-const POMODORO_COMBO_BUTTONS: [u8; 3] = [1, 2, 4];
-#[allow(dead_code)]
-const POMODORO_CHORD_ARM_WINDOW: Duration = Duration::from_millis(180);
-#[allow(dead_code)]
-const POMODORO_HOLD_DURATION: Duration = Duration::from_secs(5);
+pub(crate) const POMODORO_COMBO_BUTTONS: [u8; 3] = [1, 2, 4];
+pub(crate) const POMODORO_CHORD_ARM_WINDOW: Duration = Duration::from_millis(180);
+#[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
+pub(crate) const POMODORO_HOLD_DURATION: Duration = Duration::from_secs(5);
+const RUNTIME_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
+const CONTENT_RELOAD_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Parser)]
 #[command(about = "T-Cube child-facing device runtime")]
@@ -60,6 +64,15 @@ struct Cli {
 
     #[arg(long, default_value = ".")]
     audio_root: PathBuf,
+
+    /// Root directory holding admin-activated media; content pack paths under
+    /// data/audio/ resolve against it instead of the audio root.
+    #[arg(long)]
+    media_root: Option<PathBuf>,
+
+    /// Comma-separated BCM GPIO lines for buttons 1..=5 (Pi backend only).
+    #[arg(long, default_value = gpio::DEFAULT_BUTTON_GPIOS)]
+    button_gpios: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -84,7 +97,7 @@ impl ContentPack {
         Ok(pack)
     }
 
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         let mut seen = HashMap::new();
         for mode_content in &self.modes {
             if mode_content.responses.is_empty() {
@@ -104,7 +117,10 @@ impl ContentPack {
                 }
                 if matches!(
                     mapping.behavior,
-                    ButtonBehavior::Language | ButtonBehavior::Animals | ButtonBehavior::Music
+                    ButtonBehavior::Language
+                        | ButtonBehavior::Animals
+                        | ButtonBehavior::Music
+                        | ButtonBehavior::Soundbox
                 ) {
                     let mode = mapping.mode.as_ref().with_context(|| {
                         format!("button {} is missing a mode", mapping.button_id)
@@ -116,10 +132,41 @@ impl ContentPack {
                             mode
                         );
                     }
+                    if mapping.behavior == ButtonBehavior::Soundbox {
+                        self.validate_soundbox_mode(mode)?;
+                    }
                 }
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_soundbox_mode(&self, mode: &str) -> Result<()> {
+        let mode_content = self
+            .modes
+            .iter()
+            .find(|mode_content| mode_content.mode == mode)
+            .with_context(|| format!("soundbox mode {} is missing", mode))?;
+        for response in &mode_content.responses {
+            let audio_path = response.audio_path.as_deref().with_context(|| {
+                format!("soundbox response {} is missing an audio path", response.id)
+            })?;
+            let slug = soundbox::slug_from_audio_path(audio_path).with_context(|| {
+                format!(
+                    "soundbox response {} must use a {} audio path",
+                    response.id,
+                    soundbox::BUILTIN_PREFIX
+                )
+            })?;
+            if soundbox::melody_for_slug(slug).is_none() {
+                bail!(
+                    "soundbox response {} references unknown builtin sound {}",
+                    response.id,
+                    slug
+                );
+            }
+        }
         Ok(())
     }
 
@@ -142,7 +189,7 @@ impl ContentPack {
             })
     }
 
-    fn mapping_for(&self, button_id: u8) -> Result<ButtonMapping> {
+    pub(crate) fn mapping_for(&self, button_id: u8) -> Result<ButtonMapping> {
         if let Some(mapping) = self
             .button_mappings
             .iter()
@@ -776,6 +823,7 @@ fn behavior_label(behavior: &ButtonBehavior) -> &'static str {
         ButtonBehavior::Language => "LANG",
         ButtonBehavior::Animals => "ANIMAL",
         ButtonBehavior::Music => "MUSIC",
+        ButtonBehavior::Soundbox => "SNDBOX",
         ButtonBehavior::Disabled => "OFF",
         ButtonBehavior::SetupHelp => "SETUP",
     }
@@ -785,11 +833,23 @@ struct TerminalAudioOutput;
 
 impl AudioOutput for TerminalAudioOutput {
     fn play(&self, response: &Response) -> Result<AudioPlayback> {
+        let source_path = match builtin_melody_for_response(response) {
+            Some(melody) => Some(format!("builtin melody: {}", melody.title)),
+            None => response.audio_path.clone(),
+        };
         Ok(AudioPlayback {
             resolved_path: None,
-            source_path: response.audio_path.clone(),
+            source_path,
         })
     }
+}
+
+fn builtin_melody_for_response(response: &Response) -> Option<&'static soundbox::Melody> {
+    response
+        .audio_path
+        .as_deref()
+        .and_then(soundbox::slug_from_audio_path)
+        .and_then(soundbox::melody_for_slug)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -801,28 +861,58 @@ enum PomodoroChime {
     Cancel,
 }
 
+/// Locations content pack audio paths resolve against. Shipped content lives
+/// under the audio root; admin-activated media is stored as data/audio/...
+/// and lives under the media root.
+#[derive(Clone, Debug)]
+struct AudioRoots {
+    audio_root: PathBuf,
+    media_root: Option<PathBuf>,
+}
+
+const MEDIA_AUDIO_PREFIX: &str = "data/audio/";
+
 struct LocalAudioOutput {
     _sink_handle: rodio::MixerDeviceSink,
     player: Mutex<rodio::Player>,
-    audio_root: PathBuf,
+    audio_roots: AudioRoots,
 }
 
 impl LocalAudioOutput {
-    fn new(audio_root: PathBuf) -> Result<Self> {
+    fn new(audio_roots: AudioRoots) -> Result<Self> {
         let sink_handle = rodio::DeviceSinkBuilder::open_default_sink()
             .context("failed to open default audio output device")?;
         let player = rodio::Player::connect_new(sink_handle.mixer());
         Ok(Self {
             _sink_handle: sink_handle,
             player: Mutex::new(player),
-            audio_root,
+            audio_roots,
         })
     }
 }
 
 impl AudioOutput for LocalAudioOutput {
     fn play(&self, response: &Response) -> Result<AudioPlayback> {
-        let Some(path) = audio_asset_path(response, &self.audio_root) else {
+        if let Some(slug) = response
+            .audio_path
+            .as_deref()
+            .and_then(soundbox::slug_from_audio_path)
+        {
+            let melody = soundbox::melody_for_slug(slug)
+                .with_context(|| format!("unknown builtin sound {}", slug))?;
+            let player = self
+                .player
+                .lock()
+                .map_err(|_| anyhow::anyhow!("audio player lock was poisoned"))?;
+            player.stop();
+            player.append(soundbox::MelodySource::new(melody));
+            return Ok(AudioPlayback {
+                resolved_path: None,
+                source_path: response.audio_path.clone(),
+            });
+        }
+
+        let Some(path) = audio_asset_path(response, &self.audio_roots) else {
             return Ok(AudioPlayback {
                 resolved_path: None,
                 source_path: response.audio_path.clone(),
@@ -970,20 +1060,24 @@ fn decode_audio_file(path: &Path) -> Result<rodio::Decoder<BufReader<File>>> {
         .with_context(|| format!("failed to decode audio asset {}", path.display()))
 }
 
-fn audio_asset_path(response: &Response, audio_root: &Path) -> Option<PathBuf> {
+fn audio_asset_path(response: &Response, roots: &AudioRoots) -> Option<PathBuf> {
     response
         .audio_path
         .as_deref()
-        .map(|path| resolve_audio_path(path, audio_root))
+        .map(|path| resolve_audio_path(path, roots))
 }
 
-fn resolve_audio_path(audio_path: &str, audio_root: &Path) -> PathBuf {
+fn resolve_audio_path(audio_path: &str, roots: &AudioRoots) -> PathBuf {
     let path = Path::new(audio_path);
     if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        audio_root.join(path)
+        return path.to_path_buf();
     }
+    if let Some(media_root) = &roots.media_root {
+        if let Some(relative) = audio_path.strip_prefix(MEDIA_AUDIO_PREFIX) {
+            return media_root.join(relative);
+        }
+    }
+    roots.audio_root.join(path)
 }
 
 struct TerminalLedOutput;
@@ -1021,6 +1115,8 @@ impl EventStore {
             let conn = Connection::open(&database_path).with_context(|| {
                 format!("failed to open SQLite database {}", database_path.display())
             })?;
+            conn.busy_timeout(RUNTIME_DB_BUSY_TIMEOUT)
+                .context("failed to set SQLite busy timeout")?;
             init_schema(&conn)?;
 
             for event in receiver {
@@ -1115,22 +1211,136 @@ fn init_schema(conn: &Connection) -> Result<()> {
     .context("failed to initialize SQLite schema")
 }
 
+/// The content snapshot the device loop reads from. The sim serves one static
+/// pack; the Pi backend shares a slot that a background thread swaps whenever
+/// the admin database changes, keeping the button path free of database work.
+#[derive(Clone)]
+pub(crate) enum ContentProvider {
+    Static(Arc<ContentPack>),
+    #[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
+    Shared(Arc<RwLock<Arc<ContentPack>>>),
+}
+
+impl ContentProvider {
+    pub(crate) fn current(&self) -> Arc<ContentPack> {
+        match self {
+            Self::Static(pack) => Arc::clone(pack),
+            Self::Shared(slot) => match slot.read() {
+                Ok(guard) => Arc::clone(&guard),
+                Err(poisoned) => Arc::clone(&poisoned.into_inner()),
+            },
+        }
+    }
+}
+
+/// Polls the shared admin database and swaps a freshly merged content snapshot
+/// into the provider slot when the runtime-relevant configuration changed.
+#[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
+struct ContentReloadState {
+    database_path: PathBuf,
+    base: ContentPack,
+    conn: Option<Connection>,
+    data_version: Option<i64>,
+    fingerprint: Option<String>,
+}
+
+#[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
+impl ContentReloadState {
+    fn new(database_path: PathBuf, base: ContentPack) -> Self {
+        Self {
+            database_path,
+            base,
+            conn: None,
+            data_version: None,
+            fingerprint: None,
+        }
+    }
+
+    fn poll(&mut self, slot: &RwLock<Arc<ContentPack>>) {
+        if let Err(error) = self.try_poll(slot) {
+            eprintln!("content reload check failed: {error:#}");
+            self.conn = None;
+        }
+    }
+
+    fn try_poll(&mut self, slot: &RwLock<Arc<ContentPack>>) -> Result<()> {
+        if self.conn.is_none() {
+            if !self.database_path.exists() {
+                return Ok(());
+            }
+            let conn = Connection::open(&self.database_path).with_context(|| {
+                format!(
+                    "failed to open SQLite database {}",
+                    self.database_path.display()
+                )
+            })?;
+            conn.busy_timeout(RUNTIME_DB_BUSY_TIMEOUT)
+                .context("failed to set SQLite busy timeout")?;
+            self.conn = Some(conn);
+        }
+        let conn = self.conn.as_ref().expect("connection was just ensured");
+
+        let data_version: i64 = conn
+            .query_row("PRAGMA data_version", [], |row| row.get(0))
+            .context("failed to read SQLite data version")?;
+        if self.data_version == Some(data_version) && self.fingerprint.is_some() {
+            return Ok(());
+        }
+        self.data_version = Some(data_version);
+
+        let fingerprint = runtime_db::config_fingerprint(conn)?;
+        if self.fingerprint.as_deref() == Some(fingerprint.as_str()) {
+            return Ok(());
+        }
+
+        let overlay = runtime_db::read_overlay(conn)?;
+        let merged = runtime_db::merge_content(&self.base, &overlay).context(
+            "admin database state produced an invalid content pack; keeping the previous snapshot",
+        )?;
+        match slot.write() {
+            Ok(mut guard) => *guard = Arc::new(merged),
+            Err(poisoned) => *poisoned.into_inner() = Arc::new(merged),
+        }
+        self.fingerprint = Some(fingerprint);
+        println!("content snapshot refreshed from admin database");
+        Ok(())
+    }
+}
+
+#[cfg(all(feature = "pi-gpio", target_os = "linux"))]
+fn start_db_backed_provider(base: ContentPack, database_path: PathBuf) -> Result<ContentProvider> {
+    let slot = Arc::new(RwLock::new(Arc::new(base.clone())));
+    let thread_slot = Arc::clone(&slot);
+    thread::Builder::new()
+        .name("content-reload".to_string())
+        .spawn(move || {
+            let mut state = ContentReloadState::new(database_path, base);
+            loop {
+                state.poll(&thread_slot);
+                thread::sleep(CONTENT_RELOAD_INTERVAL);
+            }
+        })
+        .context("failed to spawn content reload thread")?;
+    Ok(ContentProvider::Shared(slot))
+}
+
 fn run_sim(
     content: ContentPack,
     database_path: PathBuf,
     audio_backend: AudioBackend,
-    audio_root: PathBuf,
+    audio_roots: AudioRoots,
 ) -> Result<()> {
     let mut input = TerminalButtonInput::new(content.clone())?;
     let led = TerminalLedOutput;
+    let provider = ContentProvider::Static(Arc::new(content));
     match audio_backend {
         AudioBackend::Terminal => {
             let audio = TerminalAudioOutput;
-            run_device_loop(&mut input, &audio, &led, content, database_path)
+            run_device_loop(&mut input, &audio, &led, provider, database_path)
         }
         AudioBackend::Local => {
-            let audio = LocalAudioOutput::new(audio_root)?;
-            run_device_loop(&mut input, &audio, &led, content, database_path)
+            let audio = LocalAudioOutput::new(audio_roots)?;
+            run_device_loop(&mut input, &audio, &led, provider, database_path)
         }
     }
 }
@@ -1139,16 +1349,21 @@ fn run_device_loop(
     input: &mut dyn ButtonInput,
     audio: &dyn AudioOutput,
     led: &dyn LedOutput,
-    content: ContentPack,
+    provider: ContentProvider,
     database_path: PathBuf,
 ) -> Result<()> {
     let store = EventStore::start(database_path.clone())?;
     let mut response_counts: HashMap<String, usize> = HashMap::new();
 
     loop {
-        match input.next_press()? {
+        let event = input.next_press()?;
+        let content = provider.current();
+        match event {
             InputEvent::Button(press) => match press.behavior {
-                ButtonBehavior::Language | ButtonBehavior::Animals | ButtonBehavior::Music => {
+                ButtonBehavior::Language
+                | ButtonBehavior::Animals
+                | ButtonBehavior::Music
+                | ButtonBehavior::Soundbox => {
                     let occurred_at = Utc::now().to_rfc3339();
                     let mode = press
                         .mode
@@ -1280,6 +1495,8 @@ fn handle_pomodoro_shortcut(
 ) -> Result<()> {
     let conn = Connection::open(database_path)
         .with_context(|| format!("failed to open SQLite database {}", database_path.display()))?;
+    conn.busy_timeout(RUNTIME_DB_BUSY_TIMEOUT)
+        .context("failed to set SQLite busy timeout")?;
     let Some(settings) = runtime_enabled_settings(&conn)? else {
         store.record_setup_debug(SetupDebugEvent {
             event_type: "pomodoro_skipped".to_string(),
@@ -1361,39 +1578,34 @@ fn run_pomodoro_routine(
     Ok(())
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ButtonGestureEventKind {
+pub(crate) enum ButtonGestureEventKind {
     Down,
     Up,
     Tick,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ButtonGestureEvent {
-    button_id: u8,
-    kind: ButtonGestureEventKind,
-    at: Duration,
+pub(crate) struct ButtonGestureEvent {
+    pub(crate) button_id: u8,
+    pub(crate) kind: ButtonGestureEventKind,
+    pub(crate) at: Duration,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PomodoroGesture {
+pub(crate) enum PomodoroGesture {
     HoldCompleted,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug)]
-struct PomodoroGestureRecognizer {
+pub(crate) struct PomodoroGestureRecognizer {
     pressed_since: HashMap<u8, Duration>,
     chord_started_at: Option<Duration>,
     completed: bool,
 }
 
-#[allow(dead_code)]
 impl PomodoroGestureRecognizer {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             pressed_since: HashMap::new(),
             chord_started_at: None,
@@ -1401,7 +1613,7 @@ impl PomodoroGestureRecognizer {
         }
     }
 
-    fn handle(&mut self, event: ButtonGestureEvent) -> Option<PomodoroGesture> {
+    pub(crate) fn handle(&mut self, event: ButtonGestureEvent) -> Option<PomodoroGesture> {
         match event.kind {
             ButtonGestureEventKind::Down => {
                 self.pressed_since
@@ -1478,7 +1690,10 @@ fn button_press(button_id: u8, content: &ContentPack) -> Result<ButtonPress> {
 
 fn mapping_summary_label(mapping: &ButtonMapping) -> String {
     match mapping.behavior {
-        ButtonBehavior::Language | ButtonBehavior::Animals | ButtonBehavior::Music => mapping
+        ButtonBehavior::Language
+        | ButtonBehavior::Animals
+        | ButtonBehavior::Music
+        | ButtonBehavior::Soundbox => mapping
             .mode
             .as_deref()
             .unwrap_or("unconfigured")
@@ -1488,15 +1703,130 @@ fn mapping_summary_label(mapping: &ButtonMapping) -> String {
     }
 }
 
+/// Logs LED intents to stdout (journald on the Pi) until LED hardware is
+/// validated and a real output backend exists.
+#[cfg(all(feature = "pi-gpio", target_os = "linux"))]
+struct LogLedOutput;
+
+#[cfg(all(feature = "pi-gpio", target_os = "linux"))]
+impl LedOutput for LogLedOutput {
+    fn pulse(&self, label: &str) -> Result<()> {
+        println!("led pulse: {label}");
+        Ok(())
+    }
+
+    fn blink_inactive(&self) -> Result<()> {
+        println!("led blink: inactive");
+        Ok(())
+    }
+}
+
+/// Physical button input: receives pipeline events from the GPIO listener
+/// thread and resolves button ids against the current content snapshot, so
+/// live-reloaded mappings apply to the very next press.
+#[cfg(all(feature = "pi-gpio", target_os = "linux"))]
+struct GpioButtonInput {
+    listener: gpio::GpioListener,
+    provider: ContentProvider,
+}
+
+#[cfg(all(feature = "pi-gpio", target_os = "linux"))]
+impl GpioButtonInput {
+    fn new(pin_map: gpio::PinMap, provider: ContentProvider) -> Result<Self> {
+        let listener = gpio::GpioListener::start(pin_map)?;
+        Ok(Self { listener, provider })
+    }
+}
+
+#[cfg(all(feature = "pi-gpio", target_os = "linux"))]
+impl ButtonInput for GpioButtonInput {
+    fn next_press(&mut self) -> Result<InputEvent> {
+        loop {
+            match self.listener.recv()? {
+                gpio::PipelineEvent::Press(button_id) => {
+                    let content = self.provider.current();
+                    match button_press(button_id, &content) {
+                        Ok(press) => return Ok(InputEvent::Button(press)),
+                        Err(error) => {
+                            eprintln!("ignoring press on button {button_id}: {error:#}");
+                        }
+                    }
+                }
+                gpio::PipelineEvent::PomodoroShortcut => return Ok(InputEvent::PomodoroShortcut),
+            }
+        }
+    }
+
+    fn feedback(&mut self, feedback: DeviceFeedback) -> Result<()> {
+        match feedback {
+            DeviceFeedback::Playback {
+                button_id,
+                mode,
+                response,
+                ..
+            } => println!("button {button_id} mode {mode} response {}", response.id),
+            DeviceFeedback::Pomodoro { label, detail } => println!("pomodoro {label}: {detail}"),
+            DeviceFeedback::Led { .. } | DeviceFeedback::Quit => {}
+        }
+        Ok(())
+    }
+
+    fn wait_for_pomodoro_cancel(&mut self, duration: Duration) -> Result<bool> {
+        // Any press cancels the routine; consuming the event here also keeps
+        // presses queued during focus from replaying after the routine.
+        match self.listener.recv_timeout(duration) {
+            Ok(_) => Ok(true),
+            Err(mpsc::RecvTimeoutError::Timeout) => Ok(false),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                bail!("GPIO listener thread stopped")
+            }
+        }
+    }
+}
+
+#[cfg(all(feature = "pi-gpio", target_os = "linux"))]
+fn run_pi(content: ContentPack, cli: &Cli) -> Result<()> {
+    let pin_map = gpio::PinMap::parse(&cli.button_gpios)?;
+    let audio_roots = AudioRoots {
+        audio_root: cli.audio_root.clone(),
+        media_root: cli.media_root.clone(),
+    };
+    let provider = start_db_backed_provider(content, cli.database.clone())?;
+    let mut input = GpioButtonInput::new(pin_map, provider.clone())?;
+    let led = LogLedOutput;
+    match cli.audio {
+        AudioBackend::Local => {
+            let audio = LocalAudioOutput::new(audio_roots)?;
+            run_device_loop(&mut input, &audio, &led, provider, cli.database.clone())
+        }
+        AudioBackend::Terminal => {
+            let audio = TerminalAudioOutput;
+            run_device_loop(&mut input, &audio, &led, provider, cli.database.clone())
+        }
+    }
+}
+
+#[cfg(not(all(feature = "pi-gpio", target_os = "linux")))]
+fn run_pi(_content: ContentPack, _cli: &Cli) -> Result<()> {
+    bail!(
+        "this build has no GPIO support; rebuild on Linux with --features pi-gpio \
+         (release bundles enable it) or use --backend sim for local development"
+    )
+}
+
 pub fn run_from_cli() -> Result<()> {
     let cli = Cli::parse();
     let content = ContentPack::load(&cli.content)?;
 
     match cli.backend {
-        Backend::Sim => run_sim(content, cli.database, cli.audio, cli.audio_root),
-        Backend::Pi => {
-            bail!("Pi backend is not implemented yet; use --backend sim for local development")
+        Backend::Sim => {
+            let audio_roots = AudioRoots {
+                audio_root: cli.audio_root.clone(),
+                media_root: cli.media_root.clone(),
+            };
+            run_sim(content, cli.database, cli.audio, audio_roots)
         }
+        Backend::Pi => run_pi(content, &cli),
     }
 }
 
@@ -1635,6 +1965,118 @@ mod tests {
         }
     }
 
+    fn soundbox_content() -> ContentPack {
+        let mut content = test_content();
+        content.modes.push(ModeContent {
+            mode: "soundbox".to_string(),
+            responses: vec![
+                Response {
+                    id: "soundbox-twinkle-twinkle".to_string(),
+                    text: "Twinkle Twinkle Little Star".to_string(),
+                    audio_path: Some("builtin:twinkle-twinkle".to_string()),
+                },
+                Response {
+                    id: "soundbox-korobeiniki".to_string(),
+                    text: "Korobeiniki (Tetris Theme)".to_string(),
+                    audio_path: Some("builtin:korobeiniki".to_string()),
+                },
+            ],
+        });
+        content.button_mappings[4] = ButtonMapping {
+            button_id: 5,
+            behavior: ButtonBehavior::Soundbox,
+            mode: Some("soundbox".to_string()),
+        };
+        content
+    }
+
+    #[test]
+    fn validates_soundbox_mappings() {
+        soundbox_content().validate().unwrap();
+    }
+
+    #[test]
+    fn rejects_soundbox_mapping_without_mode() {
+        let mut content = soundbox_content();
+        content.button_mappings[4].mode = None;
+        assert!(content.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_soundbox_response_without_audio_path() {
+        let mut content = soundbox_content();
+        content.modes.last_mut().unwrap().responses[0].audio_path = None;
+        assert!(content.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_soundbox_response_with_unknown_slug() {
+        let mut content = soundbox_content();
+        content.modes.last_mut().unwrap().responses[0].audio_path =
+            Some("builtin:not-a-real-melody".to_string());
+        assert!(content.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_soundbox_response_with_file_audio_path() {
+        let mut content = soundbox_content();
+        content.modes.last_mut().unwrap().responses[0].audio_path =
+            Some("content/audio/music/song.mp3".to_string());
+        assert!(content.validate().is_err());
+    }
+
+    #[test]
+    fn rotates_soundbox_responses_in_device_loop() {
+        let database = NamedTempFile::new().unwrap();
+        let content = soundbox_content();
+        let mut input = ScriptedInput {
+            events: vec![
+                InputEvent::Button(button_press(5, &content).unwrap()),
+                InputEvent::Button(button_press(5, &content).unwrap()),
+                InputEvent::Button(button_press(5, &content).unwrap()),
+                InputEvent::Quit,
+            ],
+            cancel_waits: std::cell::RefCell::new(Vec::new()),
+        };
+        let audio = CapturingAudio {
+            played: std::cell::RefCell::new(Vec::new()),
+            routine: std::cell::RefCell::new(Vec::new()),
+        };
+
+        run_device_loop(
+            &mut input,
+            &audio,
+            &NoopLed,
+            ContentProvider::Static(Arc::new(content)),
+            database.path().to_path_buf(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            audio.played.borrow().as_slice(),
+            [
+                "soundbox-twinkle-twinkle",
+                "soundbox-korobeiniki",
+                "soundbox-twinkle-twinkle"
+            ]
+        );
+    }
+
+    #[test]
+    fn terminal_audio_reports_builtin_melody_titles() {
+        let response = Response {
+            id: "soundbox-korobeiniki".to_string(),
+            text: "Korobeiniki (Tetris Theme)".to_string(),
+            audio_path: Some("builtin:korobeiniki".to_string()),
+        };
+
+        let playback = TerminalAudioOutput.play(&response).unwrap();
+        assert_eq!(
+            playback.source_path.as_deref(),
+            Some("builtin melody: Korobeiniki (Tetris Theme)")
+        );
+    }
+
     #[test]
     fn maps_button_ids_to_modes() {
         let content = test_content();
@@ -1689,6 +2131,13 @@ mod tests {
         );
     }
 
+    fn test_roots(media_root: Option<&str>) -> AudioRoots {
+        AudioRoots {
+            audio_root: PathBuf::from("/runtime"),
+            media_root: media_root.map(PathBuf::from),
+        }
+    }
+
     #[test]
     fn resolves_relative_audio_paths_from_audio_root() {
         let response = Response {
@@ -1698,7 +2147,7 @@ mod tests {
         };
 
         assert_eq!(
-            audio_asset_path(&response, Path::new("/runtime")).unwrap(),
+            audio_asset_path(&response, &test_roots(None)).unwrap(),
             PathBuf::from("/runtime/content/audio/english/hello.wav")
         );
     }
@@ -1712,7 +2161,7 @@ mod tests {
         };
 
         assert_eq!(
-            audio_asset_path(&response, Path::new("/runtime")).unwrap(),
+            audio_asset_path(&response, &test_roots(None)).unwrap(),
             PathBuf::from("/media/tcube/hello.wav")
         );
     }
@@ -1725,7 +2174,28 @@ mod tests {
             audio_path: None,
         };
 
-        assert_eq!(audio_asset_path(&response, Path::new("/runtime")), None);
+        assert_eq!(audio_asset_path(&response, &test_roots(None)), None);
+    }
+
+    #[test]
+    fn resolves_activated_media_paths_from_media_root() {
+        let roots = test_roots(Some("/var/lib/tcube/media"));
+        assert_eq!(
+            resolve_audio_path("data/audio/active/language/en.wav", &roots),
+            PathBuf::from("/var/lib/tcube/media/active/language/en.wav")
+        );
+        assert_eq!(
+            resolve_audio_path("content/audio/english/hello.wav", &roots),
+            PathBuf::from("/runtime/content/audio/english/hello.wav")
+        );
+    }
+
+    #[test]
+    fn media_paths_fall_back_to_audio_root_without_media_root() {
+        assert_eq!(
+            resolve_audio_path("data/audio/active/language/en.wav", &test_roots(None)),
+            PathBuf::from("/runtime/data/audio/active/language/en.wav")
+        );
     }
 
     #[test]
@@ -1772,7 +2242,7 @@ mod tests {
             &mut input,
             &audio,
             &NoopLed,
-            content,
+            ContentProvider::Static(Arc::new(content)),
             database.path().to_path_buf(),
         )
         .unwrap();
@@ -1808,7 +2278,7 @@ mod tests {
             &mut input,
             &audio,
             &NoopLed,
-            content,
+            ContentProvider::Static(Arc::new(content)),
             database.path().to_path_buf(),
         )
         .unwrap();
@@ -1960,7 +2430,7 @@ mod tests {
             &mut input,
             &audio,
             &NoopLed,
-            content,
+            ContentProvider::Static(Arc::new(content)),
             database.path().to_path_buf(),
         )
         .unwrap();
@@ -1975,6 +2445,73 @@ mod tests {
             )
             .unwrap();
         assert_eq!(event_type, "pomodoro_skipped");
+    }
+
+    #[test]
+    fn content_reload_swaps_snapshot_only_on_config_change() {
+        use crate::config::AdminConfig;
+        use crate::db::admin::schema::migrate_admin_database;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let database = dir.path().join("tcube.sqlite3");
+        let config = AdminConfig {
+            bind: "127.0.0.1:0".to_string(),
+            database: database.clone(),
+            ui_dist: PathBuf::from("admin-ui"),
+            media_root: dir.path().join("media"),
+            content_root: dir.path().join("content"),
+            hostname: "tcube.local".to_string(),
+            usb_address: "10.55.0.1".to_string(),
+            usb_connected: false,
+        };
+        let admin_conn = Connection::open(&database).unwrap();
+        migrate_admin_database(&admin_conn, &config).unwrap();
+
+        let base = test_content();
+        let slot = RwLock::new(Arc::new(base.clone()));
+        let mut state = ContentReloadState::new(database, base);
+
+        // First poll overlays the seeded database defaults (btn2 = animals).
+        state.poll(&slot);
+        let snapshot = Arc::clone(&slot.read().unwrap());
+        assert_eq!(
+            snapshot.mapping_for(2).unwrap().behavior,
+            ButtonBehavior::Animals
+        );
+
+        // No configuration change: the snapshot instance stays the same.
+        state.poll(&slot);
+        assert!(Arc::ptr_eq(&snapshot, &slot.read().unwrap()));
+
+        // An admin edit swaps in a rebuilt snapshot.
+        admin_conn
+            .execute(
+                "update button_mappings set mode = 'disabled', language = null, \
+                 updated_at = '2099-01-01T00:00:00Z' where button_id = 2",
+                [],
+            )
+            .unwrap();
+        state.poll(&slot);
+        let updated = Arc::clone(&slot.read().unwrap());
+        assert!(!Arc::ptr_eq(&snapshot, &updated));
+        assert_eq!(
+            updated.mapping_for(2).unwrap().behavior,
+            ButtonBehavior::Disabled
+        );
+    }
+
+    #[test]
+    fn content_reload_keeps_base_pack_when_database_is_missing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let base = test_content();
+        let slot = RwLock::new(Arc::new(base.clone()));
+        let mut state = ContentReloadState::new(dir.path().join("missing.sqlite3"), base);
+
+        state.poll(&slot);
+        assert_eq!(
+            slot.read().unwrap().mapping_for(2).unwrap().behavior,
+            ButtonBehavior::Animals
+        );
     }
 
     fn gesture_down(button_id: u8, millis: u64) -> ButtonGestureEvent {

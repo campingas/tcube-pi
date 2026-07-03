@@ -195,6 +195,41 @@
           "audio_path": "content/audio/music/super-truck.mp3"
         }
       ]
+    },
+    {
+      "mode": "soundbox",
+      "responses": [
+        {
+          "id": "soundbox-twinkle-twinkle",
+          "text": "Twinkle Twinkle Little Star",
+          "audio_path": "builtin:twinkle-twinkle"
+        },
+        {
+          "id": "soundbox-brahms-lullaby",
+          "text": "Brahms' Lullaby",
+          "audio_path": "builtin:brahms-lullaby"
+        },
+        {
+          "id": "soundbox-rock-a-bye-baby",
+          "text": "Rock-a-bye Baby",
+          "audio_path": "builtin:rock-a-bye-baby"
+        },
+        {
+          "id": "soundbox-korobeiniki",
+          "text": "Korobeiniki (Tetris Theme)",
+          "audio_path": "builtin:korobeiniki"
+        },
+        {
+          "id": "soundbox-mountain-king",
+          "text": "In the Hall of the Mountain King",
+          "audio_path": "builtin:mountain-king"
+        },
+        {
+          "id": "soundbox-flight-of-the-bumblebee",
+          "text": "Flight of the Bumblebee",
+          "audio_path": "builtin:flight-of-the-bumblebee"
+        }
+      ]
     }
   ]
 }

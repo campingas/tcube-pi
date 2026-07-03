@@ -85,6 +85,15 @@ pub(crate) fn router() -> Router<AdminState> {
             post(activate_content_item),
         ),
         (
+            "/content/buttons/{button_id}/soundbox",
+            get(list_soundbox_catalog),
+        ),
+        (
+            "/content/buttons/{button_id}/soundbox/{slug}",
+            post(set_soundbox_selection),
+        ),
+        ("/content/soundbox/{slug}/preview", get(soundbox_preview)),
+        (
             "/content/generated-speech/unused",
             delete(trash_unused_generated_speech),
         ),
@@ -424,6 +433,50 @@ async fn activate_content_item(
     .map_err(ApiError::bad_request)
 }
 
+async fn list_soundbox_catalog(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    Path(button_id): Path<i64>,
+) -> Result<Json<content::SoundboxCatalogResponse>, ApiError> {
+    blocking(config, move |config| {
+        content::list_soundbox_catalog(config, token.as_deref(), button_id)
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
+}
+
+async fn set_soundbox_selection(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    Path((button_id, slug)): Path<(i64, String)>,
+    Json(body): Json<content::SoundboxSelectionRequest>,
+) -> Result<Json<content::SoundboxCatalogResponse>, ApiError> {
+    blocking(config, move |config| {
+        content::set_soundbox_selection(config, token.as_deref(), button_id, &slug, body)
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
+}
+
+async fn soundbox_preview(Path(slug): Path<String>) -> Result<Response, ApiError> {
+    let wav = tokio::task::spawn_blocking(move || content::soundbox_preview(&slug))
+        .await
+        .map_err(|error| ApiError::server(anyhow::anyhow!("admin request failed: {error}")))?
+        .map_err(ApiError::bad_request)?;
+    let mut response = wav.into_response();
+    response.headers_mut().insert(
+        axum::http::header::CONTENT_TYPE,
+        HeaderValue::from_static("audio/wav"),
+    );
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        HeaderValue::from_static("max-age=86400"),
+    );
+    Ok(response)
+}
+
 async fn trash_unused_generated_speech(
     State(config): State<AdminState>,
     SessionCookie(token): SessionCookie,
@@ -722,6 +775,209 @@ mod tests {
             .as_str()
             .unwrap_or_default()
             .contains("owner permission required"));
+    }
+
+    #[tokio::test]
+    async fn soundbox_mode_catalog_and_toggle_flow() {
+        let root = TempDir::new().unwrap();
+        let config = Arc::new(test_config(&root));
+        let app = super::router().with_state(Arc::clone(&config));
+        let owner_cookie = bootstrap_owner_cookie(app.clone()).await;
+
+        let set_mode = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/pi/v1/setup/buttons/4/mode")
+                    .header("cookie", &owner_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "mode": "soundbox" }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(set_mode.status(), StatusCode::OK);
+
+        let review = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pi/v1/setup/review")
+                    .header("cookie", &owner_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(review.status(), StatusCode::OK);
+        let body = to_bytes(review.into_body(), 1024 * 1024).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["button_modes"]["4"], "soundbox");
+
+        let catalog = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pi/v1/content/buttons/4/soundbox")
+                    .header("cookie", &owner_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(catalog.status(), StatusCode::OK);
+        let body = to_bytes(catalog.into_body(), 1024 * 1024).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 6);
+        assert!(items.iter().all(|item| item["active"] == true));
+        assert_eq!(
+            items
+                .iter()
+                .filter(|item| item["category"] == "bedtime")
+                .count(),
+            3
+        );
+
+        let toggled = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/pi/v1/content/buttons/4/soundbox/korobeiniki")
+                    .header("cookie", &owner_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "active": false }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(toggled.status(), StatusCode::OK);
+        let body = to_bytes(toggled.into_body(), 1024 * 1024).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let korobeiniki = body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["slug"] == "korobeiniki")
+            .unwrap();
+        assert_eq!(korobeiniki["active"], false);
+    }
+
+    #[tokio::test]
+    async fn soundbox_toggle_keeps_last_active_sound() {
+        let root = TempDir::new().unwrap();
+        let config = Arc::new(test_config(&root));
+        let app = super::router().with_state(Arc::clone(&config));
+        let owner_cookie = bootstrap_owner_cookie(app.clone()).await;
+
+        let slugs = [
+            "twinkle-twinkle",
+            "brahms-lullaby",
+            "rock-a-bye-baby",
+            "korobeiniki",
+            "mountain-king",
+        ];
+        for slug in slugs {
+            let toggled = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(format!("/api/pi/v1/content/buttons/2/soundbox/{slug}"))
+                        .header("cookie", &owner_cookie)
+                        .header("content-type", "application/json")
+                        .body(Body::from(json!({ "active": false }).to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(toggled.status(), StatusCode::OK);
+        }
+
+        let last = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/pi/v1/content/buttons/2/soundbox/flight-of-the-bumblebee")
+                    .header("cookie", &owner_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "active": false }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(last.status(), StatusCode::BAD_REQUEST);
+
+        let unknown = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/pi/v1/content/buttons/2/soundbox/not-a-melody")
+                    .header("cookie", &owner_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "active": false }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unknown.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn soundbox_catalog_requires_authentication() {
+        let root = TempDir::new().unwrap();
+        let config = Arc::new(test_config(&root));
+        let app = super::router().with_state(Arc::clone(&config));
+        let _owner_cookie = bootstrap_owner_cookie(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pi/v1/content/buttons/4/soundbox")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn soundbox_preview_returns_wav_audio() {
+        let root = TempDir::new().unwrap();
+        let config = Arc::new(test_config(&root));
+        let app = super::router().with_state(Arc::clone(&config));
+
+        let preview = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pi/v1/content/soundbox/twinkle-twinkle/preview")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(preview.status(), StatusCode::OK);
+        assert_eq!(preview.headers().get(CONTENT_TYPE).unwrap(), "audio/wav");
+        let body = to_bytes(preview.into_body(), 16 * 1024 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(&body[0..4], b"RIFF");
+
+        let unknown = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pi/v1/content/soundbox/not-a-melody/preview")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unknown.status(), StatusCode::BAD_REQUEST);
     }
 
     async fn bootstrap_owner_cookie(app: Router) -> String {

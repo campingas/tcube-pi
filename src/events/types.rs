@@ -14,6 +14,7 @@ pub enum ButtonBehavior {
     Language,
     Animals,
     Music,
+    Soundbox,
     Disabled,
     SetupHelp,
 }

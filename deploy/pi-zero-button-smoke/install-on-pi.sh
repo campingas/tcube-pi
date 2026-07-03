@@ -41,7 +41,7 @@ if [[ -f "$boot_config" ]] && ! grep -q "T-Cube MAX98357A I2S audio" "$boot_conf
 
 # T-Cube MAX98357A I2S audio
 dtparam=i2s=on
-dtoverlay=hifiberry-dac
+dtoverlay=max98357a
 CONFIG
 fi
 
@@ -49,6 +49,5 @@ systemctl daemon-reload
 systemctl enable tcube-button-smoke.service
 
 echo "Installed T-Cube button smoke payload."
-echo "Edit /etc/tcube/tcube-button-smoke.env if your button is not on BCM GPIO5."
+echo "Edit /etc/tcube/tcube-button-smoke.env if your button is not on BCM GPIO17 or the MAX98357A card has a different ALSA name."
 echo "Reboot before testing I2S audio: sudo reboot"
-

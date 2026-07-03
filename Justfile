@@ -36,7 +36,7 @@ run-device-sim-audio:
     cargo run --bin tcube-pi -- --backend sim --audio local
 
 run-device-pi:
-    cargo run --bin tcube-pi -- --backend pi
+    cargo run --bin tcube-pi --all-features -- --backend pi
 
 run-pi-admin:
     #!/usr/bin/env bash

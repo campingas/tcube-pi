@@ -1,0 +1,32 @@
+[Unit]
+Description=T-Cube child device runtime
+After=sound.target tcube-pi-admin.service
+Wants=sound.target
+Conflicts=tcube-button-smoke.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/tcube/tcube-pi.env
+ExecStart=/opt/tcube/bin/tcube-pi \
+  --backend pi \
+  --content ${TCUBE_PI_CONTENT} \
+  --database ${TCUBE_PI_DATABASE} \
+  --audio ${TCUBE_PI_AUDIO} \
+  --audio-root ${TCUBE_PI_AUDIO_ROOT} \
+  --media-root ${TCUBE_PI_MEDIA_ROOT} \
+  --button-gpios ${TCUBE_PI_BUTTON_GPIOS}
+Restart=on-failure
+RestartSec=5
+User=tcube
+Group=tcube
+SupplementaryGroups=gpio audio
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tcube
+DeviceAllow=/dev/gpiochip0 rw
+DeviceAllow=char-alsa rw
+
+[Install]
+WantedBy=multi-user.target

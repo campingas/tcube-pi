@@ -44,7 +44,19 @@ export type SetupReview = {
 };
 
 export type ContentType = "language" | "animals" | "music";
-export type ButtonMode = ContentType | "setup_help" | "disabled";
+export type ButtonMode = ContentType | "soundbox" | "setup_help" | "disabled";
+
+export type SoundboxItem = {
+  slug: string;
+  title: string;
+  category: "bedtime" | "retro";
+  active: boolean;
+  preview_url: string;
+};
+
+export type SoundboxCatalog = {
+  items: SoundboxItem[];
+};
 
 export type ActiveContentItem = {
   id: string;
@@ -335,6 +347,17 @@ export function listActiveContent(buttonId: number, contentType: ContentType, la
 export function listInactiveContent(buttonId: number, contentType: ContentType, language?: string) {
   return api<ContentListResponse<InactiveContentItem>>(
     `${API_ROOT}/content/buttons/${buttonId}/${contentType}/inactive${languageQuery(contentType, language)}`
+  );
+}
+
+export function listSoundboxCatalog(buttonId: number) {
+  return api<SoundboxCatalog>(`${API_ROOT}/content/buttons/${buttonId}/soundbox`);
+}
+
+export function setSoundboxSelection(buttonId: number, slug: string, active: boolean) {
+  return api<SoundboxCatalog>(
+    `${API_ROOT}/content/buttons/${buttonId}/soundbox/${encodeURIComponent(slug)}`,
+    { method: "POST", json: { active } }
   );
 }
 

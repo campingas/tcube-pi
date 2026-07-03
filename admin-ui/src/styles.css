@@ -758,6 +758,13 @@ audio {
   color: var(--accent-amber);
 }
 
+.bfc-soundbox,
+.fpi-soundbox,
+.bfm-soundbox {
+  background: var(--glow-violet);
+  color: var(--accent-violet);
+}
+
 .bfc-setup,
 .fpi-setup,
 .bfm-setup {
@@ -1209,6 +1216,42 @@ audio {
   border-color: var(--accent-coral);
   background: var(--glow-coral);
   color: var(--accent-coral);
+}
+
+.soundbox-group {
+  padding: 0 0 4px;
+}
+
+.soundbox-group-label {
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.soundbox-toggle {
+  flex-shrink: 0;
+  min-width: 44px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-disabled);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+}
+
+.soundbox-toggle-on {
+  border-color: var(--accent-violet);
+  background: var(--glow-violet);
+  color: var(--accent-violet);
+}
+
+.soundbox-note {
+  margin: 8px 0 0;
+  font-size: 11px;
 }
 
 .lang-pad {
