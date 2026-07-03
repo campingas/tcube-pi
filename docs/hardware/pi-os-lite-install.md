@@ -105,6 +105,14 @@ To install a specific version:
 curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/main/deploy/pi-release/install-latest | sudo env TCUBE_PI_VERSION=v0.0.3 bash
 ```
 
+The same command also updates an existing installation. If the Pi already runs the resolved version (recorded in `/opt/tcube/VERSION`), the script exits early without downloading anything. To force a reinstall of the same version:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/main/deploy/pi-release/install-latest | sudo env TCUBE_PI_FORCE=1 bash
+```
+
+On update, `tcube-pi-admin.service` is restarted automatically when its binary, unit file, or env file changed, so the new version is live immediately. An existing `/etc/tcube/tcube-pi-admin.env` is preserved and the new release defaults are written to `/etc/tcube/tcube-pi-admin.env.dist`; data under `/var/lib/tcube` is never touched.
+
 The bootstrap script downloads the selected release archive and `SHA256SUMS`, verifies the archive plus bundled installer and binaries, extracts the bundle in a temporary directory, then runs the bundled installer. The installer writes application files under `/opt/tcube`, configuration under `/etc/tcube`, data under `/var/lib/tcube`, and systemd service files under `/etc/systemd/system`. It adds the current detected Pi LAN IP and `<hostname>.local` to `/etc/caddy/Caddyfile` when available, then enables `tcube-pi-admin` and Caddy.
 
 The installer also wires up device trust and naming:
