@@ -174,7 +174,7 @@ pub(crate) fn set_button_mode(
     selected_language: Option<&str>,
 ) -> Result<()> {
     let content_type = match mode {
-        "language" | "animals" | "music" => Some(mode),
+        "language" | "animals" | "music" | "soundbox" => Some(mode),
         _ => None,
     };
     conn.execute(
@@ -185,6 +185,9 @@ pub(crate) fn set_button_mode(
          mode = excluded.mode, language = excluded.language, content_type = excluded.content_type, updated_at = excluded.updated_at",
         params![button_id, mode, selected_language, content_type, button_id - 1, now()],
     )?;
+    if mode == "soundbox" {
+        super::soundbox::ensure_default_selections(conn, u8::try_from(button_id)?)?;
+    }
     Ok(())
 }
 

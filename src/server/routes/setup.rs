@@ -167,7 +167,7 @@ pub(crate) fn set_button_mode(
     let mode = body.mode.as_str();
     if !matches!(
         mode,
-        "language" | "animals" | "music" | "disabled" | "setup_help"
+        "language" | "animals" | "music" | "soundbox" | "disabled" | "setup_help"
     ) {
         anyhow::bail!("invalid button mode");
     }

@@ -9,6 +9,8 @@ use crate::db::admin::auth::{
     authenticate_session, now, random_token, require_local_cube_role, timestamp, RoleRequirement,
 };
 use crate::db::admin::content::{self as content_storage, ContentEmptyState, NewContentItem};
+use crate::db::admin::soundbox as soundbox_storage;
+use crate::hardware::soundbox;
 use crate::server::media::{
     activate_audio_file, content_preview_url, delete_content_audio_file, delete_draft_audio_file,
     delete_draft_audio_files, draft_audio_path, generated_filename, inspect_wav, media_filename,
@@ -109,6 +111,25 @@ pub(crate) struct GeneratedSpeechRequest {
     text: String,
     provider: Option<String>,
     voice: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct SoundboxItemResponse {
+    slug: &'static str,
+    title: &'static str,
+    category: &'static str,
+    active: bool,
+    preview_url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct SoundboxCatalogResponse {
+    items: Vec<SoundboxItemResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SoundboxSelectionRequest {
+    pub(crate) active: bool,
 }
 
 struct ContentActivity<'a> {
@@ -628,6 +649,77 @@ pub(crate) fn inactive_response_for_item(
         preview_url: content_preview_url(&audio_path),
         audio_path,
     })
+}
+
+pub(crate) fn list_soundbox_catalog(
+    config: &AdminConfig,
+    token: Option<&str>,
+    button_id: i64,
+) -> Result<SoundboxCatalogResponse> {
+    let conn = authenticated_connection(config, token)?;
+    let button_id = validate_soundbox_button(button_id)?;
+    soundbox_storage::ensure_default_selections(&conn, button_id)?;
+    soundbox_catalog_response(&conn, button_id)
+}
+
+pub(crate) fn set_soundbox_selection(
+    config: &AdminConfig,
+    token: Option<&str>,
+    button_id: i64,
+    slug: &str,
+    body: SoundboxSelectionRequest,
+) -> Result<SoundboxCatalogResponse> {
+    let conn = authenticated_connection(config, token)?;
+    let button_id = validate_soundbox_button(button_id)?;
+    let melody = soundbox::melody_for_slug(slug)
+        .with_context(|| format!("unknown SoundBox sound {slug}"))?;
+    soundbox_storage::set_selection(&conn, button_id, slug, body.active)?;
+    record_content_activity(
+        &conn,
+        ContentActivity {
+            kind: "content_activated",
+            button_id: Some(i64::from(button_id)),
+            content_id: Some(slug),
+            content_type: Some("soundbox"),
+            content_title: Some(melody.title),
+            audio_path: None,
+            source: Some("builtin"),
+            detail: Some(if body.active {
+                "SoundBox sound turned on"
+            } else {
+                "SoundBox sound turned off"
+            }),
+        },
+    )?;
+    soundbox_catalog_response(&conn, button_id)
+}
+
+pub(crate) fn soundbox_preview(slug: &str) -> Result<Vec<u8>> {
+    let melody = soundbox::melody_for_slug(slug)
+        .with_context(|| format!("unknown SoundBox sound {slug}"))?;
+    Ok(soundbox::render_wav(melody))
+}
+
+fn validate_soundbox_button(button_id: i64) -> Result<u8> {
+    if !(1..=5).contains(&button_id) {
+        anyhow::bail!("button id must be between 1 and 5");
+    }
+    Ok(button_id as u8)
+}
+
+fn soundbox_catalog_response(conn: &Connection, button_id: u8) -> Result<SoundboxCatalogResponse> {
+    let selections = soundbox_storage::selections_for_button(conn, button_id)?;
+    let items = soundbox::CATALOG
+        .iter()
+        .map(|melody| SoundboxItemResponse {
+            slug: melody.slug,
+            title: melody.title,
+            category: melody.category.label(),
+            active: selections.get(melody.slug).copied().unwrap_or(true),
+            preview_url: format!("/api/pi/v1/content/soundbox/{}/preview", melody.slug),
+        })
+        .collect();
+    Ok(SoundboxCatalogResponse { items })
 }
 
 fn authenticated_connection(config: &AdminConfig, token: Option<&str>) -> Result<Connection> {

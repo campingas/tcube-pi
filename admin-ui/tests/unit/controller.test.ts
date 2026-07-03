@@ -35,8 +35,9 @@ import {
   validateUploadFile,
   waveformLevels
 } from "../../src/recording-controller.ts";
+import { contentTypeForMode, modeLabel, splitMode } from "../../src/button-mode.ts";
 import type { ButtonConfig, DraftForm } from "../../src/types.ts";
-import { isIpLiteralHost } from "../../src/view-utils.ts";
+import { contentLabel, isIpLiteralHost, modeClass } from "../../src/view-utils.ts";
 
 const languageButton: ButtonConfig = {
   id: 1,
@@ -226,5 +227,21 @@ describe("focus routine controller", () => {
     const payload = pomodoroPayload({ ...settingsToPomodoroForm(null), enabled: true });
     assert.equal(payload.enabled, false);
     assert.equal(payload.child_age_years, null);
+  });
+});
+
+describe("soundbox mode", () => {
+  test("splitMode parses soundbox as a valid button mode", () => {
+    assert.deepEqual(splitMode("soundbox"), { mode: "soundbox", language: "English" });
+  });
+
+  test("soundbox has no content lane", () => {
+    assert.equal(contentTypeForMode("soundbox"), null);
+  });
+
+  test("soundbox labels and classes", () => {
+    assert.equal(modeLabel("soundbox"), "SoundBox");
+    assert.equal(modeClass("soundbox"), "soundbox");
+    assert.equal(contentLabel("soundbox", "English"), "SoundBox");
   });
 });

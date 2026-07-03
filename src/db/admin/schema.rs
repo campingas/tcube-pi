@@ -68,7 +68,7 @@ pub(crate) fn migrate_admin_database(conn: &Connection, config: &AdminConfig) ->
 
         create table if not exists button_mappings (
           button_id integer primary key check (button_id between 1 and 5),
-          mode text not null check (mode in ('language', 'animals', 'music', 'disabled', 'setup_help')),
+          mode text not null check (mode in ('language', 'animals', 'music', 'soundbox', 'disabled', 'setup_help')),
           language text,
           content_type text,
           randomness_enabled integer not null default 0,
@@ -265,6 +265,14 @@ pub(crate) fn migrate_admin_database(conn: &Connection, config: &AdminConfig) ->
           updated_at text not null default current_timestamp
         );
 
+        create table if not exists soundbox_selections (
+          button_id integer not null check (button_id between 1 and 5),
+          slug text not null,
+          active integer not null default 1,
+          updated_at text not null default current_timestamp,
+          primary key (button_id, slug)
+        );
+
         create index if not exists idx_content_items_list_scope
           on content_items (button_id, content_type, state, language, order_index, id);
 
@@ -286,11 +294,76 @@ pub(crate) fn migrate_admin_database(conn: &Connection, config: &AdminConfig) ->
           on admin_activity_events (occurred_at desc, id desc);
         ",
     )?;
+    widen_button_mappings_mode_check(conn)?;
     conn.execute(
-        "insert or ignore into schema_migrations (version) values (1), (2), (3), (4), (5)",
+        "insert or ignore into schema_migrations (version) values (1), (2), (3), (4), (5), (6)",
         [],
     )?;
     seed_admin_defaults(conn, config)?;
+    Ok(())
+}
+
+fn widen_button_mappings_mode_check(conn: &Connection) -> Result<()> {
+    let sql: String = conn
+        .query_row(
+            "select sql from sqlite_master where type = 'table' and name = 'button_mappings'",
+            [],
+            |row| row.get(0),
+        )
+        .context("failed to read button_mappings table definition")?;
+    // Old databases keep their original CHECK baked into the stored schema, so a
+    // table rebuild is required to accept 'soundbox'. Tables without a mode CHECK
+    // already accept it.
+    if sql.contains("'soundbox'") || !sql.contains("mode in (") {
+        return Ok(());
+    }
+
+    let mut statement = conn
+        .prepare("select name from pragma_table_info('button_mappings')")
+        .context("failed to inspect button_mappings columns")?;
+    let old_columns = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .context("failed to inspect button_mappings columns")?
+        .collect::<rusqlite::Result<Vec<String>>>()
+        .context("failed to inspect button_mappings columns")?;
+    let copied_columns = [
+        "button_id",
+        "mode",
+        "language",
+        "content_type",
+        "randomness_enabled",
+        "rotation_period",
+        "manual_order_weight",
+        "updated_at",
+    ]
+    .into_iter()
+    .filter(|column| old_columns.iter().any(|old| old == column))
+    .collect::<Vec<_>>()
+    .join(", ");
+
+    conn.execute_batch(&format!(
+        "
+        PRAGMA foreign_keys=off;
+        BEGIN;
+        create table button_mappings_new (
+          button_id integer primary key check (button_id between 1 and 5),
+          mode text not null check (mode in ('language', 'animals', 'music', 'soundbox', 'disabled', 'setup_help')),
+          language text,
+          content_type text,
+          randomness_enabled integer not null default 0,
+          rotation_period text not null default 'none' check (rotation_period in ('none', 'daily', 'weekly')),
+          manual_order_weight integer not null default 0,
+          updated_at text not null default current_timestamp
+        );
+        insert into button_mappings_new ({copied_columns})
+          select {copied_columns} from button_mappings;
+        drop table button_mappings;
+        alter table button_mappings_new rename to button_mappings;
+        COMMIT;
+        PRAGMA foreign_keys=on;
+        "
+    ))
+    .context("failed to widen button_mappings mode constraint")?;
     Ok(())
 }
 
@@ -495,5 +568,90 @@ pub(crate) fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
         Ok(()) => Ok(true),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
         Err(error) => Err(error).context("failed to inspect SQLite schema"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    fn test_config(dir: &TempDir) -> AdminConfig {
+        AdminConfig {
+            bind: "127.0.0.1:0".to_string(),
+            database: dir.path().join("tcube.sqlite3"),
+            ui_dist: PathBuf::from("admin-ui"),
+            media_root: dir.path().join("media"),
+            content_root: dir.path().join("content"),
+            hostname: "tcube.local".to_string(),
+            usb_address: "10.55.0.1".to_string(),
+            usb_connected: false,
+        }
+    }
+
+    #[test]
+    fn widens_button_mappings_mode_check_on_existing_databases() {
+        let dir = TempDir::new().unwrap();
+        let config = test_config(&dir);
+        let conn = Connection::open(&config.database).unwrap();
+
+        conn.execute_batch(
+            "
+            create table button_mappings (
+              button_id integer primary key check (button_id between 1 and 5),
+              mode text not null check (mode in ('language', 'animals', 'music', 'disabled', 'setup_help')),
+              language text,
+              content_type text,
+              randomness_enabled integer not null default 0,
+              rotation_period text not null default 'none' check (rotation_period in ('none', 'daily', 'weekly')),
+              manual_order_weight integer not null default 0,
+              updated_at text not null default current_timestamp
+            );
+            insert into button_mappings (button_id, mode, language, content_type, manual_order_weight)
+            values (1, 'language', 'English', 'language', 0);
+            ",
+        )
+        .unwrap();
+        assert!(conn
+            .execute(
+                "insert into button_mappings (button_id, mode) values (2, 'soundbox')",
+                [],
+            )
+            .is_err());
+
+        migrate_admin_database(&conn, &config).unwrap();
+
+        let language: String = conn
+            .query_row(
+                "select language from button_mappings where button_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(language, "English");
+        conn.execute(
+            "update button_mappings set mode = 'soundbox', content_type = 'soundbox' \
+             where button_id = 4",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn migration_is_idempotent_on_fresh_databases() {
+        let dir = TempDir::new().unwrap();
+        let config = test_config(&dir);
+        let conn = Connection::open(&config.database).unwrap();
+
+        migrate_admin_database(&conn, &config).unwrap();
+        migrate_admin_database(&conn, &config).unwrap();
+
+        conn.execute(
+            "update button_mappings set mode = 'soundbox' where button_id = 5",
+            [],
+        )
+        .unwrap();
+        assert!(table_exists(&conn, "soundbox_selections").unwrap());
     }
 }

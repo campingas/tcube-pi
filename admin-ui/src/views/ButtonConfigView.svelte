@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { TriangleAlert, Check, Languages, Minus, Music, PawPrint, Play, SlidersHorizontal, Upload, Wrench } from "@lucide/svelte";
-  import type { ActiveContentItem, AuthSession, ButtonMode } from "../api";
+  import { TriangleAlert, BoomBox, Check, Languages, Minus, Music, PawPrint, Play, SlidersHorizontal, Upload, Wrench } from "@lucide/svelte";
+  import type { ActiveContentItem, AuthSession, ButtonMode, SoundboxItem } from "../api";
   import type { RecordedWav } from "../audio";
   import type { ButtonConfigViewModel } from "../button-config-controller";
   import type { DraftForm } from "../types";
@@ -8,6 +8,7 @@
   import ContentAddTabs from "../components/ContentAddTabs.svelte";
   import ContentDraftQueue from "../components/ContentDraftQueue.svelte";
   import ContentList from "../components/ContentList.svelte";
+  import SoundboxCatalog from "../components/SoundboxCatalog.svelte";
   import { contentLabel, faceName, modeClass } from "../view-utils";
   import { modeLabel } from "../button-mode";
 
@@ -25,6 +26,7 @@
     generatedSpeechStatusError: string | null;
     generatedSpeechVoiceOptions: string[];
     trashPrompt: { id: string; title: string } | null;
+    soundbox: { items: SoundboxItem[]; loading: boolean; error: string | null } | null;
   };
 
   export let actions: {
@@ -50,6 +52,7 @@
     submitUpload: () => void | Promise<void>;
     submitGeneration: () => void | Promise<void>;
     playContentPreview: (item: ActiveContentItem | { id: string; title: string; preview_url: string | null }) => void | Promise<void>;
+    toggleSoundboxSound: (slug: string, active: boolean) => void | Promise<void>;
     promptTrashContent: (item: { id: string; title: string }) => void;
     cancelTrashContent: () => void;
     confirmTrashContent: () => void | Promise<void>;
@@ -86,6 +89,8 @@
             <PawPrint size={16} strokeWidth={1.5} aria-hidden="true" />
           {:else if button.mode === "music"}
             <Music size={16} strokeWidth={1.5} aria-hidden="true" />
+          {:else if button.mode === "soundbox"}
+            <BoomBox size={16} strokeWidth={1.5} aria-hidden="true" />
           {:else if button.mode === "setup_help"}
             <Wrench size={16} strokeWidth={1.5} aria-hidden="true" />
           {:else}
@@ -110,6 +115,8 @@
             <PawPrint size={22} strokeWidth={1.5} aria-hidden="true" />
           {:else if state.selectedButton.mode === "music"}
             <Music size={22} strokeWidth={1.5} aria-hidden="true" />
+          {:else if state.selectedButton.mode === "soundbox"}
+            <BoomBox size={22} strokeWidth={1.5} aria-hidden="true" />
           {:else if state.selectedButton.mode === "setup_help"}
             <Wrench size={22} strokeWidth={1.5} aria-hidden="true" />
           {:else}
@@ -120,9 +127,9 @@
           <div class="face-hero-name">{faceName(state.selectedButton.id)} · {state.selectedButton.mode === "language" ? "Language" : contentLabel(state.selectedButton.mode, state.selectedButton.language)}</div>
           <div class="face-hero-sub">{state.selectedButton.mode === "language" ? `${state.selectedButton.language} · ` : ""}Button {state.selectedButton.id}</div>
         </div>
-        <div class:active-badge={Boolean(state.selectedButton.contentType)} class:disabled-badge={!state.selectedButton.contentType}>
+        <div class:active-badge={Boolean(state.selectedButton.contentType) || state.selectedButton.mode === "soundbox"} class:disabled-badge={!state.selectedButton.contentType && state.selectedButton.mode !== "soundbox"}>
           <span class="active-dot"></span>
-          {state.selectedButton.contentType ? "Active" : "No content"}
+          {state.selectedButton.contentType || state.selectedButton.mode === "soundbox" ? "Active" : "No content"}
         </div>
       </div>
       <div class="stats-row">
@@ -146,12 +153,11 @@
         <div class="sc-title"><SlidersHorizontal size={16} strokeWidth={1.5} aria-hidden="true" />Mode</div>
       </div>
       <div class="mode-grid" role="radiogroup" aria-label="Button mode">
-        {#each ["language", "animals", "music", "setup_help", "disabled"] as mode, index}
+        {#each ["language", "animals", "music", "soundbox", "setup_help", "disabled"] as mode}
           <button
             type="button"
             class:selected-mode={state.selectedButton.mode === mode}
-            class:mode-cell-5th={index === 4}
-            class:mode-cell={index !== 4}
+            class="mode-cell"
             data-testid={`button-mode-${mode}`}
             role="radio"
             aria-checked={state.selectedButton.mode === mode}
@@ -163,6 +169,8 @@
               <PawPrint size={18} strokeWidth={1.5} aria-hidden="true" />
             {:else if mode === "music"}
               <Music size={18} strokeWidth={1.5} aria-hidden="true" />
+            {:else if mode === "soundbox"}
+              <BoomBox size={18} strokeWidth={1.5} aria-hidden="true" />
             {:else if mode === "setup_help"}
               <Wrench size={18} strokeWidth={1.5} aria-hidden="true" />
             {:else}
@@ -268,11 +276,26 @@
           draggingUpload={state.draggingUpload}
         />
       </section>
+    {:else if state.selectedButton.mode === "soundbox"}
+      <section class="section-card">
+        <div class="sc-header">
+          <div class="sc-title"><BoomBox size={16} strokeWidth={1.5} aria-hidden="true" />SoundBox sounds</div>
+          <div class="sc-meta">built-in only</div>
+        </div>
+        <SoundboxCatalog
+          items={state.soundbox?.items ?? []}
+          loading={Boolean(state.soundbox?.loading)}
+          error={state.soundbox?.error ?? null}
+          busy={state.busy}
+          onPreview={actions.playContentPreview}
+          onToggle={actions.toggleSoundboxSound}
+        />
+      </section>
     {:else}
       <section class="section-card empty-state">
         <Minus size={24} strokeWidth={1.5} aria-hidden="true" />
         <strong>No content lane</strong>
-        <p>Set this button to Language, Animals, or Music before adding active content or drafts.</p>
+        <p>Set this button to Language, Animals, Music, or SoundBox before adding active content or drafts.</p>
       </section>
     {/if}
   {/if}

@@ -14,6 +14,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 ## Implemented
 
 - Keyboard simulator, local content-pack loading, deterministic response selection, local audio playback through `rodio`, and SQLite event logging.
+- SoundBox button mode with a fixed catalog of six built-in melodies (three bedtime, three retro gaming, all public domain) synthesized at playback time by `src/hardware/soundbox.rs`; content-pack responses reference them as `audio_path: "builtin:<slug>"`, parents can only toggle catalog sounds per button (stored in `soundbox_selections`), and the admin API serves catalog list/toggle plus a synthesized WAV preview under `/api/pi/v1/content/soundbox/{slug}/preview`. Recording, uploads, and generation stay rejected for the `soundbox` type.
 - Pi-hosted Rust admin service with setup, authentication, content, media, generated speech, recent activity, static UI, and static media/content routes.
 - Versioned admin API aliases under `/api/pi/v1/*` while legacy unversioned paths remain available.
 - Local accounts with scrypt password hashing, secure session cookies, recovery codes, manager invitations, and owner/manager role checks.

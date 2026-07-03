@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use crate::db::admin::pomodoro::{runtime_enabled_settings, PomodoroSettings};
 use crate::events::types::{ButtonBehavior, ButtonEvent, ButtonMapping, ContentPack, Response};
+use crate::hardware::soundbox;
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use clap::{Parser, ValueEnum};
@@ -104,7 +105,10 @@ impl ContentPack {
                 }
                 if matches!(
                     mapping.behavior,
-                    ButtonBehavior::Language | ButtonBehavior::Animals | ButtonBehavior::Music
+                    ButtonBehavior::Language
+                        | ButtonBehavior::Animals
+                        | ButtonBehavior::Music
+                        | ButtonBehavior::Soundbox
                 ) {
                     let mode = mapping.mode.as_ref().with_context(|| {
                         format!("button {} is missing a mode", mapping.button_id)
@@ -116,10 +120,41 @@ impl ContentPack {
                             mode
                         );
                     }
+                    if mapping.behavior == ButtonBehavior::Soundbox {
+                        self.validate_soundbox_mode(mode)?;
+                    }
                 }
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_soundbox_mode(&self, mode: &str) -> Result<()> {
+        let mode_content = self
+            .modes
+            .iter()
+            .find(|mode_content| mode_content.mode == mode)
+            .with_context(|| format!("soundbox mode {} is missing", mode))?;
+        for response in &mode_content.responses {
+            let audio_path = response.audio_path.as_deref().with_context(|| {
+                format!("soundbox response {} is missing an audio path", response.id)
+            })?;
+            let slug = soundbox::slug_from_audio_path(audio_path).with_context(|| {
+                format!(
+                    "soundbox response {} must use a {} audio path",
+                    response.id,
+                    soundbox::BUILTIN_PREFIX
+                )
+            })?;
+            if soundbox::melody_for_slug(slug).is_none() {
+                bail!(
+                    "soundbox response {} references unknown builtin sound {}",
+                    response.id,
+                    slug
+                );
+            }
+        }
         Ok(())
     }
 
@@ -776,6 +811,7 @@ fn behavior_label(behavior: &ButtonBehavior) -> &'static str {
         ButtonBehavior::Language => "LANG",
         ButtonBehavior::Animals => "ANIMAL",
         ButtonBehavior::Music => "MUSIC",
+        ButtonBehavior::Soundbox => "SNDBOX",
         ButtonBehavior::Disabled => "OFF",
         ButtonBehavior::SetupHelp => "SETUP",
     }
@@ -785,11 +821,23 @@ struct TerminalAudioOutput;
 
 impl AudioOutput for TerminalAudioOutput {
     fn play(&self, response: &Response) -> Result<AudioPlayback> {
+        let source_path = match builtin_melody_for_response(response) {
+            Some(melody) => Some(format!("builtin melody: {}", melody.title)),
+            None => response.audio_path.clone(),
+        };
         Ok(AudioPlayback {
             resolved_path: None,
-            source_path: response.audio_path.clone(),
+            source_path,
         })
     }
+}
+
+fn builtin_melody_for_response(response: &Response) -> Option<&'static soundbox::Melody> {
+    response
+        .audio_path
+        .as_deref()
+        .and_then(soundbox::slug_from_audio_path)
+        .and_then(soundbox::melody_for_slug)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -822,6 +870,25 @@ impl LocalAudioOutput {
 
 impl AudioOutput for LocalAudioOutput {
     fn play(&self, response: &Response) -> Result<AudioPlayback> {
+        if let Some(slug) = response
+            .audio_path
+            .as_deref()
+            .and_then(soundbox::slug_from_audio_path)
+        {
+            let melody = soundbox::melody_for_slug(slug)
+                .with_context(|| format!("unknown builtin sound {}", slug))?;
+            let player = self
+                .player
+                .lock()
+                .map_err(|_| anyhow::anyhow!("audio player lock was poisoned"))?;
+            player.stop();
+            player.append(soundbox::MelodySource::new(melody));
+            return Ok(AudioPlayback {
+                resolved_path: None,
+                source_path: response.audio_path.clone(),
+            });
+        }
+
         let Some(path) = audio_asset_path(response, &self.audio_root) else {
             return Ok(AudioPlayback {
                 resolved_path: None,
@@ -1148,7 +1215,10 @@ fn run_device_loop(
     loop {
         match input.next_press()? {
             InputEvent::Button(press) => match press.behavior {
-                ButtonBehavior::Language | ButtonBehavior::Animals | ButtonBehavior::Music => {
+                ButtonBehavior::Language
+                | ButtonBehavior::Animals
+                | ButtonBehavior::Music
+                | ButtonBehavior::Soundbox => {
                     let occurred_at = Utc::now().to_rfc3339();
                     let mode = press
                         .mode
@@ -1478,7 +1548,10 @@ fn button_press(button_id: u8, content: &ContentPack) -> Result<ButtonPress> {
 
 fn mapping_summary_label(mapping: &ButtonMapping) -> String {
     match mapping.behavior {
-        ButtonBehavior::Language | ButtonBehavior::Animals | ButtonBehavior::Music => mapping
+        ButtonBehavior::Language
+        | ButtonBehavior::Animals
+        | ButtonBehavior::Music
+        | ButtonBehavior::Soundbox => mapping
             .mode
             .as_deref()
             .unwrap_or("unconfigured")
@@ -1633,6 +1706,118 @@ mod tests {
                 },
             ],
         }
+    }
+
+    fn soundbox_content() -> ContentPack {
+        let mut content = test_content();
+        content.modes.push(ModeContent {
+            mode: "soundbox".to_string(),
+            responses: vec![
+                Response {
+                    id: "soundbox-twinkle-twinkle".to_string(),
+                    text: "Twinkle Twinkle Little Star".to_string(),
+                    audio_path: Some("builtin:twinkle-twinkle".to_string()),
+                },
+                Response {
+                    id: "soundbox-korobeiniki".to_string(),
+                    text: "Korobeiniki (Tetris Theme)".to_string(),
+                    audio_path: Some("builtin:korobeiniki".to_string()),
+                },
+            ],
+        });
+        content.button_mappings[4] = ButtonMapping {
+            button_id: 5,
+            behavior: ButtonBehavior::Soundbox,
+            mode: Some("soundbox".to_string()),
+        };
+        content
+    }
+
+    #[test]
+    fn validates_soundbox_mappings() {
+        soundbox_content().validate().unwrap();
+    }
+
+    #[test]
+    fn rejects_soundbox_mapping_without_mode() {
+        let mut content = soundbox_content();
+        content.button_mappings[4].mode = None;
+        assert!(content.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_soundbox_response_without_audio_path() {
+        let mut content = soundbox_content();
+        content.modes.last_mut().unwrap().responses[0].audio_path = None;
+        assert!(content.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_soundbox_response_with_unknown_slug() {
+        let mut content = soundbox_content();
+        content.modes.last_mut().unwrap().responses[0].audio_path =
+            Some("builtin:not-a-real-melody".to_string());
+        assert!(content.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_soundbox_response_with_file_audio_path() {
+        let mut content = soundbox_content();
+        content.modes.last_mut().unwrap().responses[0].audio_path =
+            Some("content/audio/music/song.mp3".to_string());
+        assert!(content.validate().is_err());
+    }
+
+    #[test]
+    fn rotates_soundbox_responses_in_device_loop() {
+        let database = NamedTempFile::new().unwrap();
+        let content = soundbox_content();
+        let mut input = ScriptedInput {
+            events: vec![
+                InputEvent::Button(button_press(5, &content).unwrap()),
+                InputEvent::Button(button_press(5, &content).unwrap()),
+                InputEvent::Button(button_press(5, &content).unwrap()),
+                InputEvent::Quit,
+            ],
+            cancel_waits: std::cell::RefCell::new(Vec::new()),
+        };
+        let audio = CapturingAudio {
+            played: std::cell::RefCell::new(Vec::new()),
+            routine: std::cell::RefCell::new(Vec::new()),
+        };
+
+        run_device_loop(
+            &mut input,
+            &audio,
+            &NoopLed,
+            content,
+            database.path().to_path_buf(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            audio.played.borrow().as_slice(),
+            [
+                "soundbox-twinkle-twinkle",
+                "soundbox-korobeiniki",
+                "soundbox-twinkle-twinkle"
+            ]
+        );
+    }
+
+    #[test]
+    fn terminal_audio_reports_builtin_melody_titles() {
+        let response = Response {
+            id: "soundbox-korobeiniki".to_string(),
+            text: "Korobeiniki (Tetris Theme)".to_string(),
+            audio_path: Some("builtin:korobeiniki".to_string()),
+        };
+
+        let playback = TerminalAudioOutput.play(&response).unwrap();
+        assert_eq!(
+            playback.source_path.as_deref(),
+            Some("builtin melody: Korobeiniki (Tetris Theme)")
+        );
     }
 
     #[test]

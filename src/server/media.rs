@@ -442,7 +442,24 @@ fn content_audio_absolute_path(
 
 #[cfg(test)]
 mod tests {
-    use super::{inspect_wav, validate_wav};
+    use super::{inspect_wav, normalize_media_input, validate_wav, MediaInput};
+
+    #[test]
+    fn normalize_media_input_rejects_soundbox_content_type() {
+        let input = MediaInput {
+            content_type: "soundbox".to_string(),
+            button_id: 4,
+            title: "Twinkle Twinkle".to_string(),
+            text: String::new(),
+            language: String::new(),
+            audio_bytes: vec![0; 16],
+            original_filename: "twinkle.wav".to_string(),
+            mime_type: "audio/wav".to_string(),
+        };
+
+        let error = normalize_media_input(&input, "upload").unwrap_err();
+        assert!(error.to_string().contains("unsupported"));
+    }
 
     #[test]
     fn inspect_wav_accepts_valid_pcm_audio() {

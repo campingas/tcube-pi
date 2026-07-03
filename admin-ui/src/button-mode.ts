@@ -4,6 +4,7 @@ const modeLabels: Record<ButtonMode, string> = {
   language: "Language",
   animals: "Animals",
   music: "Music",
+  soundbox: "SoundBox",
   setup_help: "Setup help",
   disabled: "Disabled"
 };
@@ -35,7 +36,7 @@ export function contentTypeForMode(mode: ButtonMode): ContentType | null {
 }
 
 function isButtonMode(value: string): value is ButtonMode {
-  return ["language", "animals", "music", "setup_help", "disabled"].includes(value);
+  return ["language", "animals", "music", "soundbox", "setup_help", "disabled"].includes(value);
 }
 
 function isContentType(value: ButtonMode): value is ContentType {
