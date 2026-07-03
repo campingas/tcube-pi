@@ -19,6 +19,8 @@ Maintenance rule: whenever a hardware piece, device, module, or major material i
 
 ## Assembly Instructions
 
+New to electronics or the Raspberry Pi? Start with the one-button walkthrough in [Breadboard Starter Wiring](breadboard-starter-wiring.md), then come back here for the full five-button build.
+
 ---
 
 ### Step 1: Solder the 40-pin GPIO header to the Pi Zero 2W
