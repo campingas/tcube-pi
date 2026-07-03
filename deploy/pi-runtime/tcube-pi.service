@@ -25,7 +25,12 @@ PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/tcube
-DeviceAllow=/dev/gpiochip0 rw
+# rppal maps pin registers through /dev/gpiomem (gpiomem0 on newer boards)
+# and listens for edge interrupts through the /dev/gpiochip* character
+# devices (char-gpiochip covers them all).
+DeviceAllow=/dev/gpiomem rw
+DeviceAllow=/dev/gpiomem0 rw
+DeviceAllow=char-gpiochip rw
 DeviceAllow=char-alsa rw
 
 [Install]
