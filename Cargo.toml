@@ -7,6 +7,9 @@ rust-version = "1.78"
 
 [workspace]
 
+[features]
+pi-gpio = ["dep:rppal"]
+
 [dependencies]
 anyhow = "1.0"
 axum = { version = "0.8", features = ["multipart"] }
@@ -28,6 +31,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 thiserror = "1.0"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "trace"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rppal = { version = "0.22", optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"

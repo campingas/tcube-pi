@@ -1,8 +1,8 @@
 # Raspberry Pi Zero Button Smoke Payload
 
-This payload is an intermediate bench test for one physical button plus the MAX98357A I2S amplifier and speaker.
+**Superseded:** the release bundle now installs the real GPIO runtime as `tcube-pi.service`, and the release installer disables `tcube-button-smoke.service` when it finds it. Use this payload only for low-level wiring diagnostics independent of the Rust runtime; the two services conflict over the GPIO lines and the ALSA device, so stop `tcube-pi.service` first.
 
-It is not the final `tcube-pi` Pi backend. The checked-in Rust runtime can play local audio through the simulator, but its `--backend pi` GPIO path is still pending. This smoke payload uses Linux `gpiomon` plus ALSA playback so the current bench hardware can prove that a physical button triggers local approved audio.
+This payload is an intermediate bench test for one physical button plus the MAX98357A I2S amplifier and speaker. It uses Linux `gpiomon` plus ALSA playback so bench hardware can prove that a physical button triggers local approved audio without involving the Rust runtime.
 
 ## Files Installed On The Pi
 
@@ -21,7 +21,7 @@ The boot config receives this I2S audio block if it is not already present:
 ```text
 # T-Cube MAX98357A I2S audio
 dtparam=i2s=on
-dtoverlay=hifiberry-dac
+dtoverlay=max98357a
 ```
 
 ## Build The Payload On The Mac
@@ -78,7 +78,7 @@ Add:
 ```text
 # T-Cube MAX98357A I2S audio
 dtparam=i2s=on
-dtoverlay=hifiberry-dac
+dtoverlay=max98357a
 ```
 
 After first boot, enable the service:
@@ -102,11 +102,14 @@ sudo nano /etc/tcube/tcube-button-smoke.env
 Default settings:
 
 ```sh
-BUTTON_GPIO=5
+BUTTON_GPIO=17
 AUDIO_DIR=/opt/tcube/content/audio/english
+ALSA_DEVICE=plughw:CARD=MAX98357A,DEV=0
 ```
 
-Use `BUTTON_GPIO=5` for the full five-button schematic Button 1 wire: BCM GPIO5, physical pin 29.
+Use `BUTTON_GPIO=17` for the breadboard starter wiring and the five-button assembly button 1 (red): BCM GPIO17, physical pin 11.
+
+Use `BUTTON_GPIO=5` for the five-button assembly button 4 (blue): BCM GPIO5, physical pin 29.
 
 Use `BUTTON_GPIO=4` if your bench wiring follows the older breadboard smoke diagram label: BCM GPIO4.
 
@@ -117,6 +120,8 @@ Set `AUDIO_DIR` to one of:
 /opt/tcube/content/audio/animals
 /opt/tcube/content/audio/music
 ```
+
+Keep `ALSA_DEVICE=plughw:CARD=MAX98357A,DEV=0` when `aplay -l` shows a `MAX98357A` card. This avoids the HDMI audio device becoming the default playback target.
 
 Restart after changes:
 
@@ -137,20 +142,20 @@ Check the audio card:
 
 ```sh
 aplay -l
-speaker-test -t wav -c 2
+speaker-test -D plughw:CARD=MAX98357A,DEV=0 -t wav -c 2 -l 1
 ```
 
 Play one content file manually:
 
 ```sh
-aplay /opt/tcube/content/audio/english/good-job.wav
+aplay -D plughw:CARD=MAX98357A,DEV=0 /opt/tcube/content/audio/english/good-job.wav
 mpg123 /opt/tcube/content/audio/music/race-car.mp3
 ```
 
 Check the button line manually:
 
 ```sh
-gpiomon -n 1 -r gpiochip0 5
+gpiomon -n 1 -r gpiochip0 17
 ```
 
-Press the button once. If your wire is on GPIO4, replace `5` with `4`.
+Press the button once. If your wire is on another line, replace `17` with its BCM number.

@@ -2,7 +2,7 @@
 
 This guide walks you through wiring a minimal T-Cube prototype on a breadboard: one button you can press, and a speaker that plays sound. It is written for people who have never touched a Raspberry Pi or any electronics before. No soldering is needed if your Pi already has its 40-pin header attached.
 
-When you are done, you will have everything the T-Cube runtime needs to play a mode's audio when the button is pressed.
+When you are done, you will have the bench hardware needed for one-button audio validation. The release bundle installs the real GPIO runtime (`tcube-pi.service`), which treats GPIO17 as button 1 out of the box, so a button press plays audio right after install and reboot.
 
 For the full five-button build and the complete parts inventory, see [Hardware Assembly](hardware-assembly.md). For installing the software, see [Raspberry Pi OS Lite Install](pi-os-lite-install.md).
 
@@ -100,7 +100,7 @@ The MKE-M02 plugs in with three jumper wires. Read the letters printed next to i
 | SIG        | Pi pin 11, GPIO17 ([pinout](https://pinout.xyz/pinout/pin11_gpio17)) | Grey             |
 
 
-The module has its pull resistor built in, so no extra parts are needed. This is button 1 (Top) in the T-Cube runtime; the other four buttons use GPIO27, GPIO22, GPIO5, and GPIO6 (see [Hardware Assembly](hardware-assembly.md)).
+The module has its pull resistor built in, so no extra parts are needed. This starter wire uses BCM GPIO17, physical pin 11. In the full five-button assembly, GPIO17 is the red button wire; see [Hardware Assembly](hardware-assembly.md).
 
 ## Double-Check Before Powering On
 
@@ -126,14 +126,14 @@ The module has its pull resistor built in, so no extra parts are needed. This is
    You should see a card whose name includes `sndrpimaxims`. If not, power down and re-check the BCLK, LRC, DIN, VIN, and GND wires.
 3. Play a test sound (start with low expectations, it is a small speaker):
   ```sh
-   speaker-test -t wav -c 2 -l 1
+   speaker-test -D plughw:CARD=MAX98357A,DEV=0 -t wav -c 2 -l 1
   ```
 4. Test the button. Press and hold it while running:
   ```sh
    pinctrl get 17    # newer Pi OS; use "raspi-gpio get 17" on older images
   ```
    The reported level should change between pressed and released.
-5. Install and run the T-Cube services (see the install guide). Pressing the button now plays the audio for whatever mode is assigned to button 1 in the admin dashboard.
+5. Install the release bundle following [Raspberry Pi OS Lite Install](pi-os-lite-install.md). The installer enables `tcube-pi.service`, whose default button map already assigns GPIO17 to button 1. After the post-install reboot, pressing the button plays audio through the speaker; watch it live with `journalctl -u tcube-pi -f`.
 
 
 
@@ -147,4 +147,3 @@ The module has its pull resistor built in, so no extra parts are needed. This is
 - **Jumper wires fall out:** breadboard contacts wear out. Move to a fresh row, or use shorter, stiffer jumpers.
 - Keep wires short and flat. A tidy board is easier to debug than a bird's nest.
 - Take a photo of your working wiring before you change anything. Future you will be grateful.
-
