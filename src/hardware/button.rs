@@ -40,7 +40,7 @@ const FOCUS_VOLUME: f32 = 0.10;
 const FOCUS_FADE_SECONDS: f32 = 3.0;
 const FOCUS_SLOW_MOD_HZ: f32 = 0.035;
 pub(crate) const POMODORO_COMBO_BUTTONS: [u8; 3] = [1, 2, 4];
-pub(crate) const POMODORO_CHORD_ARM_WINDOW: Duration = Duration::from_millis(180);
+pub(crate) const POMODORO_CHORD_ARM_WINDOW: Duration = Duration::from_millis(1500);
 #[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
 pub(crate) const POMODORO_HOLD_DURATION: Duration = Duration::from_secs(5);
 const RUNTIME_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -2331,10 +2331,10 @@ mod tests {
         let mut recognizer = PomodoroGestureRecognizer::new();
 
         assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
-        assert_eq!(recognizer.handle(gesture_down(2, 50)), None);
-        assert_eq!(recognizer.handle(gesture_down(4, 100)), None);
+        assert_eq!(recognizer.handle(gesture_down(2, 600)), None);
+        assert_eq!(recognizer.handle(gesture_down(4, 1_400)), None);
         assert_eq!(
-            recognizer.handle(gesture_tick(5_100)),
+            recognizer.handle(gesture_tick(6_400)),
             Some(PomodoroGesture::HoldCompleted)
         );
     }
@@ -2355,9 +2355,9 @@ mod tests {
         let mut recognizer = PomodoroGestureRecognizer::new();
 
         assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
-        assert_eq!(recognizer.handle(gesture_down(2, 50)), None);
-        assert_eq!(recognizer.handle(gesture_down(4, 500)), None);
-        assert_eq!(recognizer.handle(gesture_tick(5_500)), None);
+        assert_eq!(recognizer.handle(gesture_down(2, 900)), None);
+        assert_eq!(recognizer.handle(gesture_down(4, 1_700)), None);
+        assert_eq!(recognizer.handle(gesture_tick(6_700)), None);
     }
 
     #[test]

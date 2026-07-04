@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::net::{Shutdown, TcpStream};
+use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -243,6 +243,7 @@ fn spawn_admin_load(
         let next = Arc::new(AtomicUsize::new(0));
         let success = Arc::new(AtomicUsize::new(0));
         let failure = Arc::new(AtomicUsize::new(0));
+        let failure_samples = Arc::new(Mutex::new(Vec::<String>::new()));
         let started = Instant::now();
         let mut handles = Vec::with_capacity(worker_count);
 
@@ -251,6 +252,7 @@ fn spawn_admin_load(
             let next = Arc::clone(&next);
             let success = Arc::clone(&success);
             let failure = Arc::clone(&failure);
+            let failure_samples = Arc::clone(&failure_samples);
             handles.push(thread::spawn(move || loop {
                 let index = next.fetch_add(1, Ordering::Relaxed);
                 if index >= request_count {
@@ -261,8 +263,13 @@ fn spawn_admin_load(
                     Ok(()) => {
                         success.fetch_add(1, Ordering::Relaxed);
                     }
-                    Err(_) => {
+                    Err(error) => {
                         failure.fetch_add(1, Ordering::Relaxed);
+                        if let Ok(mut samples) = failure_samples.lock() {
+                            if samples.len() < 5 {
+                                samples.push(format!("{path}: {error:#}"));
+                            }
+                        }
                     }
                 }
             }));
@@ -277,7 +284,11 @@ fn spawn_admin_load(
         Ok(json!({
             "duration_ms": started.elapsed().as_millis(),
             "success": success.load(Ordering::Relaxed),
-            "failure": failure.load(Ordering::Relaxed)
+            "failure": failure.load(Ordering::Relaxed),
+            "failure_samples": failure_samples
+                .lock()
+                .map(|samples| samples.clone())
+                .unwrap_or_default()
         }))
     })
 }
@@ -289,20 +300,32 @@ fn http_get(target: &HttpTarget, path: &str) -> Result<()> {
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     write!(
         stream,
-        "GET {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-        target.host
+        "GET {path} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
+        target.host, target.port
     )?;
     stream.flush()?;
-    stream.shutdown(Shutdown::Write)?;
 
     let mut reader = BufReader::new(stream);
     let mut status_line = String::new();
     reader.read_line(&mut status_line)?;
-    if status_line.starts_with("HTTP/1.1 200") {
+    if is_http_200_status(&status_line) {
         Ok(())
+    } else if status_line.is_empty() {
+        bail!("empty HTTP response")
     } else {
-        bail!("unexpected HTTP response")
+        bail!(
+            "unexpected HTTP response status: {}",
+            status_line.trim_end()
+        )
     }
+}
+
+fn is_http_200_status(status_line: &str) -> bool {
+    let mut parts = status_line.split_whitespace();
+    matches!(
+        (parts.next(), parts.next()),
+        (Some(version), Some("200")) if version.starts_with("HTTP/")
+    )
 }
 
 fn parse_http_target(base_url: &str) -> Result<HttpTarget> {
@@ -336,6 +359,14 @@ mod tests {
         let target = parse_http_target("http://127.0.0.1:8443").unwrap();
         assert_eq!(target.host, "127.0.0.1");
         assert_eq!(target.port, 8443);
+    }
+
+    #[test]
+    fn accepts_http_200_status_lines() {
+        assert!(is_http_200_status("HTTP/1.1 200 OK\r\n"));
+        assert!(is_http_200_status("HTTP/1.0 200 OK\r\n"));
+        assert!(!is_http_200_status("HTTP/1.1 401 Unauthorized\r\n"));
+        assert!(!is_http_200_status(""));
     }
 
     #[test]

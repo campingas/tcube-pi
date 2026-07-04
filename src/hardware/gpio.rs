@@ -405,11 +405,11 @@ mod tests {
     fn pipeline_ignores_chord_spread_beyond_arm_window() {
         let mut pipeline = InputPipeline::new();
         pipeline.handle_edge(POMODORO_COMBO_BUTTONS[0], true, ms(0));
-        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[1], true, ms(100));
-        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[2], true, ms(400));
+        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[1], true, ms(900));
+        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[2], true, ms(1700));
 
-        let mut tick_at = ms(400);
-        let deadline = ms(400) + POMODORO_HOLD_DURATION + ms(500);
+        let mut tick_at = ms(1700);
+        let deadline = ms(1700) + POMODORO_HOLD_DURATION + ms(500);
         while tick_at < deadline {
             assert_eq!(pipeline.handle_tick(tick_at), None);
             tick_at += ms(100);
