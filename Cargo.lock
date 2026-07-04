@@ -2337,7 +2337,7 @@ dependencies = [
 
 [[package]]
 name = "tcube-pi"
-version = "0.0.82"
+version = "0.0.83"
 dependencies = [
  "anyhow",
  "axum",
