@@ -40,7 +40,6 @@ const FOCUS_VOLUME: f32 = 0.10;
 const FOCUS_FADE_SECONDS: f32 = 3.0;
 const FOCUS_SLOW_MOD_HZ: f32 = 0.035;
 pub(crate) const POMODORO_COMBO_BUTTONS: [u8; 3] = [1, 2, 4];
-pub(crate) const POMODORO_CHORD_ARM_WINDOW: Duration = Duration::from_millis(1500);
 #[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
 pub(crate) const POMODORO_HOLD_DURATION: Duration = Duration::from_secs(5);
 const RUNTIME_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -1652,24 +1651,7 @@ impl PomodoroGestureRecognizer {
             return;
         }
 
-        let first = POMODORO_COMBO_BUTTONS
-            .iter()
-            .filter_map(|button_id| self.pressed_since.get(button_id))
-            .min()
-            .copied()
-            .unwrap_or(at);
-        let last = POMODORO_COMBO_BUTTONS
-            .iter()
-            .filter_map(|button_id| self.pressed_since.get(button_id))
-            .max()
-            .copied()
-            .unwrap_or(at);
-
-        if last.saturating_sub(first) <= POMODORO_CHORD_ARM_WINDOW {
-            self.chord_started_at = Some(last);
-        } else {
-            self.chord_started_at = None;
-        }
+        self.chord_started_at.get_or_insert(at);
     }
 }
 
@@ -2331,10 +2313,11 @@ mod tests {
         let mut recognizer = PomodoroGestureRecognizer::new();
 
         assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
-        assert_eq!(recognizer.handle(gesture_down(2, 600)), None);
-        assert_eq!(recognizer.handle(gesture_down(4, 1_400)), None);
+        assert_eq!(recognizer.handle(gesture_down(2, 6_000)), None);
+        assert_eq!(recognizer.handle(gesture_down(4, 11_000)), None);
+        assert_eq!(recognizer.handle(gesture_tick(15_900)), None);
         assert_eq!(
-            recognizer.handle(gesture_tick(6_400)),
+            recognizer.handle(gesture_tick(16_000)),
             Some(PomodoroGesture::HoldCompleted)
         );
     }
@@ -2351,13 +2334,18 @@ mod tests {
     }
 
     #[test]
-    fn pomodoro_gesture_rejects_staggered_chord() {
+    fn pomodoro_gesture_timer_starts_when_chord_is_complete() {
         let mut recognizer = PomodoroGestureRecognizer::new();
 
         assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
-        assert_eq!(recognizer.handle(gesture_down(2, 900)), None);
-        assert_eq!(recognizer.handle(gesture_down(4, 1_700)), None);
-        assert_eq!(recognizer.handle(gesture_tick(6_700)), None);
+        assert_eq!(recognizer.handle(gesture_down(2, 9_000)), None);
+        assert_eq!(recognizer.handle(gesture_tick(20_000)), None);
+        assert_eq!(recognizer.handle(gesture_down(4, 21_000)), None);
+        assert_eq!(recognizer.handle(gesture_tick(25_900)), None);
+        assert_eq!(
+            recognizer.handle(gesture_tick(26_000)),
+            Some(PomodoroGesture::HoldCompleted)
+        );
     }
 
     #[test]

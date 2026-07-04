@@ -402,17 +402,22 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_ignores_chord_spread_beyond_arm_window() {
+    fn pipeline_completes_slow_pomodoro_chord_once_all_buttons_are_down() {
         let mut pipeline = InputPipeline::new();
         pipeline.handle_edge(POMODORO_COMBO_BUTTONS[0], true, ms(0));
-        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[1], true, ms(900));
-        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[2], true, ms(1700));
+        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[1], true, ms(9000));
+        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[2], true, ms(11000));
 
-        let mut tick_at = ms(1700);
-        let deadline = ms(1700) + POMODORO_HOLD_DURATION + ms(500);
+        let mut tick_at = ms(11000);
+        let deadline = ms(11000) + POMODORO_HOLD_DURATION;
         while tick_at < deadline {
             assert_eq!(pipeline.handle_tick(tick_at), None);
             tick_at += ms(100);
         }
+        assert_eq!(
+            pipeline.handle_tick(deadline),
+            Some(PipelineEvent::PomodoroShortcut)
+        );
+        assert_eq!(pipeline.handle_tick(deadline + ms(100)), None);
     }
 }
