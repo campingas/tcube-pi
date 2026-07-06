@@ -43,7 +43,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - Target-hardware validation of the new GPIO runtime service: fresh install, reboot, physical press to audio, live admin remap, physical Pomodoro chord, installer idempotence.
 - Final LED output backend; the Pi runtime currently logs LED intents to journald through `LogLedOutput`.
 - MAX98357A I2S audio from the temporary smoke payload works on target hardware; the Rust runtime audio path through `ALSA_CARD=MAX98357A` still needs target validation.
-- Mini USB microphone capture, retention, upload, and physical indicator privacy rules.
+- Microphone capture with the Seeed reSpeaker XVF3800 USB 4-mic array (selected hardware; capture-only over OTG, playback stays on I2S), plus retention, upload, and privacy rules. The physical mic-active indicator is the board's firmware mute LED.
 - Installed Pi systemd validation and boot-time behavior.
 - USB OTG recovery and Wi-Fi rollback behavior.
 - Pi resource measurements with `just measure-pi-admin`.

@@ -13,6 +13,7 @@ Maintenance rule: whenever a hardware piece, device, module, or major material i
 | MAX98357A I2S Class-D 3 W amplifier | Amplifies digital audio from the Raspberry Pi for the speaker. |
 | Mini 3 W 8-ohm speaker with enclosure | Plays speech, animal sounds, music, and device feedback. |
 | MPU6050 GY-521 6-DOF IMU | Detects movement, rotation, impact, and cube orientation. |
+| Seeed reSpeaker XVF3800 USB 4-Mic Array (planned) | Far-field voice capture over USB OTG with on-chip beamforming, noise suppression, and a firmware-level hardware mute button with red mute LED. |
 | 830-point solderless breadboard | Holds temporary circuits during prototype testing. |
 | 20 cm male-to-female jumper wires, 40-wire ribbon | Connects Raspberry Pi GPIO pins to prototype modules. |
 | Micro-USB to USB-C OTG cable | Connects a USB-C peripheral to the Raspberry Pi Zero 2 W data port. |
@@ -134,6 +135,35 @@ Each MKE-M02 module has a 3-pin XH2.54 connector: VCC, GND, SIG. Wire all five b
 **Warnings**
 - If no audio plays, check `aplay -l` to confirm the I2S sound card is visible. If not, verify the `dtoverlay` lines in `/boot/config.txt` and reboot.
 - Power down before changing amplifier, speaker, or GPIO wiring.
+
+### Step 7 (planned): Connect the reSpeaker XVF3800 microphone array
+
+The XVF3800 is the selected microphone. It connects to the Pi Zero 2 W **USB OTG data port** (Micro-USB to USB-C OTG cable) and appears as a standard USB Audio Class 2.0 capture device (`arecord -l`). It is capture-only in this design: playback stays on the MAX98357A over I2S, so the two audio paths are independent and no echo cancellation reference is needed.
+
+**Design decisions:**
+- Capture runs at 16 kHz, the board's USB-firmware rate, which matches speech and AI pipeline requirements.
+- The board's firmware mute button and red mute LED are the mandatory microphone-active privacy indicator; muting cuts audio before it reaches the Pi.
+- The board uses no Pi GPIO pins. Its own 12-LED WS2812 ring and 5 GPO / 3 GPI pins are controlled from the host over USB vendor commands.
+
+**Warnings**
+- Do not bus-power the board from the OTG port in the final build. The mics, DSP, and LED ring exceed the Zero 2 W OTG budget; feed the board external 5V from the same supply rail as the Pi and use the OTG cable for data only.
+- The 102 × 102 mm board size requires an enclosure redesign; it does not fit the current cube envelope.
+
+---
+
+## GPIO Pin Budget (BCM numbering)
+
+| BCM | Use | Notes |
+| --- | --- | --- |
+| 17, 27, 22, 5, 6 | Button inputs btn1..btn5 | `DEFAULT_BUTTON_GPIOS` in `src/hardware/gpio.rs` |
+| 18, 19, 21 | I2S to MAX98357A (BCLK, LRC, DIN) | Claimed by the I2S overlay |
+| 4 | MAX98357A SD (shutdown) | |
+| 2, 3 | Reserved: I2C (SDA, SCL) | For the MPU6050 IMU and any I2C LED driver |
+| 10 | Reserved: SPI0 MOSI | Preferred data line for WS2812 button LEDs |
+
+Free for future use: 7, 8, 9, 11, 12, 13, 16, 20, 23, 24, 25, 26.
+
+Constraint to remember: WS2812 LEDs on the Pi are normally driven by PWM (BCM18) or PCM (BCM21) DMA, but both pins are claimed by I2S audio. SPI0 MOSI (BCM10) is the remaining reliable option for an addressable LED chain; an I2C PWM driver (for example PCA9685 on BCM2/3) is the fallback that avoids LED timing entirely.
 
 ## Recommended Bring-Up Order
 
