@@ -54,12 +54,13 @@ Insert a microSD card flashed with Raspberry Pi OS Lite. Power the Pi via the PW
 
 Place the MAX98357A breakout on the breadboard. Wire it to the Pi's 40-pin header using jumper wires:
 
-- **VIN** → Pi physical pin 2 (5V)
-- **GND** → Pi physical pin 6 (GND)
-- **BCLK** → Pi physical pin 12 (BCM18)
 - **LRC** → Pi physical pin 35 (BCM19)
+- **BCLK** → Pi physical pin 12 (BCM18)
 - **DIN** → Pi physical pin 40 (BCM21)
+- **GAIN** → empty
 - **SD** → Pi physical pin 7 (BCM4)
+- **GND** → Pi physical pin 6 (GND)
+- **VIN** → Pi physical pin 2 (5V)
 
 **Components:**
 - MAX98357A I2S Class-D Mono Amplifier Breakout
