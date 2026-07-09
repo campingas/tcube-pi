@@ -19,8 +19,8 @@ if ! command -v cargo >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "pnpm is required for admin-ui release preparation" >&2
+if ! command -v bun >/dev/null 2>&1; then
+  echo "bun is required for admin-ui release preparation" >&2
   exit 1
 fi
 
@@ -52,7 +52,7 @@ PY
 
 cargo check --offline --all-features >/dev/null
 cargo check --locked --all-features >/dev/null
-pnpm --dir admin-ui install --lockfile-only --frozen-lockfile
+bun install --cwd admin-ui --lockfile-only --frozen-lockfile
 
 echo "Prepared release ${tag}"
 echo "Updated Cargo.toml, Cargo.lock, and admin-ui/package.json."

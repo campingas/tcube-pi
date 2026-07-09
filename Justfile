@@ -350,19 +350,19 @@ debug-pi-admin-lan port='443':
     fi
 
 install-admin-ui:
-    pnpm --dir admin-ui install
+    bun install --cwd admin-ui
 
 build-admin-ui:
-    pnpm --dir admin-ui run build
+    bun run --cwd admin-ui build
 
 check-admin-ui:
-    pnpm --dir admin-ui run check
+    bun run --cwd admin-ui check
 
 test-admin-ui-unit:
-    pnpm --dir admin-ui run test:unit
+    bun run --cwd admin-ui test:unit
 
 test-admin-ui-mobile:
-    pnpm --dir admin-ui run test:e2e --project=mobile
+    bun run --cwd admin-ui test:e2e --project=mobile
 
 validate-pi-admin-caddy:
     caddy validate --config deploy/pi-admin-caddy/Caddyfile

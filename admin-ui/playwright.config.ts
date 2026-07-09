@@ -11,7 +11,7 @@ export default defineConfig({
     trace: "retain-on-failure"
   },
   webServer: {
-    command: "pnpm run dev -- --host 127.0.0.1 --port 5173 --strictPort --force",
+    command: "bun run dev --host 127.0.0.1 --port 5173 --strictPort --force",
     url: "http://127.0.0.1:5173",
     reuseExistingServer: false
   },

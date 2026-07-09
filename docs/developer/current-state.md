@@ -58,7 +58,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - Caddy listens on LAN interfaces for browser traffic; local development phone testing should use `just run-pi-admin-lan-caddy` and `https://<host-lan-ip>:8443/`, with `TCUBE_LAN_ADDRESS=<host-lan-ip>` when automatic LAN IP detection is wrong. The release installer injects the current detected Pi LAN IP into `/etc/caddy/Caddyfile` so installed Pi access can use `https://<pi-lan-ip>/` when DHCP has not changed.
 - Admin UI uses relative API paths so it works behind Caddy without hardcoded backend URLs.
 - Admin UI is mobile-first and dark-mode-only.
-- Admin UI source intentionally uses `pnpm`; Node/pnpm are development-time tools and are not required on the Pi.
+- Admin UI source intentionally uses `bun`; Node/Bun are development-time tools and are not required on the Pi.
 - Mac-hosted speech and AI workers stay outside this repository; generated speech is always an inactive draft until parent activation.
 - Hardware inventory and physical assembly maintenance live in `docs/hardware/hardware-assembly.md`.
 - Fresh Raspberry Pi OS Lite setup and release-bundle installation live in `docs/hardware/pi-os-lite-install.md`.

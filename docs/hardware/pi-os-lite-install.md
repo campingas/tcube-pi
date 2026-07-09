@@ -71,7 +71,7 @@ just check
 just test
 ```
 
-Do not install Node.js, pnpm, Vite, Python model workers, or ML tooling on the Pi for normal operation. The admin UI is prebuilt into the release bundle, and speech/model workers are external development or Mac-side services.
+Do not install Node.js, Bun, Vite, Python model workers, or ML tooling on the Pi for normal operation. The admin UI is prebuilt into the release bundle, and speech/model workers are external development or Mac-side services.
 
 ## Enable I2S Audio
 

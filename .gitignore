@@ -16,6 +16,5 @@ __pycache__/
 /admin-ui/.svelte-kit/
 /admin-ui/.vite/
 /admin-ui/dist/
-/.pnpm-store/
 /docs/hardware/kicad/t-cube-v1/.history/
 CLAUDE.local.md

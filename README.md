@@ -73,7 +73,7 @@ just check-admin-ui
 
 The Pi does not run Node. Release packaging copies the built files from `admin-ui/build/`, so rebuild that directory after UI source changes.
 
-Use `pnpm` for every admin UI and JavaScript workflow. Do not use npm, yarn, bun, or ad hoc global JavaScript tooling for this UI.
+Use `bun` for every admin UI and JavaScript workflow. Do not use npm, yarn, pnpm, or ad hoc global JavaScript tooling for this UI.
 
 ## Project Context
 

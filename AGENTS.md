@@ -64,7 +64,7 @@ At the end of significant work, update `docs/developer/current-state.md` only wi
 
 - This repository is Rust-first.
 - Use `just` and the `Justfile` for documented project workflows; do not introduce Make or a `Makefile`.
-- The admin UI under `admin-ui/` is an intentional repository-owned JavaScript package and uses `pnpm`; do not use npm, yarn, bun, or ad hoc global JavaScript tooling for it.
+- The admin UI under `admin-ui/` is an intentional repository-owned JavaScript package and uses `bun`; do not use npm, yarn, pnpm, or ad hoc global JavaScript tooling for it.
 - Use `uv` for Python environments and `uvx` for one-off Python CLI tools when needed.
 - Match existing formatter and lint rules.
 - Use lowercase kebab-case filenames unless the surrounding area uses a different convention.
