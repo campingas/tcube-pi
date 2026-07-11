@@ -9,6 +9,7 @@ Read `AGENTS.md`, `VISION.md`, `docs/tasks.md`, and `current-state.md` first. Th
 - [Rust Guide](rust-guide.md): Rust module boundaries, async/database/hardware rules, error policy, and Rust review triggers.
 - [Testing Guide](testing-guide.md): validation commands, simulator checks, Pi admin/Caddy smoke tests, and handoff expectations.
 - [Branding Guide](branding-guide.md): admin UI visual design, copy, status colors, component direction, and accessibility expectations.
+- [Orchestration Blueprint](orchestration-blueprint.md): proposed Mac Mini Hermes Agent pipeline, wire contract, Mac stack under `deploy/mac-hermes/`, and the Pi-side Rust task plan.
 
 ## Related Routes
 
