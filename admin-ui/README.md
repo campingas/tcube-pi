@@ -4,12 +4,12 @@ This directory contains the Svelte + Vite source for the static parent/admin das
 
 The UI styling system uses Tailwind CSS v4 through Vite plus local CSS layers in `src/styles.css`. Keep shared visual primitives in Svelte components under `src/components/` and keep API calls in `src/api.ts`.
 
-Use `pnpm` for every admin UI and JavaScript workflow.
+Use `bun` for every admin UI and JavaScript workflow.
 
 ```sh
-pnpm --dir admin-ui install
-pnpm --dir admin-ui run build
-pnpm --dir admin-ui run check
+bun install --cwd admin-ui
+bun run --cwd admin-ui build
+bun run --cwd admin-ui check
 ```
 
-`pnpm --dir admin-ui run build` writes deployable static files to `admin-ui/build/`. The Raspberry Pi serves only `admin-ui/build/` through `tcube-pi-admin`; it does not run Node or pnpm.
+`bun run --cwd admin-ui build` writes deployable static files to `admin-ui/build/`. The Raspberry Pi serves only `admin-ui/build/` through `tcube-pi-admin`; it does not run Node or Bun.

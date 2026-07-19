@@ -1,102 +1,57 @@
 # Agent Instructions
 
-Keep this project agent-agnostic. This file defines the stable repo-wide contract for coding agents and contributors.
+Repo-specific router for `tcube-pi`. Global agent rules cover generic coding style, edit safety, commits, Markdown style, and default package-manager preferences.
 
-## Priority Order
+## Purpose
 
-When instructions conflict, follow this order:
+`tcube-pi` owns the Raspberry Pi Zero 2 W runtime for T-Cube: child-facing button/audio behavior, local SQLite state, the Pi-hosted parent admin API, checked-in static admin UI output, Caddy/systemd deployment files, and release-bundle packaging.
 
-1. Direct user request
-2. This `AGENTS.md`
-3. Product direction in `VISION.md`
-4. Routed repo docs under `docs/`
-5. Existing codebase patterns
-6. Agent-specific adapter files such as `CLAUDE.md` or `COPILOT.md`
+## Start Here
 
-## Session Start
+Read only this default context first:
 
-Read only the default context first:
+- `docs/tasks.md` for active priorities.
+- `VISION.md` for product constraints.
+- `docs/developer/README.md` for doc routing.
+- `docs/developer/current-state.md` for live implementation state.
+- `git status --short` for the current worktree.
 
-- `docs/tasks.md` for active priorities
-- `VISION.md` for product constraints
-- `docs/developer/README.md` for doc routing
-- `docs/developer/current-state.md` for the live implementation snapshot
-- `git status --short`
+Then inspect only the files and routed docs relevant to the requested change. If a referenced doc is missing, continue and note it.
 
-Then inspect only the files and routed docs relevant to the requested change. If a referenced file is missing, continue and note it rather than failing.
+## Routes
 
-## Doc Routing
+- Rust implementation: `docs/developer/rust-guide.md`.
+- Architecture, API boundaries, runtime/admin split, storage, sync, or privacy: `docs/developer/architecture-guide.md`.
+- Validation, simulator checks, Pi admin/Caddy smoke tests, or handoff planning: `docs/developer/testing-guide.md`.
+- Admin UI visual design, copy, layout, or component styling: `docs/developer/branding-guide.md`.
+- Hardware parts, wiring, physical bring-up, or component changes: `docs/hardware/hardware-assembly.md`.
+- Fresh Raspberry Pi OS Lite install or release-bundle setup: `docs/hardware/pi-os-lite-install.md`.
+- Release-bundle scripts and installer behavior: `deploy/pi-release/README.md`.
 
-- Rust implementation: read `docs/developer/rust-guide.md`.
-- Architecture, API boundaries, runtime/admin split, storage, sync, or privacy behavior: read `docs/developer/architecture-guide.md`.
-- Validation or handoff planning: read `docs/developer/testing-guide.md`.
-- Admin UI visual design, copy, layout, or component styling: read `docs/developer/branding-guide.md`.
-- Hardware parts, wiring, or physical bring-up: read `docs/hardware/hardware-assembly.md`.
-- Fresh Raspberry Pi OS Lite install or release-bundle setup: read `docs/hardware/pi-os-lite-install.md`.
+## Workflows
 
-## Context Maintenance
+Use `just` as the repo workflow surface; do not introduce Makefiles or ad hoc parallel command catalogs.
 
-Do not use `AGENTS.md` as a session log.
+Rust gate before handoff: `just check` and `just test`.
 
-At the end of significant work, update `docs/developer/current-state.md` only with live state that future agents need: current status, durable decisions, important assumptions, known issues, pending TODOs, and recommended next steps. Do not append long chronological history.
+Admin UI gate before handoff: `just build-admin-ui`, `just check-admin-ui`, `just test-admin-ui-unit`, and `just test-admin-ui-mobile`.
 
-## Core Working Rules
+Admin UI source under `admin-ui/` intentionally uses Bun. Use the `just` recipes above for normal work; if running direct JavaScript commands, use `bun` with `admin-ui/bun.lock`.
 
-- Read directly related files before editing; do not infer behavior from filenames alone.
-- When changing behavior, inspect relevant tests, config, adjacent modules, and routed documentation.
-- Prefer existing codebase patterns and utilities over new abstractions.
-- Keep changes scoped to the requested behavior; note unrelated issues separately.
-- Do not revert user changes unless explicitly requested.
-- Do not commit unless explicitly asked.
-- Use conventional commit messages if a commit is requested.
-- Never include agent branding, assistant names, or co-authorship metadata unless explicitly requested.
+`admin-ui/build/` is checked-in static output served by `tcube-pi-admin` and copied into Pi release bundles, so rebuild it after UI source changes.
 
-## Environment And Safety
+For local browser or phone testing, run the loopback Rust service with `just run-pi-admin` and the HTTPS front door with `just run-pi-admin-lan-caddy`.
 
-- Do not start long-running dev servers, watchers, or background processes unless explicitly requested.
-- Prefer one-shot validation commands.
-- On macOS, use `/usr/bin/open` instead of plain `open`.
-- Never commit secrets, credentials, `.env` files, config secrets, local databases, or sensitive audio/data artifacts.
-- Treat local data stores as sensitive unless clearly intended for version control.
-- Prefer safe, explicit deletion commands and never delete files you have not inspected unless explicitly instructed.
+Physical GPIO, I2S audio, installed services, boot behavior, and Pi resource validation must run on target hardware; simulator success is not hardware validation.
 
-## Tooling Conventions
+Before release tagging, run `just prepare-release vX.Y.Z`, review the manifest updates, then validate. Release tags must point at commits reachable from `main`, and manual release workflow runs must start from `main`.
 
-- This repository is Rust-first.
-- Use `just` and the `Justfile` for documented project workflows; do not introduce Make or a `Makefile`.
-- The admin UI under `admin-ui/` is an intentional repository-owned JavaScript package and uses `pnpm`; do not use npm, yarn, bun, or ad hoc global JavaScript tooling for it.
-- Use `uv` for Python environments and `uvx` for one-off Python CLI tools when needed.
-- Match existing formatter and lint rules.
-- Use lowercase kebab-case filenames unless the surrounding area uses a different convention.
-- Executable scripts should not use file extensions unless the ecosystem or existing repo conventions require them.
+## Boundaries
 
-## Rust Changes
+Keep `AGENTS.md` as a short router, not a session log or architecture manual. Put durable implementation state in `docs/developer/current-state.md` and detailed workflows in the routed docs.
 
-For Rust changes, follow `docs/developer/rust-guide.md`, `rustfmt.toml`, and `clippy.toml`.
+Never commit secrets, `.env` files, local SQLite databases, or sensitive generated/recorded audio under `data/`.
 
-Before handoff for Rust changes, run:
+When adding, removing, replacing, or seriously considering a physical component, update `docs/hardware/hardware-assembly.md`.
 
-```sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-```
-
-Treat rustc and Clippy diagnostics as actionable.
-
-## Validation
-
-Run targeted tests first, then repo-level validation where appropriate. If full validation cannot be run, state what was and was not verified.
-
-For admin UI changes, prefer the documented `just` recipes in `docs/developer/testing-guide.md`.
-
-## Documentation
-
-- Use single-line paragraphs in Markdown.
-- Keep headings concise.
-- Update routed docs when behavior, architecture, setup, hardware assumptions, or workflows change.
-- When adding, removing, replacing, or seriously considering any physical component, device, module, or major material, update `docs/hardware/hardware-assembly.md`.
-
-## Agent Adapters
-
-Agent-specific instructions should live in thin adapter files that reference this file instead of duplicating repo-wide rules.
+Agent-specific adapter files such as `CLAUDE.md` or `COPILOT.md` should stay thin and reference this file instead of duplicating repo-wide rules.

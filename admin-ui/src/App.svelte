@@ -133,10 +133,18 @@
   import type { RecordingStatus } from "./recording-controller";
   import type { ButtonConfig, ContentState, DraftForm, InventoryFilter, MessageType } from "./types";
   import AuthView from "./views/AuthView.svelte";
-  import ButtonConfigView from "./views/ButtonConfigView.svelte";
   import DashboardView from "./views/DashboardView.svelte";
-  import InventoryView from "./views/InventoryView.svelte";
-  import SettingsView from "./views/SettingsView.svelte";
+  // Secondary views are code-split into their own chunks and loaded on first
+  // navigation. The loaders are memoized so re-navigation resolves instantly.
+  let buttonConfigViewPromise: Promise<typeof import("./views/ButtonConfigView.svelte").default> | undefined;
+  let inventoryViewPromise: Promise<typeof import("./views/InventoryView.svelte").default> | undefined;
+  let settingsViewPromise: Promise<typeof import("./views/SettingsView.svelte").default> | undefined;
+  const loadButtonConfigView = () =>
+    (buttonConfigViewPromise ??= import("./views/ButtonConfigView.svelte").then((m) => m.default));
+  const loadInventoryView = () =>
+    (inventoryViewPromise ??= import("./views/InventoryView.svelte").then((m) => m.default));
+  const loadSettingsView = () =>
+    (settingsViewPromise ??= import("./views/SettingsView.svelte").then((m) => m.default));
   type View = "dashboard" | "button-config" | "inventory" | "settings";
   type ContentTab = "record" | "upload" | "generate";
   type ContentListTab = "active" | "draft";
@@ -1136,6 +1144,7 @@
       }}
     />
   {:else if view === "button-config"}
+    {#await loadButtonConfigView() then ButtonConfigView}
     <ButtonConfigView
       state={{
         session,
@@ -1196,7 +1205,9 @@
         confirmTrashContent
       }}
     />
+    {/await}
   {:else if view === "inventory"}
+    {#await loadInventoryView() then InventoryView}
     <InventoryView
       state={{ session, message, messageType, inventory, inventoryError, events, filter: inventoryFilter }}
       actions={{
@@ -1205,7 +1216,9 @@
         openInventoryButton
       }}
     />
+    {/await}
   {:else if view === "settings"}
+    {#await loadSettingsView() then SettingsView}
     <SettingsView
       state={{
         session,
@@ -1259,6 +1272,7 @@
         confirmFactoryReset
       }}
     />
+    {/await}
   {:else}
     <DashboardView
       state={{

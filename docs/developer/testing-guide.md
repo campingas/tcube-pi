@@ -23,16 +23,16 @@ just test-admin-ui-mobile
 ```
 
 `just build-admin-ui` emits static assets into `admin-ui/build/`, which is the directory served by `tcube-pi-admin` and copied into Pi packages. `just check-admin-ui` runs Svelte and TypeScript checks against `admin-ui/`.
-`just test-admin-ui-unit` runs Node's built-in test runner against pure TypeScript admin UI controller logic.
+`just test-admin-ui-unit` runs Bun's test runner against pure TypeScript admin UI controller logic.
 `just test-admin-ui-mobile` runs the Playwright mobile viewport checks against the admin UI with a mobile Chromium project and mocked Pi API responses.
 
-Use `pnpm` for every direct admin UI and JavaScript command. Prefer the `just` recipes above for normal workflows.
+Use `bun` for every direct admin UI and JavaScript command. Prefer the `just` recipes above for normal workflows.
 
 For Rust changes, follow the [Rust Guide](rust-guide.md), `rustfmt.toml`, `clippy.toml`, `.cargo/config.toml`, and `rust-toolchain.toml`. Use `just fmt`, `just fmt-check`, and `just lint` for focused iteration.
 
 Host C/C++ flags are forced empty by `.cargo/config.toml` because inherited local flags can break native dependencies such as bundled SQLite.
 
-GitHub Actions CI runs the Rust formatting, check, Clippy, and test gates plus the admin UI pnpm install, Svelte check, and static build gates. The release workflow repeats those gates, builds Linux arm64 release binaries on an arm64 runner, and publishes an installable Pi Zero 2 W bundle for version tags and manual dispatches.
+GitHub Actions CI runs the Rust formatting, check, Clippy, and test gates plus the admin UI bun install, Svelte check, and static build gates. The release workflow repeats those gates, builds Linux arm64 release binaries on an arm64 runner, and publishes an installable Pi Zero 2 W bundle for version tags and manual dispatches.
 
 Before creating a release tag, run `just prepare-release vX.Y.Z`, commit the manifest updates, then create the tag. The release workflow verifies that the tag version matches `Cargo.toml` and `admin-ui/package.json`.
 

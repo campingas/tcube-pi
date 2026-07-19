@@ -1,14 +1,14 @@
 {
   "name": "tcube-pi-admin-ui",
   "private": true,
-  "version": "0.0.83",
+  "version": "0.0.84",
   "type": "module",
-  "packageManager": "pnpm@10.32.1",
+  "packageManager": "bun@1.3.14",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test:unit": "node --experimental-strip-types --test tests/unit/*.test.ts",
+    "test:unit": "bun test tests/unit",
     "test:e2e": "playwright test"
   },
   "devDependencies": {

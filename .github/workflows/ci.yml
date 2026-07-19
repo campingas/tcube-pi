@@ -48,26 +48,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          package_json_file: admin-ui/package.json
+          bun-version-file: admin-ui/package.json
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: admin-ui/pnpm-lock.yaml
 
       - name: Install admin UI dependencies
-        run: pnpm --dir admin-ui install --frozen-lockfile
+        run: bun install --cwd admin-ui --frozen-lockfile
 
       - name: Check admin UI
-        run: pnpm --dir admin-ui run check
+        run: bun run --cwd admin-ui check
 
       - name: Test admin UI unit controllers
-        run: pnpm --dir admin-ui run test:unit
+        run: bun run --cwd admin-ui test:unit
 
       - name: Build admin UI
-        run: pnpm --dir admin-ui run build
+        run: bun run --cwd admin-ui build
+
+      - name: Check admin UI bundle size budget
+        run: |
+          budget=179200 # 175 KiB per JS chunk; catches lost view code-splitting
+          max=$(find admin-ui/build/assets -name '*.js' -printf '%s\n' | sort -nr | head -1)
+          echo "Largest JS chunk: ${max} bytes (budget ${budget})"
+          if [ "${max}" -gt "${budget}" ]; then
+            echo "::error::A JS chunk exceeds the ${budget}-byte budget; check for lost code-splitting."
+            exit 1
+          fi

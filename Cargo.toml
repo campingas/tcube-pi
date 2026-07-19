@@ -1,6 +1,6 @@
 [package]
 name = "tcube-pi"
-version = "0.0.83"
+version = "0.0.84"
 edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.78"
@@ -49,3 +49,13 @@ path = "src/bin/tcube_pi_admin.rs"
 [[bin]]
 name = "tcube-pi-admin-measure"
 path = "src/bin/tcube_pi_admin_measure.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+# panic = "abort" is intentionally omitted: it is workspace-global and would make a
+# panicking admin request handler kill the whole tcube-pi-admin process instead of
+# being isolated at the Tokio task boundary. Add it together with a CatchPanicLayer
+# on the admin router if the extra size saving is wanted.

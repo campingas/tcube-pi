@@ -69,7 +69,7 @@ sudo cp -R admin-ui/build/. /opt/tcube/admin-ui/
 sudo cp -R content/audio/. /opt/tcube/content/audio/
 ```
 
-The Pi deployment serves prebuilt files from `admin-ui/build/`; Node and pnpm are development-time tools only and are not required on the device. Use pnpm for every admin UI and JavaScript workflow.
+The Pi deployment serves prebuilt files from `admin-ui/build/`; Node and Bun are development-time tools only and are not required on the device. Use bun for every admin UI and JavaScript workflow.
 
 Copy the service files:
 

@@ -15,7 +15,7 @@ Child-facing button feedback must be immediate, deterministic, offline-first, an
 | Audio playback | `rodio` | Local playback backend |
 | Admin API | Axum/Tokio | Pi-hosted local HTTP behind Caddy |
 | Admin UI | Svelte + Vite + Tailwind CSS | Built files served by `tcube-pi-admin` |
-| Admin UI package manager | `pnpm` | Development-time only, not installed on the Pi |
+| Admin UI package manager | `bun` | Development-time only, not installed on the Pi |
 | HTTPS boundary | Caddy | Browser-facing TLS for the local admin UI |
 | Task runner | `just` | Documented workflows |
 
