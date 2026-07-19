@@ -7,6 +7,9 @@ export default defineConfig({
   base: "/",
   build: {
     outDir: "build",
-    emptyOutDir: true
+    emptyOutDir: true,
+    // Warn locally if a single chunk regresses (e.g. lost view code-splitting).
+    // A hard budget is enforced in CI.
+    chunkSizeWarningLimit: 175
   }
 });

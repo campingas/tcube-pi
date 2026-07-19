@@ -69,3 +69,13 @@ jobs:
 
       - name: Build admin UI
         run: bun run --cwd admin-ui build
+
+      - name: Check admin UI bundle size budget
+        run: |
+          budget=179200 # 175 KiB per JS chunk; catches lost view code-splitting
+          max=$(find admin-ui/build/assets -name '*.js' -printf '%s\n' | sort -nr | head -1)
+          echo "Largest JS chunk: ${max} bytes (budget ${budget})"
+          if [ "${max}" -gt "${budget}" ]; then
+            echo "::error::A JS chunk exceeds the ${budget}-byte budget; check for lost code-splitting."
+            exit 1
+          fi
