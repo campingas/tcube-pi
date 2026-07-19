@@ -10,6 +10,9 @@ tcube.local, 10.55.0.1, localhost, 127.0.0.1 {
 	}
 
 	handle {
+		# Content-hashed build assets are immutable; let browsers cache them
+		# for a year so repeat loads skip the network and the Pi skips re-serving.
+		header /assets/* Cache-Control "public, max-age=31536000, immutable"
 		reverse_proxy 127.0.0.1:8080
 	}
 }
