@@ -12,6 +12,7 @@ use anyhow::{bail, Result};
 
 use crate::hardware::button::{
     ButtonGestureEvent, ButtonGestureEventKind, PomodoroGesture, PomodoroGestureRecognizer,
+    PomodoroTrigger,
 };
 
 /// Default BCM lines per docs/hardware/hardware-assembly.md: btn1=17 (red),
@@ -73,7 +74,7 @@ struct DebounceState {
 
 /// Turns raw (possibly bouncing) edges into stable press/release transitions.
 /// The first edge is accepted immediately; opposite edges inside the window
-/// are treated as contact bounce and dropped.
+/// are ignored until sampled-level reconciliation confirms the final state.
 #[derive(Clone, Debug)]
 pub(crate) struct Debouncer {
     window: Duration,
@@ -104,12 +105,26 @@ impl Debouncer {
         state.last_change_at = Some(at);
         Some(pressed)
     }
+
+    fn seed(&mut self, button_id: u8, pressed: bool, at: Duration) {
+        self.states.insert(
+            button_id,
+            DebounceState {
+                pressed,
+                last_change_at: Some(at),
+            },
+        );
+    }
+
+    fn reconcile(&mut self, button_id: u8, pressed: bool, at: Duration) -> Option<bool> {
+        self.edge(button_id, pressed, at)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PipelineEvent {
     Press(u8),
-    PomodoroShortcut,
+    PomodoroShortcut(PomodoroTrigger),
 }
 
 /// Consumes debounced GPIO edges plus periodic ticks and produces the events
@@ -140,22 +155,23 @@ impl InputPipeline {
         let Some(stable_pressed) = self.debouncer.edge(button_id, pressed, at) else {
             return events;
         };
-        let kind = if stable_pressed {
-            events.push(PipelineEvent::Press(button_id));
-            ButtonGestureEventKind::Down
-        } else {
-            ButtonGestureEventKind::Up
-        };
-        if self
-            .recognizer
-            .handle(ButtonGestureEvent {
-                button_id,
-                kind,
-                at,
-            })
-            .is_some()
-        {
-            events.push(PipelineEvent::PomodoroShortcut);
+        self.apply_level(button_id, stable_pressed, at, true, &mut events);
+        events
+    }
+
+    pub(crate) fn seed_level(&mut self, button_id: u8, pressed: bool, at: Duration) {
+        self.debouncer.seed(button_id, pressed, at);
+    }
+
+    pub(crate) fn reconcile_level(
+        &mut self,
+        button_id: u8,
+        pressed: bool,
+        at: Duration,
+    ) -> Vec<PipelineEvent> {
+        let mut events = Vec::new();
+        if let Some(authoritative_pressed) = self.debouncer.reconcile(button_id, pressed, at) {
+            self.apply_level(button_id, authoritative_pressed, at, false, &mut events);
         }
         events
     }
@@ -167,7 +183,34 @@ impl InputPipeline {
                 kind: ButtonGestureEventKind::Tick,
                 at,
             })
-            .map(|PomodoroGesture::HoldCompleted| PipelineEvent::PomodoroShortcut)
+            .map(|PomodoroGesture::HoldCompleted(trigger)| PipelineEvent::PomodoroShortcut(trigger))
+    }
+
+    fn apply_level(
+        &mut self,
+        button_id: u8,
+        pressed: bool,
+        at: Duration,
+        emit_press: bool,
+        events: &mut Vec<PipelineEvent>,
+    ) {
+        let kind = if pressed {
+            if emit_press {
+                events.push(PipelineEvent::Press(button_id));
+            }
+            ButtonGestureEventKind::Down
+        } else {
+            ButtonGestureEventKind::Up
+        };
+        if let Some(PomodoroGesture::HoldCompleted(trigger)) =
+            self.recognizer.handle(ButtonGestureEvent {
+                button_id,
+                kind,
+                at,
+            })
+        {
+            events.push(PipelineEvent::PomodoroShortcut(trigger));
+        }
     }
 }
 
@@ -237,28 +280,33 @@ mod listener {
         let mut pipeline = InputPipeline::new();
         // Edges and ticks share one clock so the recognizer timing holds.
         let epoch = Instant::now();
+        for (button_id, pin) in &pins {
+            pipeline.seed_level(*button_id, pin.is_high(), epoch.elapsed());
+        }
         let pin_refs: Vec<&InputPin> = pins.iter().map(|(_, pin)| pin).collect();
         loop {
             let polled = gpio.poll_interrupts(&pin_refs, false, Some(POLL_TIMEOUT));
             let at = epoch.elapsed();
-            let events = match polled {
-                Ok(Some((pin, event))) => {
-                    let Some(button_id) = pins
-                        .iter()
-                        .find(|(_, candidate)| candidate.pin() == pin.pin())
-                        .map(|(button_id, _)| *button_id)
-                    else {
-                        continue;
-                    };
-                    let pressed = event.trigger == Trigger::RisingEdge;
-                    pipeline.handle_edge(button_id, pressed, at)
-                }
-                Ok(None) => pipeline.handle_tick(at).into_iter().collect(),
+            let mut events = match polled {
+                Ok(Some((pin, event))) => pins
+                    .iter()
+                    .find(|(_, candidate)| candidate.pin() == pin.pin())
+                    .map(|(button_id, _)| *button_id)
+                    .map(|button_id| {
+                        let pressed = event.trigger == Trigger::RisingEdge;
+                        pipeline.handle_edge(button_id, pressed, at)
+                    })
+                    .unwrap_or_default(),
+                Ok(None) => Vec::new(),
                 Err(error) => {
                     eprintln!("GPIO interrupt poll failed: {error}");
                     return;
                 }
             };
+            for (button_id, pin) in &pins {
+                events.extend(pipeline.reconcile_level(*button_id, pin.is_high(), at));
+            }
+            events.extend(pipeline.handle_tick(at));
             for event in events {
                 if sender.send(event).is_err() {
                     return;
@@ -274,7 +322,7 @@ pub(crate) use listener::GpioListener;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hardware::button::{POMODORO_COMBO_BUTTONS, POMODORO_HOLD_DURATION};
+    use crate::hardware::button::POMODORO_HOLD_DURATION;
 
     fn ms(value: u64) -> Duration {
         Duration::from_millis(value)
@@ -364,8 +412,8 @@ mod tests {
     #[test]
     fn pipeline_completes_pomodoro_chord_once() {
         let mut pipeline = InputPipeline::new();
-        let mut at = ms(0);
-        for button_id in POMODORO_COMBO_BUTTONS {
+        let mut at = ms(100);
+        for button_id in [1, 2] {
             let events = pipeline.handle_edge(button_id, true, at);
             assert_eq!(events, vec![PipelineEvent::Press(button_id)]);
             at += ms(50);
@@ -378,7 +426,10 @@ mod tests {
         }
         assert_eq!(
             pipeline.handle_tick(at),
-            Some(PipelineEvent::PomodoroShortcut)
+            Some(PipelineEvent::PomodoroShortcut(PomodoroTrigger {
+                buttons: [1, 2],
+                assembly_ms: 50,
+            }))
         );
         assert_eq!(pipeline.handle_tick(at + ms(100)), None);
     }
@@ -386,12 +437,9 @@ mod tests {
     #[test]
     fn pipeline_resets_chord_when_combo_button_releases() {
         let mut pipeline = InputPipeline::new();
-        let mut at = ms(0);
-        for button_id in POMODORO_COMBO_BUTTONS {
-            pipeline.handle_edge(button_id, true, at);
-            at += ms(50);
-        }
-        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[1], false, ms(1000));
+        pipeline.handle_edge(1, true, ms(100));
+        pipeline.handle_edge(2, true, ms(150));
+        pipeline.handle_edge(2, false, ms(1000));
 
         let mut tick_at = ms(1000);
         let deadline = ms(1000) + POMODORO_HOLD_DURATION + ms(500);
@@ -402,22 +450,62 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_completes_slow_pomodoro_chord_once_all_buttons_are_down() {
+    fn pipeline_rejects_slow_pair() {
         let mut pipeline = InputPipeline::new();
-        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[0], true, ms(0));
-        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[1], true, ms(9000));
-        pipeline.handle_edge(POMODORO_COMBO_BUTTONS[2], true, ms(11000));
+        pipeline.handle_edge(1, true, ms(100));
+        pipeline.handle_edge(2, true, ms(601));
+        assert_eq!(pipeline.handle_tick(ms(4000)), None);
+    }
 
-        let mut tick_at = ms(11000);
-        let deadline = ms(11000) + POMODORO_HOLD_DURATION;
-        while tick_at < deadline {
-            assert_eq!(pipeline.handle_tick(tick_at), None);
-            tick_at += ms(100);
-        }
+    #[test]
+    fn startup_high_is_ineligible_until_released_and_pressed_again() {
+        let mut pipeline = InputPipeline::new();
+        pipeline.seed_level(1, true, ms(100));
         assert_eq!(
-            pipeline.handle_tick(deadline),
-            Some(PipelineEvent::PomodoroShortcut)
+            pipeline.handle_edge(2, true, ms(400)),
+            vec![PipelineEvent::Press(2)]
         );
-        assert_eq!(pipeline.handle_tick(deadline + ms(100)), None);
+        assert_eq!(pipeline.handle_tick(ms(3400)), None);
+
+        assert_eq!(pipeline.reconcile_level(1, false, ms(3500)), vec![]);
+        assert_eq!(pipeline.handle_edge(2, false, ms(3500)), vec![]);
+        assert_eq!(
+            pipeline.handle_edge(1, true, ms(4000)),
+            vec![PipelineEvent::Press(1)]
+        );
+        assert_eq!(
+            pipeline.handle_edge(2, true, ms(4100)),
+            vec![PipelineEvent::Press(2)]
+        );
+        assert!(matches!(
+            pipeline.handle_tick(ms(7100)),
+            Some(PipelineEvent::PomodoroShortcut(_))
+        ));
+    }
+
+    #[test]
+    fn sampled_level_reconciles_a_suppressed_release() {
+        let mut pipeline = InputPipeline::new();
+        assert_eq!(
+            pipeline.handle_edge(1, true, ms(100)),
+            vec![PipelineEvent::Press(1)]
+        );
+        assert_eq!(pipeline.handle_edge(1, false, ms(110)), vec![]);
+        assert_eq!(pipeline.reconcile_level(1, false, ms(110)), vec![]);
+        assert_eq!(pipeline.reconcile_level(1, false, ms(140)), vec![]);
+        assert_eq!(
+            pipeline.handle_edge(2, true, ms(500)),
+            vec![PipelineEvent::Press(2)]
+        );
+        assert_eq!(pipeline.handle_tick(ms(4000)), None);
+    }
+
+    #[test]
+    fn sampled_rising_level_updates_gesture_without_duplicate_press() {
+        let mut pipeline = InputPipeline::new();
+        pipeline.seed_level(1, false, ms(0));
+
+        assert_eq!(pipeline.reconcile_level(1, true, ms(100)), vec![]);
+        assert_eq!(pipeline.handle_tick(ms(4000)), None);
     }
 }

@@ -9,7 +9,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::db::admin::audio::{self as audio_storage, DEFAULT_VOLUME_PERCENT};
-use crate::db::admin::pomodoro::{runtime_enabled_settings, PomodoroSettings};
+use crate::db::admin::pomodoro::{
+    runtime_enabled_settings, PomodoroSettings, TRIGGER_ASSEMBLY_WINDOW_MS, TRIGGER_HOLD_SECONDS,
+    TRIGGER_REQUIRED_BUTTON_COUNT,
+};
 use crate::db::runtime as runtime_db;
 use crate::events::types::{ButtonBehavior, ButtonEvent, ButtonMapping, ContentPack, Response};
 use crate::hardware::gpio;
@@ -40,9 +43,13 @@ const FOCUS_RIGHT_HZ: f32 = 226.0;
 const FOCUS_VOLUME: f32 = 0.10;
 const FOCUS_FADE_SECONDS: f32 = 3.0;
 const FOCUS_SLOW_MOD_HZ: f32 = 0.035;
-pub(crate) const POMODORO_COMBO_BUTTONS: [u8; 3] = [1, 2, 4];
+pub(crate) const POMODORO_BUTTON_IDS: std::ops::RangeInclusive<u8> = 1..=5;
+pub(crate) const POMODORO_REQUIRED_BUTTON_COUNT: usize = TRIGGER_REQUIRED_BUTTON_COUNT as usize;
 #[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
-pub(crate) const POMODORO_HOLD_DURATION: Duration = Duration::from_secs(2);
+pub(crate) const POMODORO_ASSEMBLY_WINDOW: Duration =
+    Duration::from_millis(TRIGGER_ASSEMBLY_WINDOW_MS);
+#[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
+pub(crate) const POMODORO_HOLD_DURATION: Duration = Duration::from_secs(TRIGGER_HOLD_SECONDS);
 /// A combo button may lift for up to this long without resetting the hold, so
 /// finger tremor on the physical buttons does not silently restart the timer.
 pub(crate) const POMODORO_RELEASE_GRACE: Duration = Duration::from_millis(250);
@@ -1656,14 +1663,22 @@ pub(crate) struct ButtonGestureEvent {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PomodoroGesture {
-    HoldCompleted,
+    HoldCompleted(PomodoroTrigger),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PomodoroTrigger {
+    pub(crate) buttons: [u8; POMODORO_REQUIRED_BUTTON_COUNT],
+    pub(crate) assembly_ms: u64,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct PomodoroGestureRecognizer {
     pressed_since: HashMap<u8, Duration>,
     lifted_at: HashMap<u8, Duration>,
-    chord_started_at: Option<Duration>,
+    accepted_pair: Option<[u8; POMODORO_REQUIRED_BUTTON_COUNT]>,
+    hold_started_at: Option<Duration>,
+    assembly_ms: u64,
     completed: bool,
 }
 
@@ -1672,7 +1687,9 @@ impl PomodoroGestureRecognizer {
         Self {
             pressed_since: HashMap::new(),
             lifted_at: HashMap::new(),
-            chord_started_at: None,
+            accepted_pair: None,
+            hold_started_at: None,
+            assembly_ms: 0,
             completed: false,
         }
     }
@@ -1680,17 +1697,18 @@ impl PomodoroGestureRecognizer {
     pub(crate) fn handle(&mut self, event: ButtonGestureEvent) -> Option<PomodoroGesture> {
         match event.kind {
             ButtonGestureEventKind::Down => {
+                self.expire_lifted(event.at);
                 self.pressed_since
                     .entry(event.button_id)
                     .or_insert(event.at);
                 self.lifted_at.remove(&event.button_id);
-                self.expire_lifted(event.at);
-                self.update_chord_state(event.at);
+                self.try_accept_pair(event.button_id, event.at);
             }
             ButtonGestureEventKind::Up => {
                 self.pressed_since.remove(&event.button_id);
-                if POMODORO_COMBO_BUTTONS.contains(&event.button_id)
-                    && self.chord_started_at.is_some()
+                if self
+                    .accepted_pair
+                    .is_some_and(|pair| pair.contains(&event.button_id))
                 {
                     self.lifted_at.insert(event.button_id, event.at);
                 }
@@ -1698,25 +1716,28 @@ impl PomodoroGestureRecognizer {
             }
             ButtonGestureEventKind::Tick => {
                 self.expire_lifted(event.at);
-                self.update_chord_state(event.at);
             }
         }
 
-        if !self.completed && self.all_combo_buttons_pressed() {
-            if let Some(started_at) = self.chord_started_at {
+        if !self.completed && self.accepted_pair_is_pressed() {
+            if let (Some(started_at), Some(buttons)) = (self.hold_started_at, self.accepted_pair) {
                 if event.at.saturating_sub(started_at) >= POMODORO_HOLD_DURATION {
                     self.completed = true;
-                    return Some(PomodoroGesture::HoldCompleted);
+                    return Some(PomodoroGesture::HoldCompleted(PomodoroTrigger {
+                        buttons,
+                        assembly_ms: self.assembly_ms,
+                    }));
                 }
             }
         }
         None
     }
 
-    fn all_combo_buttons_pressed(&self) -> bool {
-        POMODORO_COMBO_BUTTONS
-            .iter()
-            .all(|button_id| self.pressed_since.contains_key(button_id))
+    fn accepted_pair_is_pressed(&self) -> bool {
+        self.accepted_pair.is_some_and(|pair| {
+            pair.iter()
+                .all(|button_id| self.pressed_since.contains_key(button_id))
+        })
     }
 
     /// Resets the chord once any combo button has stayed lifted beyond the
@@ -1728,18 +1749,39 @@ impl PomodoroGestureRecognizer {
             .any(|lifted| at.saturating_sub(*lifted) > POMODORO_RELEASE_GRACE)
         {
             self.lifted_at.clear();
-            self.chord_started_at = None;
+            self.accepted_pair = None;
+            self.hold_started_at = None;
+            self.assembly_ms = 0;
             self.completed = false;
         }
     }
 
-    fn update_chord_state(&mut self, at: Duration) {
-        if !self.all_combo_buttons_pressed() {
+    fn try_accept_pair(&mut self, newest_button: u8, at: Duration) {
+        if self.accepted_pair.is_some() || !POMODORO_BUTTON_IDS.contains(&newest_button) {
             return;
         }
-
-        self.chord_started_at.get_or_insert(at);
+        let Some((&other_button, &other_down_at)) = self
+            .pressed_since
+            .iter()
+            .filter(|(button_id, down_at)| {
+                **button_id != newest_button
+                    && POMODORO_BUTTON_IDS.contains(button_id)
+                    && at.saturating_sub(**down_at) <= POMODORO_ASSEMBLY_WINDOW
+            })
+            .max_by_key(|(_, down_at)| **down_at)
+        else {
+            return;
+        };
+        let mut buttons = [other_button, newest_button];
+        buttons.sort_unstable();
+        self.accepted_pair = Some(buttons);
+        self.hold_started_at = Some(at);
+        self.assembly_ms = duration_millis(at.saturating_sub(other_down_at));
     }
+}
+
+fn duration_millis(duration: Duration) -> u64 {
+    duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
 
 fn display_timestamp(rfc3339: &str) -> String {
@@ -1821,7 +1863,16 @@ impl ButtonInput for GpioButtonInput {
                         }
                     }
                 }
-                gpio::PipelineEvent::PomodoroShortcut => return Ok(InputEvent::PomodoroShortcut),
+                gpio::PipelineEvent::PomodoroShortcut(trigger) => {
+                    println!(
+                        "pomodoro trigger accepted pair={}+{} assembly_ms={} hold_seconds={}",
+                        trigger.buttons[0],
+                        trigger.buttons[1],
+                        trigger.assembly_ms,
+                        TRIGGER_HOLD_SECONDS
+                    );
+                    return Ok(InputEvent::PomodoroShortcut);
+                }
             }
         }
     }
@@ -2449,95 +2500,102 @@ mod tests {
     }
 
     #[test]
-    fn pomodoro_gesture_starts_after_together_hold() {
-        let mut recognizer = PomodoroGestureRecognizer::new();
-
-        assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
-        assert_eq!(recognizer.handle(gesture_down(2, 6_000)), None);
-        assert_eq!(recognizer.handle(gesture_down(4, 11_000)), None);
-        assert_eq!(recognizer.handle(gesture_tick(12_900)), None);
-        assert_eq!(
-            recognizer.handle(gesture_tick(13_000)),
-            Some(PomodoroGesture::HoldCompleted)
-        );
+    fn pomodoro_gesture_accepts_all_ten_logical_pairs() {
+        for first in 1..=5 {
+            for second in (first + 1)..=5 {
+                let mut recognizer = PomodoroGestureRecognizer::new();
+                assert_eq!(recognizer.handle(gesture_down(first, 100)), None);
+                assert_eq!(recognizer.handle(gesture_down(second, 225)), None);
+                assert_eq!(recognizer.handle(gesture_tick(3_124)), None);
+                assert_eq!(
+                    recognizer.handle(gesture_tick(3_225)),
+                    Some(PomodoroGesture::HoldCompleted(PomodoroTrigger {
+                        buttons: [first, second],
+                        assembly_ms: 125,
+                    }))
+                );
+            }
+        }
     }
 
     #[test]
-    fn pomodoro_gesture_release_before_hold_cancels() {
-        let mut recognizer = PomodoroGestureRecognizer::new();
+    fn pomodoro_gesture_rejects_each_single_button() {
+        for button_id in 1..=5 {
+            let mut recognizer = PomodoroGestureRecognizer::new();
+            assert_eq!(recognizer.handle(gesture_down(button_id, 100)), None);
+            assert_eq!(recognizer.handle(gesture_tick(10_000)), None);
+        }
+    }
 
-        assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
-        assert_eq!(recognizer.handle(gesture_down(2, 50)), None);
-        assert_eq!(recognizer.handle(gesture_down(4, 100)), None);
+    #[test]
+    fn pomodoro_gesture_requires_three_full_seconds() {
+        let mut recognizer = assembled_pair(1, 5);
+        assert_eq!(recognizer.handle(gesture_tick(3_050)), None);
+        assert!(matches!(
+            recognizer.handle(gesture_tick(3_150)),
+            Some(PomodoroGesture::HoldCompleted(_))
+        ));
+    }
+
+    #[test]
+    fn pomodoro_gesture_rejects_slow_pair_assembly() {
+        let mut recognizer = PomodoroGestureRecognizer::new();
+        assert_eq!(recognizer.handle(gesture_down(1, 100)), None);
+        assert_eq!(recognizer.handle(gesture_down(2, 601)), None);
+        assert_eq!(recognizer.handle(gesture_tick(10_000)), None);
+    }
+
+    #[test]
+    fn pomodoro_gesture_expires_release_before_repress_without_tick() {
+        let mut recognizer = assembled_pair(1, 2);
         assert_eq!(recognizer.handle(gesture_up(2, 1_000)), None);
+        assert_eq!(recognizer.handle(gesture_down(2, 1_251)), None);
+        assert_eq!(recognizer.handle(gesture_tick(10_000)), None);
+    }
+
+    #[test]
+    fn pomodoro_gesture_survives_micro_release() {
+        let mut recognizer = assembled_pair(1, 2);
+        assert_eq!(recognizer.handle(gesture_up(2, 1_000)), None);
+        assert_eq!(recognizer.handle(gesture_down(2, 1_250)), None);
+        assert!(matches!(
+            recognizer.handle(gesture_tick(3_150)),
+            Some(PomodoroGesture::HoldCompleted(_))
+        ));
+    }
+
+    #[test]
+    fn pomodoro_gesture_keeps_third_button_independent() {
+        let mut recognizer = assembled_pair(1, 2);
+        assert_eq!(recognizer.handle(gesture_down(3, 200)), None);
+        assert_eq!(recognizer.handle(gesture_up(3, 1_000)), None);
+        assert!(matches!(
+            recognizer.handle(gesture_tick(3_150)),
+            Some(PomodoroGesture::HoldCompleted(PomodoroTrigger {
+                buttons: [1, 2],
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn pomodoro_gesture_fires_once_and_rearms_only_after_reset() {
+        let mut recognizer = assembled_pair(1, 2);
+        assert!(recognizer.handle(gesture_tick(3_150)).is_some());
         assert_eq!(recognizer.handle(gesture_tick(6_000)), None);
-        assert_eq!(recognizer.handle(gesture_tick(7_000)), None);
+        assert_eq!(recognizer.handle(gesture_up(1, 6_100)), None);
+        assert_eq!(recognizer.handle(gesture_tick(6_351)), None);
+        assert_eq!(recognizer.handle(gesture_up(2, 6_400)), None);
+        assert_eq!(recognizer.handle(gesture_down(1, 6_500)), None);
+        assert_eq!(recognizer.handle(gesture_down(2, 6_600)), None);
+        assert!(recognizer.handle(gesture_tick(9_600)).is_some());
     }
 
-    #[test]
-    fn pomodoro_gesture_timer_starts_when_chord_is_complete() {
+    fn assembled_pair(first: u8, second: u8) -> PomodoroGestureRecognizer {
         let mut recognizer = PomodoroGestureRecognizer::new();
-
-        assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
-        assert_eq!(recognizer.handle(gesture_down(2, 9_000)), None);
-        assert_eq!(recognizer.handle(gesture_tick(20_000)), None);
-        assert_eq!(recognizer.handle(gesture_down(4, 21_000)), None);
-        assert_eq!(recognizer.handle(gesture_tick(22_900)), None);
-        assert_eq!(
-            recognizer.handle(gesture_tick(23_000)),
-            Some(PomodoroGesture::HoldCompleted)
-        );
-    }
-
-    #[test]
-    fn pomodoro_gesture_survives_micro_release_within_grace() {
-        let mut recognizer = PomodoroGestureRecognizer::new();
-
-        assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
-        assert_eq!(recognizer.handle(gesture_down(2, 50)), None);
-        assert_eq!(recognizer.handle(gesture_down(4, 100)), None);
-        // Finger tremor: button 2 lifts for 150 ms, inside the grace window.
-        assert_eq!(recognizer.handle(gesture_up(2, 1_000)), None);
-        assert_eq!(recognizer.handle(gesture_down(2, 1_150)), None);
-        assert_eq!(recognizer.handle(gesture_tick(2_099)), None);
-        assert_eq!(
-            recognizer.handle(gesture_tick(2_100)),
-            Some(PomodoroGesture::HoldCompleted)
-        );
-    }
-
-    #[test]
-    fn pomodoro_gesture_does_not_fire_while_button_is_lifted() {
-        let mut recognizer = PomodoroGestureRecognizer::new();
-
-        assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
-        assert_eq!(recognizer.handle(gesture_down(2, 50)), None);
-        assert_eq!(recognizer.handle(gesture_down(4, 100)), None);
-        // Lifted across the hold deadline: completion waits for the re-press.
-        assert_eq!(recognizer.handle(gesture_up(2, 2_050)), None);
-        assert_eq!(recognizer.handle(gesture_tick(2_150)), None);
-        assert_eq!(
-            recognizer.handle(gesture_down(2, 2_250)),
-            Some(PomodoroGesture::HoldCompleted)
-        );
-    }
-
-    #[test]
-    fn pomodoro_gesture_resets_after_release_beyond_grace() {
-        let mut recognizer = PomodoroGestureRecognizer::new();
-
-        assert_eq!(recognizer.handle(gesture_down(1, 0)), None);
-        assert_eq!(recognizer.handle(gesture_down(2, 50)), None);
-        assert_eq!(recognizer.handle(gesture_down(4, 100)), None);
-        assert_eq!(recognizer.handle(gesture_up(2, 500)), None);
-        assert_eq!(recognizer.handle(gesture_tick(800)), None);
-        // The re-press restarts the hold timer from scratch.
-        assert_eq!(recognizer.handle(gesture_down(2, 900)), None);
-        assert_eq!(recognizer.handle(gesture_tick(2_899)), None);
-        assert_eq!(
-            recognizer.handle(gesture_tick(2_900)),
-            Some(PomodoroGesture::HoldCompleted)
-        );
+        assert_eq!(recognizer.handle(gesture_down(first, 100)), None);
+        assert_eq!(recognizer.handle(gesture_down(second, 150)), None);
+        recognizer
     }
 
     #[test]

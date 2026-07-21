@@ -719,6 +719,10 @@ mod tests {
         assert_eq!(body["enabled"], false);
         assert_eq!(body["focus_minutes"], 10);
         assert_eq!(body["recommendation"]["preset"], "mini");
+        assert_eq!(body["trigger"]["mode"], "any");
+        assert_eq!(body["trigger"]["required_button_count"], 2);
+        assert_eq!(body["trigger"]["assembly_window_ms"], 500);
+        assert_eq!(body["trigger"]["hold_seconds"], 3);
         assert!(body["validated_at"].is_null());
 
         let saved = app
@@ -749,6 +753,10 @@ mod tests {
         assert_eq!(body["enabled"], true);
         assert_eq!(body["child_age_years"], 9);
         assert_eq!(body["recommendation"]["focus_minutes"], 20);
+        assert_eq!(body["trigger"]["mode"], "any");
+        assert_eq!(body["trigger"]["required_button_count"], 2);
+        assert_eq!(body["trigger"]["assembly_window_ms"], 500);
+        assert_eq!(body["trigger"]["hold_seconds"], 3);
         assert!(body["validated_at"].as_str().is_some());
     }
 

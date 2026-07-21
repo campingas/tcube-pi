@@ -17,6 +17,8 @@ import {
   applyPreset,
   pomodoroCanEnable,
   pomodoroPayload,
+  pomodoroTrigger,
+  pomodoroTriggerInstruction,
   recommendationForAge,
   settingsToPomodoroForm
 } from "../../src/focus-routine-controller.ts";
@@ -236,6 +238,19 @@ describe("focus routine controller", () => {
     const payload = pomodoroPayload({ ...settingsToPomodoroForm(null), enabled: true });
     assert.equal(payload.enabled, false);
     assert.equal(payload.child_age_years, null);
+  });
+
+  test("Pomodoro trigger metadata falls back to the Rust contract defaults", () => {
+    assert.deepEqual(pomodoroTrigger(null), {
+      mode: "any",
+      required_button_count: 2,
+      assembly_window_ms: 500,
+      hold_seconds: 3
+    });
+    assert.equal(
+      pomodoroTriggerInstruction(null),
+      "Hold any two buttons together for 3 seconds. This setting is stored only on this cube."
+    );
   });
 });
 

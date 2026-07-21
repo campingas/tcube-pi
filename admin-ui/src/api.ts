@@ -183,6 +183,13 @@ export type PomodoroRecommendation = {
   reason: string;
 };
 
+export type PomodoroTriggerMetadata = {
+  mode: "any";
+  required_button_count: 2;
+  assembly_window_ms: number;
+  hold_seconds: number;
+};
+
 export type PomodoroSettings = {
   enabled: boolean;
   child_age_years: number | null;
@@ -193,6 +200,7 @@ export type PomodoroSettings = {
   validated_at: string | null;
   updated_at: string;
   recommendation: PomodoroRecommendation;
+  trigger: PomodoroTriggerMetadata;
 };
 
 export type AudioSettings = {

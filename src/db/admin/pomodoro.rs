@@ -13,6 +13,10 @@ pub(crate) const MIN_CYCLES: u8 = 1;
 pub(crate) const MAX_CYCLES: u8 = 8;
 pub(crate) const MIN_CHILD_AGE_YEARS: u8 = 3;
 pub(crate) const MAX_CHILD_AGE_YEARS: u8 = 18;
+pub(crate) const TRIGGER_MODE: &str = "any";
+pub(crate) const TRIGGER_REQUIRED_BUTTON_COUNT: u8 = 2;
+pub(crate) const TRIGGER_ASSEMBLY_WINDOW_MS: u64 = 500;
+pub(crate) const TRIGGER_HOLD_SECONDS: u64 = 3;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct PomodoroSettings {
@@ -40,6 +44,15 @@ pub(crate) struct PomodoroSettingsWithRecommendation {
     #[serde(flatten)]
     pub(crate) settings: PomodoroSettings,
     pub(crate) recommendation: PomodoroRecommendation,
+    pub(crate) trigger: PomodoroTriggerMetadata,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct PomodoroTriggerMetadata {
+    pub(crate) mode: String,
+    pub(crate) required_button_count: u8,
+    pub(crate) assembly_window_ms: u64,
+    pub(crate) hold_seconds: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -207,6 +220,12 @@ pub(crate) fn runtime_enabled_settings(conn: &Connection) -> Result<Option<Pomod
 fn with_recommendation(settings: PomodoroSettings) -> PomodoroSettingsWithRecommendation {
     PomodoroSettingsWithRecommendation {
         recommendation: recommendation_for_age(settings.child_age_years),
+        trigger: PomodoroTriggerMetadata {
+            mode: TRIGGER_MODE.to_string(),
+            required_button_count: TRIGGER_REQUIRED_BUTTON_COUNT,
+            assembly_window_ms: TRIGGER_ASSEMBLY_WINDOW_MS,
+            hold_seconds: TRIGGER_HOLD_SECONDS,
+        },
         settings,
     }
 }

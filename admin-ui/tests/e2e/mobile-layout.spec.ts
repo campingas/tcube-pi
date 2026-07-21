@@ -368,6 +368,8 @@ test("setup checklist sits below the notice and Wi-Fi action opens settings veri
 
   await page.getByRole("button", { name: /Wi-Fi verified/i }).click();
   await expect(page.getByRole("navigation").getByText("Settings")).toBeVisible();
+  await expect(page.locator(".settings-row-title").filter({ hasText: "Focus routine" })).toHaveText("Focus routine");
+  await expect(page.getByText("Hold any two buttons together for 3 seconds. This setting is stored only on this cube.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Mark verified" })).toBeVisible();
 });
 
@@ -515,6 +517,12 @@ async function mockAdminApi(page: Page) {
       break_minutes: 3,
       cycles: 2,
       reason: "Starter plan until an owner saves the child age."
+    },
+    trigger: {
+      mode: "any",
+      required_button_count: 2,
+      assembly_window_ms: 500,
+      hold_seconds: 3
     }
   };
   page.on("dialog", (dialog) => dialog.accept());

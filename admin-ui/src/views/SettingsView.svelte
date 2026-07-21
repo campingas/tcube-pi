@@ -21,7 +21,7 @@
   } from "@lucide/svelte";
   import type { AudioSettings, AuthSession, PomodoroPreset, PomodoroSettings, RecoveryCode, ServiceStatus, SetupReview } from "../api";
   import { volumeLabel } from "../audio-settings-controller";
-  import { pomodoroCanEnable, recommendationForAge } from "../focus-routine-controller";
+  import { pomodoroCanEnable, pomodoroTriggerInstruction, recommendationForAge } from "../focus-routine-controller";
   import type { PomodoroForm } from "../focus-routine-controller";
   import type { MessageType } from "../types";
   import TopBar from "../components/TopBar.svelte";
@@ -94,6 +94,7 @@
     state.pomodoroForm.childAgeYears.trim() && Number.isInteger(pomodoroAgeValue) && pomodoroAgeValue >= 3 && pomodoroAgeValue <= 18 ? pomodoroAgeValue : null
   );
   $: pomodoroEnableAllowed = pomodoroCanEnable(state.pomodoroForm);
+  $: triggerInstruction = pomodoroTriggerInstruction(state.pomodoro);
   $: pomodoroStatus = state.pomodoro?.enabled && state.pomodoro?.validated_at ? "Enabled" : state.pomodoro?.validated_at ? "Saved" : "Not saved";
 </script>
 
@@ -238,8 +239,8 @@
           <Timer size={17} strokeWidth={1.5} aria-hidden="true" />
         </div>
         <div class="settings-row-body">
-          <div class="settings-row-title">Pomodoro routine</div>
-          <div class="settings-row-desc">Hold Top, Front left, and Front right for 5 seconds. This setting is stored only on this cube.</div>
+          <div class="settings-row-title">Focus routine</div>
+          <div class="settings-row-desc">{triggerInstruction}</div>
         </div>
         <div class="settings-row-right">
           <span class:bs-teal={state.pomodoro?.enabled} class:bs-amber={!state.pomodoro?.validated_at} class:bs-muted={!state.pomodoro?.enabled && state.pomodoro?.validated_at} class="settings-badge">{pomodoroStatus}</span>
