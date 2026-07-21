@@ -183,6 +183,13 @@ export type PomodoroRecommendation = {
   reason: string;
 };
 
+export type PomodoroTriggerMetadata = {
+  mode: "any";
+  required_button_count: 2;
+  assembly_window_ms: number;
+  hold_seconds: number;
+};
+
 export type PomodoroSettings = {
   enabled: boolean;
   child_age_years: number | null;
@@ -193,6 +200,12 @@ export type PomodoroSettings = {
   validated_at: string | null;
   updated_at: string;
   recommendation: PomodoroRecommendation;
+  trigger: PomodoroTriggerMetadata;
+};
+
+export type AudioSettings = {
+  volume_percent: number;
+  updated_at: string;
 };
 
 type RequestOptions = RequestInit & {
@@ -297,6 +310,17 @@ export function savePomodoroSettings(body: {
   preset: PomodoroPreset;
 }) {
   return api<PomodoroSettings>(`${API_ROOT}/setup/pomodoro`, { method: "PUT", json: body });
+}
+
+export function getAudioSettings() {
+  return api<AudioSettings>(`${API_ROOT}/setup/audio`);
+}
+
+export function saveAudioSettings(volumePercent: number) {
+  return api<AudioSettings>(`${API_ROOT}/setup/audio`, {
+    method: "PUT",
+    json: { volume_percent: volumePercent }
+  });
 }
 
 export function listRecentEvents() {

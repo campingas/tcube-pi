@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { updateDraftFormValue } from "../../src/button-config-controller.ts";
+import { volumeLabel } from "../../src/audio-settings-controller.ts";
 import {
   generatedSpeechDisabled,
   generatedSpeechOfflineStatus,
@@ -16,6 +17,8 @@ import {
   applyPreset,
   pomodoroCanEnable,
   pomodoroPayload,
+  pomodoroTrigger,
+  pomodoroTriggerInstruction,
   recommendationForAge,
   settingsToPomodoroForm
 } from "../../src/focus-routine-controller.ts";
@@ -53,6 +56,14 @@ const baseDraft: DraftForm = {
   provider: "auto",
   voice: ""
 };
+
+describe("audio settings controller", () => {
+  test("labels zero as muted and other values as percentages", () => {
+    assert.equal(volumeLabel(0), "Muted");
+    assert.equal(volumeLabel(50), "50%");
+    assert.equal(volumeLabel(100), "100%");
+  });
+});
 
 describe("button config controller", () => {
   test("patches draft forms without mutating the original object", () => {
@@ -227,6 +238,19 @@ describe("focus routine controller", () => {
     const payload = pomodoroPayload({ ...settingsToPomodoroForm(null), enabled: true });
     assert.equal(payload.enabled, false);
     assert.equal(payload.child_age_years, null);
+  });
+
+  test("Pomodoro trigger metadata falls back to the Rust contract defaults", () => {
+    assert.deepEqual(pomodoroTrigger(null), {
+      mode: "any",
+      required_button_count: 2,
+      assembly_window_ms: 500,
+      hold_seconds: 3
+    });
+    assert.equal(
+      pomodoroTriggerInstruction(null),
+      "Hold any two buttons together for 3 seconds. This setting is stored only on this cube."
+    );
   });
 });
 

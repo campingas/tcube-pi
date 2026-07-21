@@ -10,6 +10,8 @@
     Lock,
     LogOut,
     Plus,
+    Volume2,
+    VolumeX,
     Timer,
     Usb,
     User,
@@ -17,8 +19,9 @@
     Wifi,
     X
   } from "@lucide/svelte";
-  import type { AuthSession, PomodoroPreset, PomodoroSettings, RecoveryCode, ServiceStatus, SetupReview } from "../api";
-  import { pomodoroCanEnable, recommendationForAge } from "../focus-routine-controller";
+  import type { AudioSettings, AuthSession, PomodoroPreset, PomodoroSettings, RecoveryCode, ServiceStatus, SetupReview } from "../api";
+  import { volumeLabel } from "../audio-settings-controller";
+  import { pomodoroCanEnable, pomodoroTriggerInstruction, recommendationForAge } from "../focus-routine-controller";
   import type { PomodoroForm } from "../focus-routine-controller";
   import type { MessageType } from "../types";
   import TopBar from "../components/TopBar.svelte";
@@ -29,6 +32,11 @@
     setup: SetupReview | null;
     pomodoro: PomodoroSettings | null;
     pomodoroForm: PomodoroForm;
+    audioSettings: AudioSettings | null;
+    audioVolume: number;
+    audioSaving: boolean;
+    audioMessage: string | null;
+    audioError: string | null;
     message: string;
     messageType: MessageType;
     roleLabel: string;
@@ -59,6 +67,8 @@
     applyPomodoroPreset: (preset: PomodoroPreset) => void;
     updatePomodoroCustom: (patch: Partial<Omit<PomodoroForm, "preset">>) => void;
     savePomodoro: () => void | Promise<void>;
+    setAudioVolume: (volumePercent: number) => void;
+    saveAudioVolume: (volumePercent: number) => void | Promise<void>;
     createRecoveryCode: () => void | Promise<void>;
     copyText: (value: string, label: string) => void | Promise<void>;
     createManagerInvitation: () => void | Promise<void>;
@@ -84,6 +94,7 @@
     state.pomodoroForm.childAgeYears.trim() && Number.isInteger(pomodoroAgeValue) && pomodoroAgeValue >= 3 && pomodoroAgeValue <= 18 ? pomodoroAgeValue : null
   );
   $: pomodoroEnableAllowed = pomodoroCanEnable(state.pomodoroForm);
+  $: triggerInstruction = pomodoroTriggerInstruction(state.pomodoro);
   $: pomodoroStatus = state.pomodoro?.enabled && state.pomodoro?.validated_at ? "Enabled" : state.pomodoro?.validated_at ? "Saved" : "Not saved";
 </script>
 
@@ -184,6 +195,43 @@
   </section>
 
   <section class="settings-group">
+    <div class="settings-group-label">Sound · Owner only</div>
+    <div class="settings-group-card sound-settings-card">
+      <div class="settings-row no-tap">
+        <div class:si-muted={state.audioVolume === 0} class:si-teal={state.audioVolume > 0} class="settings-row-icon">
+          {#if state.audioVolume === 0}<VolumeX size={17} strokeWidth={1.5} aria-hidden="true" />{:else}<Volume2 size={17} strokeWidth={1.5} aria-hidden="true" />{/if}
+        </div>
+        <div class="settings-row-body">
+          <div class="settings-row-title">Device volume</div>
+          <div class="settings-row-desc">Controls every sound played by this cube.</div>
+        </div>
+        <div class="settings-row-right">
+          <span class="settings-row-value" data-testid="audio-volume-label">{volumeLabel(state.audioVolume)}</span>
+        </div>
+      </div>
+      <div class="sound-volume-control">
+        <label class="field-label" for="device-volume">Master volume</label>
+        <input
+          id="device-volume"
+          data-testid="audio-volume-slider"
+          type="range"
+          min="0"
+          max="100"
+          step="5"
+          value={state.audioVolume}
+          disabled={!state.isOwner || state.audioSaving}
+          aria-describedby="audio-volume-status"
+          on:input={(event) => actions.setAudioVolume(Number((event.currentTarget as HTMLInputElement).value))}
+          on:change={(event) => actions.saveAudioVolume(Number((event.currentTarget as HTMLInputElement).value))}
+        />
+        <div id="audio-volume-status" class:error={Boolean(state.audioError)} class="sound-volume-status" aria-live="polite">
+          {state.audioError ?? (state.audioSaving ? "Saving…" : state.audioMessage ?? (state.isOwner ? "Saved when you release the slider." : "Only an owner can change device volume."))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-group">
     <div class="settings-group-label">Focus routine · Owner only</div>
     <div class="settings-group-card focus-routine-card">
       <div class="settings-row no-tap">
@@ -191,8 +239,8 @@
           <Timer size={17} strokeWidth={1.5} aria-hidden="true" />
         </div>
         <div class="settings-row-body">
-          <div class="settings-row-title">Pomodoro routine</div>
-          <div class="settings-row-desc">Hold Top, Front left, and Front right for 5 seconds. This setting is stored only on this cube.</div>
+          <div class="settings-row-title">Focus routine</div>
+          <div class="settings-row-desc">{triggerInstruction}</div>
         </div>
         <div class="settings-row-right">
           <span class:bs-teal={state.pomodoro?.enabled} class:bs-amber={!state.pomodoro?.validated_at} class:bs-muted={!state.pomodoro?.enabled && state.pomodoro?.validated_at} class="settings-badge">{pomodoroStatus}</span>

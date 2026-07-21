@@ -2260,6 +2260,29 @@ audio {
   background: var(--surface-2);
 }
 
+.sound-volume-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+}
+
+.sound-volume-control input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent-coral);
+}
+
+.sound-volume-status {
+  min-height: 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.sound-volume-status.error {
+  color: var(--accent-coral);
+}
+
 .focus-routine-card {
   padding-bottom: 14px;
 }

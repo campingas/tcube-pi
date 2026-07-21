@@ -1,4 +1,4 @@
-import type { PomodoroPreset, PomodoroRecommendation, PomodoroSettings } from "./api";
+import type { PomodoroPreset, PomodoroRecommendation, PomodoroSettings, PomodoroTriggerMetadata } from "./api";
 
 export type PomodoroForm = {
   enabled: boolean;
@@ -8,6 +8,24 @@ export type PomodoroForm = {
   cycles: number;
   preset: PomodoroPreset;
 };
+
+const DEFAULT_TRIGGER: PomodoroTriggerMetadata = {
+  mode: "any",
+  required_button_count: 2,
+  assembly_window_ms: 500,
+  hold_seconds: 3
+};
+
+export function pomodoroTrigger(settings: PomodoroSettings | null): PomodoroTriggerMetadata {
+  return settings?.trigger ?? DEFAULT_TRIGGER;
+}
+
+export function pomodoroTriggerInstruction(settings: PomodoroSettings | null) {
+  const trigger = pomodoroTrigger(settings);
+  const count = trigger.required_button_count === 2 ? "two" : String(trigger.required_button_count);
+  const scope = trigger.mode === "any" ? "any " : "";
+  return `Hold ${scope}${count} buttons together for ${trigger.hold_seconds} seconds. This setting is stored only on this cube.`;
+}
 
 export function starterRecommendation(): PomodoroRecommendation {
   return {

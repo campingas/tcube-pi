@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod audio;
 pub mod auth;
 pub mod content;
 pub mod pomodoro;

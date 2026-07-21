@@ -368,6 +368,8 @@ test("setup checklist sits below the notice and Wi-Fi action opens settings veri
 
   await page.getByRole("button", { name: /Wi-Fi verified/i }).click();
   await expect(page.getByRole("navigation").getByText("Settings")).toBeVisible();
+  await expect(page.locator(".settings-row-title").filter({ hasText: "Focus routine" })).toHaveText("Focus routine");
+  await expect(page.getByText("Hold any two buttons together for 3 seconds. This setting is stored only on this cube.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Mark verified" })).toBeVisible();
 });
 
@@ -388,11 +390,25 @@ test("settings page matches grouped setup controls and calls settings APIs", asy
   await expect(page.getByRole("navigation").getByText("Settings")).toBeVisible();
   await expect(page.locator(".settings-group-label")).toHaveText([
     "Cube",
+    "Sound · Owner only",
     "Focus routine · Owner only",
     "Account",
     "Manager invitations · Owner only",
     "Danger zone"
   ]);
+
+  const volumeSlider = page.getByTestId("audio-volume-slider");
+  const volumeRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "PUT" && new URL(request.url()).pathname === "/api/pi/v1/setup/audio") {
+      volumeRequests.push(request.postData() ?? "");
+    }
+  });
+  await expect(volumeSlider).toHaveValue("50");
+  await volumeSlider.fill("0");
+  await expect(page.getByTestId("audio-volume-label")).toHaveText("Muted");
+  await expect(page.getByText("Volume set to 0%.")).toBeVisible();
+  expect(volumeRequests).toHaveLength(1);
 
   await page.getByLabel("Child age").fill("10");
   await expect(page.getByLabel("Focus minutes")).toHaveValue("20");
@@ -439,7 +455,7 @@ test("settings page matches grouped setup controls and calls settings APIs", asy
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test("manager can view focus routine settings but cannot edit them", async ({ page }) => {
+test("manager can view sound and focus settings but cannot edit them", async ({ page }) => {
   await page.route("**/api/pi/v1/auth/session", async (route) => {
     await route.fulfill({
       json: {
@@ -453,14 +469,39 @@ test("manager can view focus routine settings but cannot edit them", async ({ pa
   await page.goto("/");
   await page.getByRole("button", { name: "Settings" }).click();
 
+  await expect(page.getByTestId("audio-volume-label")).toHaveText("50%");
+  await expect(page.getByTestId("audio-volume-slider")).toBeDisabled();
+  await expect(page.getByText("Only an owner can change device volume.")).toBeVisible();
   await expect(page.getByText("Focus routine · Owner only")).toBeVisible();
   await expect(page.getByLabel("Child age")).toBeDisabled();
   await expect(page.getByLabel("Enable after save")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Save focus routine" })).toBeDisabled();
 });
 
+test("failed volume save rolls the slider back and shows its dedicated error", async ({ page }) => {
+  await page.route("**/api/pi/v1/setup/audio", async (route) => {
+    if (route.request().method() === "PUT") {
+      await route.fulfill({ status: 400, json: { detail: "volume save failed" } });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+
+  const volumeSlider = page.getByTestId("audio-volume-slider");
+  await volumeSlider.fill("75");
+  await expect(volumeSlider).toHaveValue("50");
+  await expect(page.getByText("volume save failed")).toBeVisible();
+  await expect(page.getByTestId("audio-volume-label")).toHaveText("50%");
+});
+
 async function mockAdminApi(page: Page) {
   let generatedSpeechStatusCalls = 0;
+  let audioSettings = {
+    volume_percent: 50,
+    updated_at: "2026-07-01T00:00:00.000Z"
+  };
   let pomodoroSettings = {
     enabled: false,
     child_age_years: null,
@@ -476,6 +517,12 @@ async function mockAdminApi(page: Page) {
       break_minutes: 3,
       cycles: 2,
       reason: "Starter plan until an owner saves the child age."
+    },
+    trigger: {
+      mode: "any",
+      required_button_count: 2,
+      assembly_window_ms: 500,
+      hold_seconds: 3
     }
   };
   page.on("dialog", (dialog) => dialog.accept());
@@ -557,6 +604,21 @@ async function mockAdminApi(page: Page) {
 
     if (path === "/api/pi/v1/setup/pomodoro" && route.request().method() === "GET") {
       await route.fulfill({ json: pomodoroSettings });
+      return;
+    }
+
+    if (path === "/api/pi/v1/setup/audio" && route.request().method() === "GET") {
+      await route.fulfill({ json: audioSettings });
+      return;
+    }
+
+    if (path === "/api/pi/v1/setup/audio" && route.request().method() === "PUT") {
+      const body = route.request().postDataJSON();
+      audioSettings = {
+        volume_percent: body.volume_percent,
+        updated_at: "2026-07-01T12:00:00.000Z"
+      };
+      await route.fulfill({ json: audioSettings });
       return;
     }
 

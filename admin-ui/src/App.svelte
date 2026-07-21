@@ -58,6 +58,7 @@
     generateSpeech,
     getContentInventory,
     getGeneratedSpeechStatus,
+    getAudioSettings,
     getPomodoroSettings,
     getSession,
     getSetupReview,
@@ -71,6 +72,7 @@
     logout,
     recoverPassword,
     saveButtonMode,
+    saveAudioSettings,
     saveCubeName,
     saveMultipart,
     savePomodoroSettings,
@@ -79,6 +81,7 @@
   } from "./api";
   import type {
     ActiveContentItem,
+    AudioSettings,
     AuthSession,
     ButtonMode,
     ContentEmptyState,
@@ -170,6 +173,11 @@
   let session: AuthSession | null = null;
   let setup: SetupReview | null = null;
   let pomodoro: PomodoroSettings | null = null;
+  let audioSettings: AudioSettings | null = null;
+  let audioVolume = 50;
+  let audioSaving = false;
+  let audioMessage: string | null = null;
+  let audioError: string | null = null;
   let events: RecentActivityEvent[] = [];
   let inventory: ContentInventory | null = null;
   let inventoryError: string | null = null;
@@ -312,11 +320,18 @@
       session = nextSession;
       setup = nextSetup;
       if (session.authenticated) {
-        pomodoro = await getPomodoroSettings();
+        [pomodoro, audioSettings] = await Promise.all([getPomodoroSettings(), getAudioSettings()]);
         pomodoroForm = settingsToPomodoroForm(pomodoro);
+        audioVolume = audioSettings.volume_percent;
+        audioMessage = null;
+        audioError = null;
       } else {
         pomodoro = null;
         pomodoroForm = settingsToPomodoroForm(null);
+        audioSettings = null;
+        audioVolume = 50;
+        audioMessage = null;
+        audioError = null;
       }
       cubeName = setup.cube_name || "T-Cube";
       wifiForm.ssid = setup.wifi_ssid ?? "";
@@ -471,6 +486,25 @@
 
   function errorText(error: unknown) {
     return error instanceof Error ? error.message : String(error);
+  }
+
+  async function saveMasterVolume(volumePercent: number) {
+    if (!isOwner || audioSaving) return;
+    const previousVolume = audioSettings?.volume_percent ?? audioVolume;
+    audioVolume = volumePercent;
+    audioSaving = true;
+    audioMessage = null;
+    audioError = null;
+    try {
+      audioSettings = await saveAudioSettings(volumePercent);
+      audioVolume = audioSettings.volume_percent;
+      audioMessage = `Volume set to ${audioSettings.volume_percent}%.`;
+    } catch (error) {
+      audioVolume = previousVolume;
+      audioError = errorText(error) || "Could not save device volume.";
+    } finally {
+      audioSaving = false;
+    }
   }
 
   function buildButtonConfigs(review: SetupReview | null): ButtonConfig[] {
@@ -1226,6 +1260,11 @@
         setup,
         pomodoro,
         pomodoroForm,
+        audioSettings,
+        audioVolume,
+        audioSaving,
+        audioMessage,
+        audioError,
         message,
         messageType,
         roleLabel,
@@ -1259,6 +1298,12 @@
             pomodoro = await savePomodoroSettings(pomodoroPayload(pomodoroForm));
             pomodoroForm = settingsToPomodoroForm(pomodoro);
           }, "Focus routine saved."),
+        setAudioVolume: (volumePercent: number) => {
+          audioVolume = volumePercent;
+          audioMessage = null;
+          audioError = null;
+        },
+        saveAudioVolume: saveMasterVolume,
         createRecoveryCode: async () => run(async () => (recoveryCode = await createRecoveryCode()), "Recovery code created."),
         copyText,
         createManagerInvitation: async () => run(createManagerInvitation, "Manager invitation created."),

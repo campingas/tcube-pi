@@ -45,6 +45,8 @@ pub(crate) fn router() -> Router<AdminState> {
     // Versioned-only routes without a legacy alias.
     let mut router = Router::new()
         .route("/api/pi/v1/status", get(status))
+        .route("/api/pi/v1/setup/audio", get(audio_settings))
+        .route("/api/pi/v1/setup/audio", put(save_audio_settings))
         .route("/api/pi/v1/setup/pomodoro", get(pomodoro_settings))
         .route("/api/pi/v1/setup/pomodoro", put(save_pomodoro_settings));
 
@@ -237,6 +239,31 @@ async fn save_pomodoro_settings(
 ) -> Result<Json<setup::PomodoroSettingsWithRecommendation>, ApiError> {
     blocking(config, move |config| {
         setup::save_pomodoro_settings(config, token.as_deref(), body)
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
+}
+
+async fn audio_settings(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+) -> Result<Json<setup::AudioSettings>, ApiError> {
+    blocking(config, move |config| {
+        setup::audio_settings(config, token.as_deref())
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
+}
+
+async fn save_audio_settings(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+    Json(body): Json<setup::AudioSettingsUpdate>,
+) -> Result<Json<setup::AudioSettings>, ApiError> {
+    blocking(config, move |config| {
+        setup::save_audio_settings(config, token.as_deref(), body)
     })
     .await
     .map(Json)
@@ -692,6 +719,10 @@ mod tests {
         assert_eq!(body["enabled"], false);
         assert_eq!(body["focus_minutes"], 10);
         assert_eq!(body["recommendation"]["preset"], "mini");
+        assert_eq!(body["trigger"]["mode"], "any");
+        assert_eq!(body["trigger"]["required_button_count"], 2);
+        assert_eq!(body["trigger"]["assembly_window_ms"], 500);
+        assert_eq!(body["trigger"]["hold_seconds"], 3);
         assert!(body["validated_at"].is_null());
 
         let saved = app
@@ -722,6 +753,10 @@ mod tests {
         assert_eq!(body["enabled"], true);
         assert_eq!(body["child_age_years"], 9);
         assert_eq!(body["recommendation"]["focus_minutes"], 20);
+        assert_eq!(body["trigger"]["mode"], "any");
+        assert_eq!(body["trigger"]["required_button_count"], 2);
+        assert_eq!(body["trigger"]["assembly_window_ms"], 500);
+        assert_eq!(body["trigger"]["hold_seconds"], 3);
         assert!(body["validated_at"].as_str().is_some());
     }
 
@@ -775,6 +810,117 @@ mod tests {
             .as_str()
             .unwrap_or_default()
             .contains("owner permission required"));
+    }
+
+    #[tokio::test]
+    async fn audio_get_defaults_and_owner_save() {
+        let root = TempDir::new().unwrap();
+        let config = Arc::new(test_config(&root));
+        let app = super::router().with_state(Arc::clone(&config));
+        let owner_cookie = bootstrap_owner_cookie(app.clone()).await;
+
+        let defaults = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pi/v1/setup/audio")
+                    .header("cookie", &owner_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(defaults.status(), StatusCode::OK);
+        let body = to_bytes(defaults.into_body(), 1024 * 1024).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["volume_percent"], 50);
+
+        let saved = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/pi/v1/setup/audio")
+                    .header("cookie", &owner_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "volume_percent": 75 }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(saved.status(), StatusCode::OK);
+        let body = to_bytes(saved.into_body(), 1024 * 1024).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["volume_percent"], 75);
+    }
+
+    #[tokio::test]
+    async fn audio_rejects_out_of_range_and_manager_save() {
+        let root = TempDir::new().unwrap();
+        let config = Arc::new(test_config(&root));
+        let app = super::router().with_state(Arc::clone(&config));
+        let owner_cookie = bootstrap_owner_cookie(app.clone()).await;
+        let manager_cookie = create_manager_cookie(&config.database);
+
+        let invalid = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/pi/v1/setup/audio")
+                    .header("cookie", &owner_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "volume_percent": 101 }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+
+        let view = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pi/v1/setup/audio")
+                    .header("cookie", &manager_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(view.status(), StatusCode::OK);
+
+        let save = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/pi/v1/setup/audio")
+                    .header("cookie", &manager_cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({ "volume_percent": 25 }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(save.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn audio_requires_authentication() {
+        let root = TempDir::new().unwrap();
+        let config = Arc::new(test_config(&root));
+        let app = super::router().with_state(config);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pi/v1/setup/audio")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

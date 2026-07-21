@@ -1348,6 +1348,11 @@ fn factory_reset_requires_confirmation_and_restores_first_run_defaults() {
     )
     .unwrap();
     conn.execute(
+        "update audio_settings set volume_percent = 85, updated_at = ?1 where id = 1",
+        [now()],
+    )
+    .unwrap();
+    conn.execute(
         "insert into content_items \
          (id, content_type, button_id, language, title, text, audio_path, source, state, order_index) \
          values \
@@ -1441,6 +1446,14 @@ fn factory_reset_requires_confirmation_and_restores_first_run_defaults() {
         )
         .unwrap();
     assert_eq!(setup_complete, 0);
+    let volume_percent: i64 = conn
+        .query_row(
+            "select volume_percent from audio_settings where id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(volume_percent, 50);
     let top_mode: String = conn
         .query_row(
             "select mode || ':' || coalesce(language, '') from button_mappings where button_id = 1",
