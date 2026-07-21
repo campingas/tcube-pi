@@ -8,6 +8,7 @@ use std::sync::{mpsc, Arc, Mutex, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::db::admin::audio::{self as audio_storage, DEFAULT_VOLUME_PERCENT};
 use crate::db::admin::pomodoro::{runtime_enabled_settings, PomodoroSettings};
 use crate::db::runtime as runtime_db;
 use crate::events::types::{ButtonBehavior, ButtonEvent, ButtonMapping, ContentPack, Response};
@@ -876,8 +877,33 @@ const MEDIA_AUDIO_PREFIX: &str = "data/audio/";
 
 struct LocalAudioOutput {
     _sink_handle: rodio::MixerDeviceSink,
-    player: Mutex<rodio::Player>,
+    player: Arc<Mutex<rodio::Player>>,
     audio_roots: AudioRoots,
+}
+
+#[derive(Clone)]
+#[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
+struct PlayerVolumeControl {
+    player: Arc<Mutex<rodio::Player>>,
+}
+
+trait VolumeControl: Send + Sync {
+    fn set_volume_percent(&self, volume_percent: u8) -> Result<()>;
+}
+
+impl VolumeControl for PlayerVolumeControl {
+    fn set_volume_percent(&self, volume_percent: u8) -> Result<()> {
+        let player = self
+            .player
+            .lock()
+            .map_err(|_| anyhow::anyhow!("audio player lock was poisoned"))?;
+        player.set_volume(volume_gain(volume_percent));
+        Ok(())
+    }
+}
+
+fn volume_gain(volume_percent: u8) -> f32 {
+    f32::from(volume_percent) / 100.0
 }
 
 impl LocalAudioOutput {
@@ -885,11 +911,19 @@ impl LocalAudioOutput {
         let sink_handle = rodio::DeviceSinkBuilder::open_default_sink()
             .context("failed to open default audio output device")?;
         let player = rodio::Player::connect_new(sink_handle.mixer());
+        player.set_volume(volume_gain(DEFAULT_VOLUME_PERCENT));
         Ok(Self {
             _sink_handle: sink_handle,
-            player: Mutex::new(player),
+            player: Arc::new(Mutex::new(player)),
             audio_roots,
         })
+    }
+
+    #[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
+    fn volume_control(&self) -> PlayerVolumeControl {
+        PlayerVolumeControl {
+            player: Arc::clone(&self.player),
+        }
     }
 }
 
@@ -1244,6 +1278,7 @@ struct ContentReloadState {
     conn: Option<Connection>,
     data_version: Option<i64>,
     fingerprint: Option<String>,
+    volume_percent: Option<u8>,
 }
 
 #[cfg_attr(not(all(feature = "pi-gpio", target_os = "linux")), allow(dead_code))]
@@ -1255,17 +1290,26 @@ impl ContentReloadState {
             conn: None,
             data_version: None,
             fingerprint: None,
+            volume_percent: None,
         }
     }
 
-    fn poll(&mut self, slot: &RwLock<Arc<ContentPack>>) {
-        if let Err(error) = self.try_poll(slot) {
+    fn poll(
+        &mut self,
+        slot: &RwLock<Arc<ContentPack>>,
+        volume_control: Option<&dyn VolumeControl>,
+    ) {
+        if let Err(error) = self.try_poll(slot, volume_control) {
             eprintln!("content reload check failed: {error:#}");
             self.conn = None;
         }
     }
 
-    fn try_poll(&mut self, slot: &RwLock<Arc<ContentPack>>) -> Result<()> {
+    fn try_poll(
+        &mut self,
+        slot: &RwLock<Arc<ContentPack>>,
+        volume_control: Option<&dyn VolumeControl>,
+    ) -> Result<()> {
         if self.conn.is_none() {
             if !self.database_path.exists() {
                 return Ok(());
@@ -1295,6 +1339,15 @@ impl ContentReloadState {
             return Ok(());
         }
 
+        let volume_percent = audio_storage::get_settings(conn)?.volume_percent;
+        if self.volume_percent != Some(volume_percent) {
+            if let Some(control) = volume_control {
+                control.set_volume_percent(volume_percent)?;
+            }
+            self.volume_percent = Some(volume_percent);
+            println!("audio master volume refreshed to {volume_percent}%");
+        }
+
         let overlay = runtime_db::read_overlay(conn)?;
         let merged = runtime_db::merge_content(&self.base, &overlay).context(
             "admin database state produced an invalid content pack; keeping the previous snapshot",
@@ -1310,17 +1363,20 @@ impl ContentReloadState {
 }
 
 #[cfg(all(feature = "pi-gpio", target_os = "linux"))]
-fn start_db_backed_provider(base: ContentPack, database_path: PathBuf) -> Result<ContentProvider> {
+fn start_db_backed_provider(
+    base: ContentPack,
+    database_path: PathBuf,
+    volume_control: Option<Arc<dyn VolumeControl>>,
+) -> Result<ContentProvider> {
     let slot = Arc::new(RwLock::new(Arc::new(base.clone())));
+    let mut state = ContentReloadState::new(database_path, base);
+    state.try_poll(&slot, volume_control.as_deref())?;
     let thread_slot = Arc::clone(&slot);
     thread::Builder::new()
         .name("content-reload".to_string())
-        .spawn(move || {
-            let mut state = ContentReloadState::new(database_path, base);
-            loop {
-                state.poll(&thread_slot);
-                thread::sleep(CONTENT_RELOAD_INTERVAL);
-            }
+        .spawn(move || loop {
+            state.poll(&thread_slot, volume_control.as_deref());
+            thread::sleep(CONTENT_RELOAD_INTERVAL);
         })
         .context("failed to spawn content reload thread")?;
     Ok(ContentProvider::Shared(slot))
@@ -1804,15 +1860,19 @@ fn run_pi(content: ContentPack, cli: &Cli) -> Result<()> {
         audio_root: cli.audio_root.clone(),
         media_root: cli.media_root.clone(),
     };
-    let provider = start_db_backed_provider(content, cli.database.clone())?;
-    let mut input = GpioButtonInput::new(pin_map, provider.clone())?;
     let led = LogLedOutput;
     match cli.audio {
         AudioBackend::Local => {
             let audio = LocalAudioOutput::new(audio_roots)?;
+            let volume_control: Arc<dyn VolumeControl> = Arc::new(audio.volume_control());
+            let provider =
+                start_db_backed_provider(content, cli.database.clone(), Some(volume_control))?;
+            let mut input = GpioButtonInput::new(pin_map, provider.clone())?;
             run_device_loop(&mut input, &audio, &led, provider, cli.database.clone())
         }
         AudioBackend::Terminal => {
+            let provider = start_db_backed_provider(content, cli.database.clone(), None)?;
+            let mut input = GpioButtonInput::new(pin_map, provider.clone())?;
             let audio = TerminalAudioOutput;
             run_device_loop(&mut input, &audio, &led, provider, cli.database.clone())
         }
@@ -1848,6 +1908,18 @@ mod tests {
     use super::*;
     use crate::events::types::ModeContent;
     use tempfile::NamedTempFile;
+
+    #[derive(Default)]
+    struct CapturingVolumeControl {
+        values: Mutex<Vec<u8>>,
+    }
+
+    impl VolumeControl for CapturingVolumeControl {
+        fn set_volume_percent(&self, volume_percent: u8) -> Result<()> {
+            self.values.lock().unwrap().push(volume_percent);
+            Ok(())
+        }
+    }
 
     struct ScriptedInput {
         events: Vec<InputEvent>,
@@ -2108,6 +2180,43 @@ mod tests {
             ButtonBehavior::Disabled
         );
         assert!(button_press(6, &content).is_err());
+    }
+
+    #[test]
+    fn master_volume_maps_linearly() {
+        assert_eq!(volume_gain(0), 0.0);
+        assert_eq!(volume_gain(50), 0.5);
+        assert_eq!(volume_gain(100), 1.0);
+    }
+
+    #[test]
+    fn config_reload_applies_saved_volume_to_current_player_control() {
+        let database = NamedTempFile::new().unwrap();
+        let writer = Connection::open(database.path()).unwrap();
+        writer
+            .execute_batch(
+                "create table audio_settings (
+                    id integer primary key check (id = 1),
+                    volume_percent integer not null check (volume_percent between 0 and 100),
+                    updated_at text not null
+                );
+                insert into audio_settings values (1, 50, 'first');",
+            )
+            .unwrap();
+        let slot = RwLock::new(Arc::new(test_content()));
+        let control = CapturingVolumeControl::default();
+        let mut reload = ContentReloadState::new(database.path().to_path_buf(), test_content());
+
+        reload.try_poll(&slot, Some(&control)).unwrap();
+        writer
+            .execute(
+                "update audio_settings set volume_percent = 75, updated_at = 'second' where id = 1",
+                [],
+            )
+            .unwrap();
+        reload.try_poll(&slot, Some(&control)).unwrap();
+
+        assert_eq!(control.values.lock().unwrap().as_slice(), [50, 75]);
     }
 
     #[test]
@@ -2543,7 +2652,7 @@ mod tests {
         let mut state = ContentReloadState::new(database, base);
 
         // First poll overlays the seeded database defaults (btn2 = animals).
-        state.poll(&slot);
+        state.poll(&slot, None);
         let snapshot = Arc::clone(&slot.read().unwrap());
         assert_eq!(
             snapshot.mapping_for(2).unwrap().behavior,
@@ -2551,7 +2660,7 @@ mod tests {
         );
 
         // No configuration change: the snapshot instance stays the same.
-        state.poll(&slot);
+        state.poll(&slot, None);
         assert!(Arc::ptr_eq(&snapshot, &slot.read().unwrap()));
 
         // An admin edit swaps in a rebuilt snapshot.
@@ -2562,7 +2671,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        state.poll(&slot);
+        state.poll(&slot, None);
         let updated = Arc::clone(&slot.read().unwrap());
         assert!(!Arc::ptr_eq(&snapshot, &updated));
         assert_eq!(
@@ -2578,7 +2687,7 @@ mod tests {
         let slot = RwLock::new(Arc::new(base.clone()));
         let mut state = ContentReloadState::new(dir.path().join("missing.sqlite3"), base);
 
-        state.poll(&slot);
+        state.poll(&slot, None);
         assert_eq!(
             slot.read().unwrap().mapping_for(2).unwrap().behavior,
             ButtonBehavior::Animals

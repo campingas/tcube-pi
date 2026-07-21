@@ -25,6 +25,7 @@ const FACTORY_RESET_TABLES: &[&str] = &[
     "trusted_sessions",
     "button_mappings",
     "pomodoro_settings",
+    "audio_settings",
     "device_setup",
     "devices",
 ];

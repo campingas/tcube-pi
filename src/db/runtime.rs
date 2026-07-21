@@ -49,6 +49,7 @@ pub(crate) fn config_fingerprint(conn: &Connection) -> Result<String> {
         "button_mappings",
         "soundbox_selections",
         "content_items",
+        "audio_settings",
     ] {
         if !table_exists(conn, table)? {
             parts.push(format!("{table}:-"));

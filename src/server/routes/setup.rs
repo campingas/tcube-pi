@@ -6,11 +6,13 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::config::AdminConfig;
+use crate::db::admin::audio as audio_storage;
 use crate::db::admin::auth::{authenticate_session, require_local_cube_role, RoleRequirement};
 use crate::db::admin::pomodoro as pomodoro_storage;
 use crate::db::admin::schema::open_existing_database;
 use crate::db::admin::setup::{self as setup_storage, SetupReview};
 
+pub(crate) use crate::db::admin::audio::{AudioSettings, AudioSettingsUpdate};
 pub(crate) use crate::db::admin::pomodoro::{
     PomodoroSettingsUpdate, PomodoroSettingsWithRecommendation,
 };
@@ -113,6 +115,20 @@ pub(crate) fn save_pomodoro_settings(
 ) -> Result<PomodoroSettingsWithRecommendation> {
     let conn = owner_connection(config, token)?;
     pomodoro_storage::save_settings(&conn, body)
+}
+
+pub(crate) fn audio_settings(config: &AdminConfig, token: Option<&str>) -> Result<AudioSettings> {
+    let conn = authenticated_connection(config, token)?;
+    audio_storage::get_settings(&conn)
+}
+
+pub(crate) fn save_audio_settings(
+    config: &AdminConfig,
+    token: Option<&str>,
+    body: AudioSettingsUpdate,
+) -> Result<AudioSettings> {
+    let conn = owner_connection(config, token)?;
+    audio_storage::save_settings(&conn, body)
 }
 
 pub(crate) fn set_cube_name(

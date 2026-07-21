@@ -265,6 +265,12 @@ pub(crate) fn migrate_admin_database(conn: &Connection, config: &AdminConfig) ->
           updated_at text not null default current_timestamp
         );
 
+        create table if not exists audio_settings (
+          id integer primary key check (id = 1),
+          volume_percent integer not null default 50 check (volume_percent between 0 and 100),
+          updated_at text not null default current_timestamp
+        );
+
         create table if not exists soundbox_selections (
           button_id integer not null check (button_id between 1 and 5),
           slug text not null,
@@ -296,7 +302,7 @@ pub(crate) fn migrate_admin_database(conn: &Connection, config: &AdminConfig) ->
     )?;
     widen_button_mappings_mode_check(conn)?;
     conn.execute(
-        "insert or ignore into schema_migrations (version) values (1), (2), (3), (4), (5), (6)",
+        "insert or ignore into schema_migrations (version) values (1), (2), (3), (4), (5), (6), (7)",
         [],
     )?;
     seed_admin_defaults(conn, config)?;
@@ -371,6 +377,10 @@ pub(crate) fn seed_admin_defaults(conn: &Connection, config: &AdminConfig) -> Re
     conn.execute(
         "insert or ignore into device_setup (id, dashboard_host) values (1, ?1)",
         [config.hostname.as_str()],
+    )?;
+    conn.execute(
+        "insert or ignore into audio_settings (id, volume_percent) values (1, 50)",
+        [],
     )?;
     let mappings = [
         (1, "language", Some("English"), Some("language"), 0),
@@ -636,6 +646,14 @@ mod tests {
             [],
         )
         .unwrap();
+        let volume_percent: i64 = conn
+            .query_row(
+                "select volume_percent from audio_settings where id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(volume_percent, 50);
     }
 
     #[test]
@@ -653,5 +671,14 @@ mod tests {
         )
         .unwrap();
         assert!(table_exists(&conn, "soundbox_selections").unwrap());
+        let volume_percent: i64 = conn
+            .query_row(
+                "select volume_percent from audio_settings where id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(volume_percent, 50);
+        assert_eq!(table_count(&conn, "schema_migrations").unwrap(), 7);
     }
 }

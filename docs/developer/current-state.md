@@ -1,6 +1,6 @@
 # Current Project State
 
-Last updated: 2026-07-03 (+07)
+Last updated: 2026-07-21 (+07)
 
 This file is the live implementation snapshot for agents. Keep it concise; do not append chronological session history.
 
@@ -25,6 +25,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - Admin UI is split into focused views, shared components, and controller helpers for button config, generated speech health, and recording/upload decisions.
 - Admin UI upload flow stages audio as Choose, Review, and Save Draft steps, then sends parents to Drafts for preview and explicit activation.
 - Focus routine settings are stored locally in SQLite and exposed under `/api/pi/v1/setup/pomodoro`; managers can view the state, owners can save/validate it, and the runtime skips the Pomodoro shortcut until the saved settings are enabled and validated; a skipped shortcut now plays the cancel chime so a recognized chord is never silent on the device.
+- Device master volume is stored as a singleton SQLite setting (0-100, default 50) and exposed under `/api/pi/v1/setup/audio`; owners can save it from the mobile Settings Sound slider while managers have read-only access, and the Pi runtime applies it linearly to the shared `rodio` player at startup and during the existing two-second configuration reload so current playback updates without a restart.
 - The runtime includes Pomodoro routine orchestration with generated `rodio` focus audio and transition chimes, silent breaks, and a tested Top + Front left + Front right hold recognizer now wired into the GPIO backend; the simulator exposes `p` as the manual routine shortcut.
 - Release workflow builds Linux arm64 bundles with Rust binaries, prebuilt admin UI, content, Caddy/systemd files, installer, and SHA-256 checksums.
 - The release installer exports Caddy's internal root CA to `/opt/tcube/ca/root.crt`; Caddy serves it at `/ca/root.crt` over both HTTPS and a port-80 HTTP listener that otherwise redirects to HTTPS, and the installer prints per-platform certificate trust steps (macOS, Linux, iPhone/iPad, Android).

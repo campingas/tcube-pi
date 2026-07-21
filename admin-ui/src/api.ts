@@ -195,6 +195,11 @@ export type PomodoroSettings = {
   recommendation: PomodoroRecommendation;
 };
 
+export type AudioSettings = {
+  volume_percent: number;
+  updated_at: string;
+};
+
 type RequestOptions = RequestInit & {
   json?: unknown;
 };
@@ -297,6 +302,17 @@ export function savePomodoroSettings(body: {
   preset: PomodoroPreset;
 }) {
   return api<PomodoroSettings>(`${API_ROOT}/setup/pomodoro`, { method: "PUT", json: body });
+}
+
+export function getAudioSettings() {
+  return api<AudioSettings>(`${API_ROOT}/setup/audio`);
+}
+
+export function saveAudioSettings(volumePercent: number) {
+  return api<AudioSettings>(`${API_ROOT}/setup/audio`, {
+    method: "PUT",
+    json: { volume_percent: volumePercent }
+  });
 }
 
 export function listRecentEvents() {

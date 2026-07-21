@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { updateDraftFormValue } from "../../src/button-config-controller.ts";
+import { volumeLabel } from "../../src/audio-settings-controller.ts";
 import {
   generatedSpeechDisabled,
   generatedSpeechOfflineStatus,
@@ -53,6 +54,14 @@ const baseDraft: DraftForm = {
   provider: "auto",
   voice: ""
 };
+
+describe("audio settings controller", () => {
+  test("labels zero as muted and other values as percentages", () => {
+    assert.equal(volumeLabel(0), "Muted");
+    assert.equal(volumeLabel(50), "50%");
+    assert.equal(volumeLabel(100), "100%");
+  });
+});
 
 describe("button config controller", () => {
   test("patches draft forms without mutating the original object", () => {
