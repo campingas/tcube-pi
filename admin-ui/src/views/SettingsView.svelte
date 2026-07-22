@@ -5,11 +5,13 @@
     ChevronUp,
     Copy,
     Cuboid,
+    Download,
     KeyRound,
     Link,
     Lock,
     LogOut,
     Plus,
+    RefreshCw,
     Volume2,
     VolumeX,
     Timer,
@@ -19,7 +21,7 @@
     Wifi,
     X
   } from "@lucide/svelte";
-  import type { AudioSettings, AuthSession, PomodoroPreset, PomodoroSettings, RecoveryCode, ServiceStatus, SetupReview } from "../api";
+  import type { AudioSettings, AuthSession, PomodoroPreset, PomodoroSettings, RecoveryCode, ServiceStatus, SetupReview, UpdateStatus } from "../api";
   import { volumeLabel } from "../audio-settings-controller";
   import { pomodoroCanEnable, pomodoroTriggerInstruction, recommendationForAge } from "../focus-routine-controller";
   import type { PomodoroForm } from "../focus-routine-controller";
@@ -37,6 +39,13 @@
     audioSaving: boolean;
     audioMessage: string | null;
     audioError: string | null;
+    updateStatus: UpdateStatus | null;
+    latestVersion: string | null;
+    updateAvailable: boolean;
+    updateChecking: boolean;
+    updateInstalling: boolean;
+    updateMessage: string | null;
+    updateError: string | null;
     message: string;
     messageType: MessageType;
     roleLabel: string;
@@ -69,6 +78,8 @@
     savePomodoro: () => void | Promise<void>;
     setAudioVolume: (volumePercent: number) => void;
     saveAudioVolume: (volumePercent: number) => void | Promise<void>;
+    checkForUpdates: () => void | Promise<void>;
+    installUpdate: () => void | Promise<void>;
     createRecoveryCode: () => void | Promise<void>;
     copyText: (value: string, label: string) => void | Promise<void>;
     createManagerInvitation: () => void | Promise<void>;
@@ -228,6 +239,76 @@
           {state.audioError ?? (state.audioSaving ? "Saving…" : state.audioMessage ?? (state.isOwner ? "Saved when you release the slider." : "Only an owner can change device volume."))}
         </div>
       </div>
+    </div>
+  </section>
+
+  <section class="settings-group">
+    <div class="settings-group-label">Software update · Owner only</div>
+    <div class="settings-group-card">
+      <div class="settings-row no-tap">
+        <div class="settings-row-icon si-teal">
+          <Download size={17} strokeWidth={1.5} aria-hidden="true" />
+        </div>
+        <div class="settings-row-body">
+          <div class="settings-row-title">Installed version</div>
+          <div class="settings-row-desc">Check GitHub for a newer release and install it on this cube.</div>
+        </div>
+        <div class="settings-row-right">
+          <span class="settings-row-value" data-testid="installed-version">{state.updateStatus?.installed_version ?? "unknown"}</span>
+        </div>
+      </div>
+
+      <div class="update-actions">
+        <button
+          type="button"
+          class="settings-save-btn"
+          data-testid="update-check-btn"
+          on:click={actions.checkForUpdates}
+          disabled={!state.isOwner || state.updateChecking || state.updateStatus?.state === "queued" || state.updateStatus?.state === "running"}
+        >
+          <RefreshCw size={16} strokeWidth={1.5} aria-hidden="true" />{state.updateChecking ? "Checking…" : "Check for updates"}
+        </button>
+        {#if state.updateAvailable && state.latestVersion}
+          <button
+            type="button"
+            class="settings-save-btn"
+            data-testid="update-install-btn"
+            on:click={actions.installUpdate}
+            disabled={!state.isOwner || state.updateInstalling || state.updateStatus?.state === "queued" || state.updateStatus?.state === "running"}
+          >
+            <Download size={16} strokeWidth={1.5} aria-hidden="true" />Install {state.latestVersion}
+          </button>
+        {/if}
+      </div>
+
+      <div
+        class="update-status"
+        class:error={Boolean(state.updateError) || state.updateStatus?.state === "failed"}
+        aria-live="polite"
+        data-testid="update-status"
+      >
+        {#if state.updateError}
+          {state.updateError}
+        {:else if state.updateStatus?.state === "queued"}
+          Update queued. Installation will start shortly.
+        {:else if state.updateStatus?.state === "running"}
+          Installing… this can take a minute and the admin may briefly restart.
+        {:else if state.updateStatus?.state === "success"}
+          Update complete. Now on {state.updateStatus?.installed_version ?? "the latest version"}.
+        {:else if state.updateStatus?.state === "failed"}
+          Update failed. {state.updateStatus.error ?? "See the log below."}
+        {:else if state.updateMessage}
+          {state.updateMessage}
+        {:else if !state.isOwner}
+          Only an owner can update this cube.
+        {:else}
+          Check for a newer release when the cube is online.
+        {/if}
+      </div>
+
+      {#if state.updateStatus && state.updateStatus.log_lines.length > 0}
+        <pre class="update-log" class:error={state.updateStatus.state === "failed"} data-testid="update-log">{state.updateStatus.log_lines.join("\n")}</pre>
+      {/if}
     </div>
   </section>
 
@@ -464,7 +545,7 @@
   </div>
 
   <div class="settings-version-footer">
-    tcube-pi · {state.status?.service ?? "admin"}<br />
+    tcube-pi {state.updateStatus?.installed_version ?? ""} · {state.status?.service ?? "admin"}<br />
     <span>{state.status?.hostname ?? "host pending"} · {state.status?.mode ?? "local"}</span>
   </div>
 </div>

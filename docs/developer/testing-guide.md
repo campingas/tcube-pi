@@ -40,11 +40,11 @@ For release-installer changes, run:
 
 ```sh
 just test-pi-installer
-bash -n deploy/pi-release/install-on-pi deploy/pi-release/test-install-on-pi-wifi
-shellcheck deploy/pi-release/install-on-pi deploy/pi-release/test-install-on-pi-wifi
+bash -n deploy/pi-release/install-on-pi deploy/pi-release/install-latest deploy/pi-release/test-install-on-pi-wifi deploy/pi-admin-caddy/tcube-update-run deploy/pi-admin-caddy/test-tcube-update-run
+shellcheck deploy/pi-release/install-on-pi deploy/pi-release/install-latest deploy/pi-release/test-install-on-pi-wifi deploy/pi-admin-caddy/tcube-update-run deploy/pi-admin-caddy/test-tcube-update-run
 ```
 
-The fixture suite covers an already-persistent active WLAN, a temporary active WLAN, no WLAN, unavailable `nmcli`, a conflicting `tcube-wifi` profile, clone and validation failures, repeat-run idempotence, and secret-free output. It never activates a profile or changes live network state. Reboot/reconnect and persistent-journal checks remain target-hardware gates documented in the Pi OS install guide.
+The fixture suite covers an already-persistent active WLAN, a temporary active WLAN, no WLAN, unavailable `nmcli`, a conflicting `tcube-wifi` profile, clone and validation failures, repeat-run idempotence, secret-free output, secure updater layout migration, state-before-trigger ordering, symlink defense, and terminal updater failures. It never activates a profile or changes live network state. Reboot/reconnect, systemd path activation, and persistent-journal checks remain target-hardware gates documented in the Pi OS install guide.
 
 ## Device Runtime
 

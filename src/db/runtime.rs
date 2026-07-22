@@ -339,6 +339,9 @@ mod tests {
             hostname: "tcube.local".to_string(),
             usb_address: "10.55.0.1".to_string(),
             usb_connected: false,
+            version_file: dir.path().join("VERSION"),
+            update_dir: dir.path().join("update"),
+            update_repo: "campingas/tcube-pi".to_string(),
         };
         let conn = Connection::open(&database).unwrap();
         migrate_admin_database(&conn, &config).unwrap();

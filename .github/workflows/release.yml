@@ -124,7 +124,7 @@ jobs:
         run: |
           set -euo pipefail
           payload_dir="dist/tcube-pi-${VERSION}-linux-arm64"
-          mkdir -p "${payload_dir}/bin" "${payload_dir}/admin-ui" "${payload_dir}/content" "${payload_dir}/deploy/pi-admin-caddy" "${payload_dir}/deploy/pi-runtime"
+          mkdir -p "${payload_dir}/bin" "${payload_dir}/admin-ui" "${payload_dir}/content" "${payload_dir}/deploy/pi-admin-caddy" "${payload_dir}/deploy/pi-runtime" "${payload_dir}/deploy/pi-release"
 
           install -m 0755 target/release/tcube-pi "${payload_dir}/bin/tcube-pi"
           install -m 0755 target/release/tcube-pi-admin "${payload_dir}/bin/tcube-pi-admin"
@@ -140,6 +140,11 @@ jobs:
           cp deploy/pi-admin-caddy/tcube-mdns-alias.service "${payload_dir}/deploy/pi-admin-caddy/tcube-mdns-alias.service"
           cp deploy/pi-runtime/tcube-pi.env "${payload_dir}/deploy/pi-runtime/tcube-pi.env"
           cp deploy/pi-runtime/tcube-pi.service "${payload_dir}/deploy/pi-runtime/tcube-pi.service"
+          cp deploy/pi-admin-caddy/tcube-update.service "${payload_dir}/deploy/pi-admin-caddy/tcube-update.service"
+          cp deploy/pi-admin-caddy/tcube-update.path "${payload_dir}/deploy/pi-admin-caddy/tcube-update.path"
+          cp deploy/pi-admin-caddy/tcube-update.env "${payload_dir}/deploy/pi-admin-caddy/tcube-update.env"
+          install -m 0755 deploy/pi-admin-caddy/tcube-update-run "${payload_dir}/deploy/pi-admin-caddy/tcube-update-run"
+          install -m 0755 deploy/pi-release/install-latest "${payload_dir}/deploy/pi-release/install-latest"
 
           tar -C dist -czf "dist/${ARCHIVE_NAME}" "tcube-pi-${VERSION}-linux-arm64"
 

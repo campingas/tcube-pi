@@ -54,6 +54,9 @@ fn axum_request(request: &TestRequest, config: &AdminConfig) -> TestResponse {
         hostname: config.hostname.clone(),
         usb_address: config.usb_address.clone(),
         usb_connected: config.usb_connected,
+        version_file: config.version_file.clone(),
+        update_dir: config.update_dir.clone(),
+        update_repo: config.update_repo.clone(),
     });
     let app = crate::server::routes::router().with_state(config);
     let uri = request_uri(request);
@@ -192,6 +195,9 @@ fn returns_default_setup_review_without_database() {
         hostname: "tcube-a7f3.local".to_string(),
         usb_address: "10.55.0.1".to_string(),
         usb_connected: true,
+        version_file: PathBuf::from("/opt/tcube/VERSION"),
+        update_dir: PathBuf::from("/var/lib/tcube/update"),
+        update_repo: "campingas/tcube-pi".to_string(),
     };
 
     let review = setup_review(&config).unwrap();
@@ -1749,6 +1755,9 @@ fn test_config(database: &Path) -> AdminConfig {
         hostname: "tcube-a7f3.local".to_string(),
         usb_address: "10.55.0.1".to_string(),
         usb_connected: true,
+        version_file: database.parent().unwrap().join("VERSION"),
+        update_dir: database.parent().unwrap().join("update"),
+        update_repo: "campingas/tcube-pi".to_string(),
     }
 }
 

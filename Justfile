@@ -31,6 +31,7 @@ test:
 
 test-pi-installer:
     deploy/pi-release/test-install-on-pi-wifi
+    deploy/pi-admin-caddy/test-tcube-update-run
 
 run-device-sim:
     cargo run --bin tcube-pi -- --backend sim

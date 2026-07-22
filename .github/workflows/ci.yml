@@ -79,3 +79,29 @@ jobs:
             echo "::error::A JS chunk exceeds the ${budget}-byte budget; check for lost code-splitting."
             exit 1
           fi
+
+      - name: Install Playwright browser
+        working-directory: admin-ui
+        run: bunx playwright install --with-deps chromium
+
+      - name: Test admin UI mobile flows
+        run: bun run --cwd admin-ui test:e2e --project=mobile
+
+  deploy:
+    name: Installer and updater fixtures
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Check deploy script syntax and style
+        run: |
+          bash -n deploy/pi-release/install-on-pi deploy/pi-release/install-latest deploy/pi-release/test-install-on-pi-wifi deploy/pi-admin-caddy/tcube-update-run deploy/pi-admin-caddy/test-tcube-update-run
+          shellcheck deploy/pi-release/install-on-pi deploy/pi-release/install-latest deploy/pi-release/test-install-on-pi-wifi deploy/pi-admin-caddy/tcube-update-run deploy/pi-admin-caddy/test-tcube-update-run
+
+      - name: Test installer and updater fixtures
+        run: just test-pi-installer

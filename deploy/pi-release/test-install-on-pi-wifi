@@ -172,4 +172,43 @@ run_fixture clone_failure 1
 run_fixture validation_failure 1
 run_fixture repeat 0
 
-echo "PASS: ${tests_run} installer Wi-Fi fixture scenarios"
+test_update_layout() {
+  local fixture calls victim
+  fixture="$(mktemp -d "${TMPDIR:-/tmp}/tcube-update-layout-test.XXXXXX")"
+  calls="${fixture}/calls"
+  victim="${fixture}/victim"
+  mkdir -p "${fixture}/update"
+  printf 'do not remove\n' > "${victim}"
+  ln -s "${victim}" "${fixture}/update/request"
+  ln -s "${victim}" "${fixture}/update/state"
+  mkdir "${fixture}/update/log"
+  : > "${calls}"
+
+  (
+    install() {
+      printf 'install %s\n' "$*" >> "${calls}"
+      if [[ "$1" == "-d" ]]; then
+        mkdir -p "${*: -1}"
+      else
+        command install "$@"
+      fi
+    }
+    chown() { printf 'chown %s\n' "$*" >> "${calls}"; }
+    chmod() { printf 'chmod %s\n' "$*" >> "${calls}"; }
+    ensure_update_layout "${fixture}/update"
+  )
+
+  [[ "$(<"${victim}")" == "do not remove" ]] || fail "update layout followed a legacy symlink"
+  [[ ! -e "${fixture}/update/request" ]] || fail "legacy request was not removed"
+  [[ ! -e "${fixture}/update/state" ]] || fail "legacy state symlink was not removed"
+  [[ ! -e "${fixture}/update/log" ]] || fail "legacy log artifact was not removed"
+  [[ -d "${fixture}/update/requests" ]] || fail "requests directory was not created"
+  assert_contains "$(<"${calls}")" "-o root -g tcube -m 0750 ${fixture}/update"
+  assert_contains "$(<"${calls}")" "-o root -g tcube -m 0770 ${fixture}/update/requests"
+  rm -rf "${fixture}"
+  tests_run=$((tests_run + 1))
+}
+
+test_update_layout
+
+echo "PASS: ${tests_run} installer Wi-Fi and update-layout fixture scenarios"

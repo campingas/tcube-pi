@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+updater="${repo_root}/deploy/pi-admin-caddy/tcube-update-run"
+tests_run=0
+
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+run_case() {
+  local expected_status="$1"
+  local installer_body="$2"
+  local fixture status
+  fixture="$(mktemp -d "${TMPDIR:-/tmp}/tcube-updater-test.XXXXXX")"
+  mkdir -p "${fixture}/update/requests" "${fixture}/bin"
+  printf 'install\n' > "${fixture}/update/requests/install"
+  printf 'do not overwrite\n' > "${fixture}/victim"
+  ln -s "${fixture}/victim" "${fixture}/update/state"
+  ln -s "${fixture}/victim" "${fixture}/update/log"
+  printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' "${installer_body}" > "${fixture}/bin/install-latest"
+  chmod 0755 "${fixture}/bin/install-latest"
+
+  (
+    # shellcheck source=deploy/pi-admin-caddy/tcube-update-run
+    source "${updater}"
+    update_dir="${fixture}/update"
+    request_dir="${update_dir}/requests"
+    request_file="${request_dir}/install"
+    installer="${fixture}/bin/install-latest"
+    state_file="${update_dir}/state"
+    log_file="${update_dir}/log"
+    export state_file request_file
+    terminal_state_written=0
+    log_fd_open=0
+    started_at=""
+    chown() { :; }
+    trap on_exit EXIT
+    run_update
+  ) && status=0 || status=$?
+
+  [[ "${status}" -eq "${expected_status}" ]] || fail "expected status ${expected_status}, got ${status}"
+  [[ "$(<"${fixture}/victim")" == "do not overwrite" ]] || fail "followed a legacy symlink"
+  [[ ! -e "${fixture}/update/requests/install" ]] || fail "did not consume the request"
+  [[ ! -L "${fixture}/update/state" && ! -L "${fixture}/update/log" ]] || fail "left a state or log symlink"
+  if [[ "${expected_status}" -eq 0 ]]; then
+    grep -q '^state=success$' "${fixture}/update/state" || fail "success state missing"
+    grep -q 'installer saw running before request consumption' "${fixture}/update/log" || fail "installer ordering assertion did not run"
+  else
+    grep -q '^state=failed$' "${fixture}/update/state" || fail "failed state missing"
+    grep -q "Update failed (exit ${expected_status})" "${fixture}/update/log" || fail "failure was not logged"
+  fi
+  rm -rf "${fixture}"
+  tests_run=$((tests_run + 1))
+}
+
+# shellcheck disable=SC2016 # Expanded later by the generated fixture installer.
+run_case 0 'grep -q "^state=running$" "${state_file}"; [[ ! -e "${request_file}" ]]; echo "installer saw running before request consumption"'
+run_case 23 'echo "installer failed normally"; exit 23'
+
+unsafe_fixture="$(mktemp -d "${TMPDIR:-/tmp}/tcube-updater-unsafe-test.XXXXXX")"
+mkdir -p "${unsafe_fixture}/update/requests/install" "${unsafe_fixture}/bin"
+if (
+  # shellcheck source=deploy/pi-admin-caddy/tcube-update-run
+  source "${updater}"
+  update_dir="${unsafe_fixture}/update"
+  request_dir="${update_dir}/requests"
+  request_file="${request_dir}/install"
+  installer="${unsafe_fixture}/bin/install-latest"
+  state_file="${update_dir}/state"
+  log_file="${update_dir}/log"
+  run_update
+); then
+  fail "accepted an unsafe request directory"
+fi
+[[ ! -e "${unsafe_fixture}/update/requests/install" ]] || fail "did not consume the unsafe request"
+rm -rf "${unsafe_fixture}"
+tests_run=$((tests_run + 1))
+
+echo "PASS: ${tests_run} privileged updater fixture scenarios"

@@ -159,6 +159,41 @@ ensure_active_wifi_persistent() {
   echo "Created persistent ${NM_CLONE_NAME}; it will be used automatically after a future reconnect or reboot."
 }
 
+remove_unsafe_update_artifact() {
+  local path="$1"
+  local expected_type="$2"
+  if [[ -L "${path}" ]] \
+    || [[ "${expected_type}" == "directory" && -e "${path}" && ! -d "${path}" ]] \
+    || [[ "${expected_type}" == "file" && -e "${path}" && ! -f "${path}" ]]; then
+    rm -rf -- "${path}"
+  fi
+}
+
+ensure_update_layout() {
+  local update_dir="$1"
+  local request_dir="${update_dir}/requests"
+  local state_file="${update_dir}/state"
+  local log_file="${update_dir}/log"
+
+  remove_unsafe_update_artifact "${update_dir}" directory
+  install -d -o root -g tcube -m 0750 "${update_dir}"
+
+  # Remove the legacy top-level trigger regardless of its file type. It lived
+  # in the formerly tcube-writable directory and is no longer trusted.
+  rm -rf -- "${update_dir}/request"
+  remove_unsafe_update_artifact "${request_dir}" directory
+  install -d -o root -g tcube -m 0770 "${request_dir}"
+
+  remove_unsafe_update_artifact "${state_file}" file
+  remove_unsafe_update_artifact "${log_file}" file
+  for path in "${state_file}" "${log_file}"; do
+    if [[ -f "${path}" && ! -L "${path}" ]]; then
+      chown root:tcube "${path}"
+      chmod 0640 "${path}"
+    fi
+  done
+}
+
 main() {
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run this installer with sudo: sudo ./install.sh" >&2
@@ -185,6 +220,11 @@ require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.env"
 require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.service"
 require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias"
 require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias.service"
+require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-update.env"
+require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-update.path"
+require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-update.service"
+require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-update-run"
+require_path "${SCRIPT_DIR}/deploy/pi-release/install-latest"
 require_path "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.env"
 require_path "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.service"
 
@@ -312,12 +352,17 @@ if ! id -u tcube >/dev/null 2>&1; then
 fi
 
 install -d -o tcube -g tcube -m 0750 /var/lib/tcube /var/lib/tcube/media
+ensure_update_layout /var/lib/tcube/update
 install -d -o root -g root -m 0755 /opt/tcube/bin /opt/tcube/admin-ui /opt/tcube/content /etc/tcube
 
 install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi" /opt/tcube/bin/tcube-pi
 install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi-admin" /opt/tcube/bin/tcube-pi-admin
 install -m 0755 "${SCRIPT_DIR}/bin/tcube-pi-admin-measure" /opt/tcube/bin/tcube-pi-admin-measure
 install -m 0755 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias" /opt/tcube/bin/tcube-mdns-alias
+install -m 0755 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-update-run" /opt/tcube/bin/.tcube-update-run.new
+mv -f -- /opt/tcube/bin/.tcube-update-run.new /opt/tcube/bin/tcube-update-run
+install -m 0755 "${SCRIPT_DIR}/deploy/pi-release/install-latest" /opt/tcube/bin/.tcube-install-latest.new
+mv -f -- /opt/tcube/bin/.tcube-install-latest.new /opt/tcube/bin/tcube-install-latest
 
 rm -rf /opt/tcube/admin-ui/.new
 install -d -o root -g root -m 0755 /opt/tcube/admin-ui/.new
@@ -340,6 +385,18 @@ if [[ -f /etc/tcube/tcube-pi-admin.env ]]; then
 else
   install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.env" /etc/tcube/tcube-pi-admin.env
 fi
+update_env_note=""
+if [[ -L /etc/tcube/tcube-update.env ]] || [[ -e /etc/tcube/tcube-update.env && ! -f /etc/tcube/tcube-update.env ]]; then
+  rm -rf -- /etc/tcube/tcube-update.env
+  install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-update.env" /etc/tcube/tcube-update.env
+elif [[ -f /etc/tcube/tcube-update.env ]]; then
+  install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-update.env" /etc/tcube/tcube-update.env.dist
+  update_env_note="Kept existing /etc/tcube/tcube-update.env; new release defaults written to /etc/tcube/tcube-update.env.dist"
+else
+  install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-update.env" /etc/tcube/tcube-update.env
+fi
+chown root:root /etc/tcube/tcube-update.env
+chmod 0644 /etc/tcube/tcube-update.env
 runtime_env_note=""
 if [[ -f /etc/tcube/tcube-pi.env ]]; then
   install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.env" /etc/tcube/tcube-pi.env.dist
@@ -349,6 +406,8 @@ else
 fi
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.service" /etc/systemd/system/tcube-pi-admin.service
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias.service" /etc/systemd/system/tcube-mdns-alias.service
+install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-update.service" /etc/systemd/system/tcube-update.service
+install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-update.path" /etc/systemd/system/tcube-update.path
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.service" /etc/systemd/system/tcube-pi.service
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/Caddyfile" /etc/caddy/Caddyfile
 install -d -o root -g root -m 0755 /etc/systemd/journald.conf.d
@@ -391,6 +450,7 @@ elif [[ "${admin_state_before}" != "${admin_state_after}" ]]; then
   echo "Restarting tcube-pi-admin.service to apply the updated release..."
   systemctl restart tcube-pi-admin.service
 fi
+systemctl enable --now tcube-update.path
 systemctl enable tcube-pi.service
 if [[ "${reboot_needed}" -eq 1 ]]; then
   echo "The MAX98357A I2S overlay was added to the boot config; tcube-pi.service starts after the reboot."
@@ -464,6 +524,9 @@ if [[ -n "${env_note}" ]]; then
 fi
 if [[ -n "${runtime_env_note}" ]]; then
   echo "  ${runtime_env_note}"
+fi
+if [[ -n "${update_env_note}" ]]; then
+  echo "  ${update_env_note}"
 fi
 if [[ "${reboot_needed}" -eq 1 ]]; then
   echo "  REBOOT REQUIRED: the I2S audio overlay only loads at boot. Run: sudo reboot"

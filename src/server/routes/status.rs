@@ -52,6 +52,9 @@ mod tests {
             hostname: "tcube.local".to_string(),
             usb_address: "10.55.0.1".to_string(),
             usb_connected: true,
+            version_file: PathBuf::from("/opt/tcube/VERSION"),
+            update_dir: PathBuf::from("/var/lib/tcube/update"),
+            update_repo: "campingas/tcube-pi".to_string(),
         };
         let disconnected = AdminConfig {
             bind: "127.0.0.1:0".to_string(),
@@ -62,6 +65,9 @@ mod tests {
             hostname: "tcube.local".to_string(),
             usb_address: "10.55.0.1".to_string(),
             usb_connected: false,
+            version_file: PathBuf::from("/opt/tcube/VERSION"),
+            update_dir: PathBuf::from("/var/lib/tcube/update"),
+            update_repo: "campingas/tcube-pi".to_string(),
         };
 
         assert!(pi_status(&connected).usb_connected);

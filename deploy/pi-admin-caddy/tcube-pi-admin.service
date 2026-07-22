@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/tcube/tcube-pi-admin.env
+EnvironmentFile=/etc/tcube/tcube-update.env
 ExecStart=/opt/tcube/bin/tcube-pi-admin \
   --bind ${TCUBE_PI_ADMIN_BIND} \
   --database ${TCUBE_PI_ADMIN_DATABASE} \
@@ -13,7 +14,10 @@ ExecStart=/opt/tcube/bin/tcube-pi-admin \
   --media-root ${TCUBE_PI_ADMIN_MEDIA_ROOT} \
   --content-root ${TCUBE_PI_ADMIN_CONTENT_ROOT} \
   --hostname ${TCUBE_PI_ADMIN_HOSTNAME} \
-  --usb-address ${TCUBE_PI_ADMIN_USB_ADDRESS}
+  --usb-address ${TCUBE_PI_ADMIN_USB_ADDRESS} \
+  --version-file /opt/tcube/VERSION \
+  --update-dir /var/lib/tcube/update \
+  --update-repo ${TCUBE_PI_REPO}
 Restart=on-failure
 RestartSec=2
 User=tcube
@@ -22,7 +26,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/tcube
+ReadWritePaths=/var/lib/tcube /var/lib/tcube/update/requests
 
 [Install]
 WantedBy=multi-user.target

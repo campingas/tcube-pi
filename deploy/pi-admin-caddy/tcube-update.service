@@ -1,0 +1,12 @@
+[Unit]
+Description=T-Cube release updater (admin-triggered)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/tcube/tcube-update.env
+# Runs the same latest-stable bootstrapper as a manual install. It accepts no
+# request arguments; repository selection comes from the shared root-owned env.
+ExecStart=/opt/tcube/bin/tcube-update-run
+TimeoutStartSec=30min

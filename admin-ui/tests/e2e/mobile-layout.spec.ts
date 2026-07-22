@@ -366,7 +366,11 @@ test("setup checklist sits below the notice and Wi-Fi action opens settings veri
   expect(setupBox!.y).toBeGreaterThan(noticeBox!.y + noticeBox!.height - 1);
   expect(heroBox!.y).toBeGreaterThan(setupBox!.y + setupBox!.height - 1);
 
+  const updateStatusRequest = page.waitForRequest((request) =>
+    new URL(request.url()).pathname === "/api/pi/v1/update/status"
+  );
   await page.getByRole("button", { name: /Wi-Fi verified/i }).click();
+  await updateStatusRequest;
   await expect(page.getByRole("navigation").getByText("Settings")).toBeVisible();
   await expect(page.locator(".settings-row-title").filter({ hasText: "Focus routine" })).toHaveText("Focus routine");
   await expect(page.getByText("Hold any two buttons together for 3 seconds. This setting is stored only on this cube.")).toBeVisible();
@@ -391,11 +395,13 @@ test("settings page matches grouped setup controls and calls settings APIs", asy
   await expect(page.locator(".settings-group-label")).toHaveText([
     "Cube",
     "Sound · Owner only",
+    "Software update · Owner only",
     "Focus routine · Owner only",
     "Account",
     "Manager invitations · Owner only",
     "Danger zone"
   ]);
+  await expect(page.getByTestId("installed-version")).toHaveText("v0.0.85");
 
   const volumeSlider = page.getByTestId("audio-volume-slider");
   const volumeRequests: string[] = [];
@@ -455,6 +461,63 @@ test("settings page matches grouped setup controls and calls settings APIs", asy
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test("software update polls queued and running work through a transient admin restart", async ({ page }) => {
+  let phase: "idle" | "queued" = "idle";
+  let queuedStatusCalls = 0;
+  await page.route("**/api/pi/v1/update/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/check")) {
+      await route.fulfill({
+        json: { installed_version: "v0.0.85", latest_version: "v0.0.86", update_available: true }
+      });
+      return;
+    }
+    if (path.endsWith("/install")) {
+      phase = "queued";
+      await route.fulfill({ json: { accepted: true } });
+      return;
+    }
+    if (phase === "idle") {
+      await route.fulfill({
+        json: { installed_version: "v0.0.85", state: "idle", log_lines: [], error: null }
+      });
+      return;
+    }
+    queuedStatusCalls += 1;
+    if (queuedStatusCalls === 1) {
+      await route.fulfill({
+        json: { installed_version: "v0.0.85", state: "running", log_lines: ["Installing release"], error: null }
+      });
+      return;
+    }
+    if (queuedStatusCalls === 2) {
+      await route.fulfill({ status: 503, json: { detail: "admin restarting" } });
+      return;
+    }
+    await route.fulfill({
+      json: { installed_version: "v0.0.86", state: "success", log_lines: ["Update finished successfully"], error: null }
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByTestId("update-check-btn").click();
+  await page.getByTestId("update-install-btn").click();
+  await expect(page.getByTestId("update-status")).toContainText("Update queued");
+  await expect(page.getByTestId("update-status")).toContainText("Waiting to reconnect", { timeout: 7_000 });
+  await expect(page.getByTestId("installed-version")).toHaveText("v0.0.86", { timeout: 7_000 });
+  await expect(page.getByTestId("update-status")).toContainText("Update complete");
+});
+
+test("software update shows its initial status error", async ({ page }) => {
+  await page.route("**/api/pi/v1/update/status", async (route) => {
+    await route.fulfill({ status: 503, json: { detail: "update status unavailable" } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByTestId("update-status")).toContainText("update status unavailable");
+});
+
 test("manager can view sound and focus settings but cannot edit them", async ({ page }) => {
   await page.route("**/api/pi/v1/auth/session", async (route) => {
     await route.fulfill({
@@ -476,6 +539,7 @@ test("manager can view sound and focus settings but cannot edit them", async ({ 
   await expect(page.getByLabel("Child age")).toBeDisabled();
   await expect(page.getByLabel("Enable after save")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Save focus routine" })).toBeDisabled();
+  await expect(page.getByTestId("update-check-btn")).toBeDisabled();
 });
 
 test("failed volume save rolls the slider back and shows its dedicated error", async ({ page }) => {
@@ -524,6 +588,12 @@ async function mockAdminApi(page: Page) {
       assembly_window_ms: 500,
       hold_seconds: 3
     }
+  };
+  let updateStatus = {
+    installed_version: "v0.0.85",
+    state: "idle",
+    log_lines: [] as string[],
+    error: null as string | null
   };
   page.on("dialog", (dialog) => dialog.accept());
   await page.route("**/*", async (route) => {
@@ -619,6 +689,28 @@ async function mockAdminApi(page: Page) {
         updated_at: "2026-07-01T12:00:00.000Z"
       };
       await route.fulfill({ json: audioSettings });
+      return;
+    }
+
+    if (path === "/api/pi/v1/update/status") {
+      await route.fulfill({ json: updateStatus });
+      return;
+    }
+
+    if (path === "/api/pi/v1/update/check" && route.request().method() === "POST") {
+      await route.fulfill({
+        json: {
+          installed_version: updateStatus.installed_version,
+          latest_version: "v0.0.86",
+          update_available: true
+        }
+      });
+      return;
+    }
+
+    if (path === "/api/pi/v1/update/install" && route.request().method() === "POST") {
+      updateStatus = { ...updateStatus, state: "queued" };
+      await route.fulfill({ json: { accepted: true } });
       return;
     }
 

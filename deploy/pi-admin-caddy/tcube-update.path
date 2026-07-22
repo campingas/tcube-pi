@@ -1,0 +1,11 @@
+[Unit]
+Description=T-Cube watch for admin-requested release update
+
+[Path]
+# The unprivileged admin service can create only this trigger. The privileged
+# wrapper publishes running state before consuming it.
+PathExists=/var/lib/tcube/update/requests/install
+Unit=tcube-update.service
+
+[Install]
+WantedBy=multi-user.target

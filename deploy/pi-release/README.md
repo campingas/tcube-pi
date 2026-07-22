@@ -18,6 +18,13 @@ Update behavior on an already-installed Pi:
 - An existing `/etc/tcube/tcube-pi-admin.env` is kept as-is; the new release defaults are written next to it as `tcube-pi-admin.env.dist`.
 - Data under `/var/lib/tcube` (database and media) is never touched.
 
+Admin-triggered updates:
+
+- The admin Settings page can check GitHub for a newer stable release and queue an install. Because `tcube-pi-admin.service` runs unprivileged and sandboxed, it never runs the installer or creates privileged directory topology. It exclusively and idempotently creates `/var/lib/tcube/update/requests/install`, which `tcube-update.path` watches.
+- The installer owns `/var/lib/tcube/update` as `root:tcube` mode `0750`; only `requests/` is group-writable mode `0770`. `tcube-update-run` atomically publishes root-owned group-readable mode-`0640` running state before consuming the request, runs `/opt/tcube/bin/tcube-install-latest`, traps ordinary failures, and atomically publishes success or failure. The service accepts no browser-supplied arguments and has a 30-minute timeout.
+- `/etc/tcube/tcube-update.env` provides the shared `TCUBE_PI_REPO` used by both the admin check and root bootstrapper. Installed version/update paths are fixed by the systemd units; only the Rust CLI exposes path flags for local testing.
+- These units and the `/var/lib/tcube/update` directory are laid down by the installer, so one-click update works only after a build that ships them has been installed once via the curl pipe.
+
 Keep release-bundle scripts here. Keep long-running service files and Caddy configuration in `deploy/pi-admin-caddy/`.
 
-Run `just test-pi-installer` for fixture coverage of the Wi-Fi safeguard. The test does not activate, reconnect, or otherwise modify a live network connection.
+Run `just test-pi-installer` for fixture coverage of the Wi-Fi safeguard, secure update layout, updater ordering, symlink defense, and terminal failure state. The tests do not activate, reconnect, or otherwise modify a live network connection.
