@@ -63,6 +63,9 @@
     getSession,
     getSetupReview,
     getStatus,
+    getUpdateStatus,
+    checkForUpdate,
+    installUpdate,
     listActiveContent,
     listInactiveContent,
     listRecentEvents,
@@ -94,7 +97,8 @@
     RecentActivityEvent,
     ServiceStatus,
     SetupReview,
-    SoundboxItem
+    SoundboxItem,
+    UpdateStatus
   } from "./api";
   import { blobToWav, canRecordAudio, isSecureRecorderContext } from "./audio";
   import type { RecordedWav } from "./audio";
@@ -178,6 +182,14 @@
   let audioSaving = false;
   let audioMessage: string | null = null;
   let audioError: string | null = null;
+  let updateStatus: UpdateStatus | null = null;
+  let latestVersion: string | null = null;
+  let updateAvailable = false;
+  let updateChecking = false;
+  let updateInstalling = false;
+  let updateMessage: string | null = null;
+  let updateError: string | null = null;
+  let updatePollTimer: number | undefined;
   let events: RecentActivityEvent[] = [];
   let inventory: ContentInventory | null = null;
   let inventoryError: string | null = null;
@@ -507,6 +519,89 @@
     }
   }
 
+  function goToSettings() {
+    view = "settings";
+    updateError = null;
+    void refreshUpdateStatus(true);
+  }
+
+  async function refreshUpdateStatus(reportInitialError = false) {
+    try {
+      updateStatus = await getUpdateStatus();
+      updateError = null;
+      if (updateStatus.state === "queued" || updateStatus.state === "running") {
+        startUpdatePolling();
+      } else {
+        stopUpdatePolling();
+      }
+      if (updateStatus.state === "success") {
+        updateAvailable = false;
+        latestVersion = null;
+        updateMessage = `Update complete. Installed ${updateStatus.installed_version ?? "the latest version"}.`;
+      }
+    } catch (error) {
+      if (reportInitialError || updateStatus === null) {
+        updateError = errorText(error) || "Could not load software update status.";
+      } else if (updateStatus.state === "queued" || updateStatus.state === "running") {
+        updateError = "The admin is restarting. Waiting to reconnect…";
+        startUpdatePolling();
+      }
+    }
+  }
+
+  function startUpdatePolling() {
+    if (updatePollTimer !== undefined) return;
+    updatePollTimer = window.setInterval(refreshUpdateStatus, 2000);
+  }
+
+  function stopUpdatePolling() {
+    if (updatePollTimer !== undefined) {
+      window.clearInterval(updatePollTimer);
+      updatePollTimer = undefined;
+    }
+  }
+
+  async function checkForUpdates() {
+    if (!isOwner || updateChecking) return;
+    updateChecking = true;
+    updateMessage = null;
+    updateError = null;
+    try {
+      const result = await checkForUpdate();
+      latestVersion = result.latest_version;
+      updateAvailable = result.update_available;
+      if (updateStatus) {
+        updateStatus = { ...updateStatus, installed_version: result.installed_version };
+      }
+      updateMessage = result.update_available
+        ? `Update available: ${result.latest_version}.`
+        : "You are on the latest version.";
+    } catch (error) {
+      updateError = errorText(error) || "Could not check for updates.";
+    } finally {
+      updateChecking = false;
+    }
+  }
+
+  async function startUpdateInstall() {
+    if (!isOwner || updateInstalling) return;
+    updateInstalling = true;
+    updateMessage = null;
+    updateError = null;
+    try {
+      await installUpdate();
+      updateMessage = `Queued ${latestVersion ?? "the update"} for installation.`;
+      updateStatus = updateStatus
+        ? { ...updateStatus, state: "queued" }
+        : { installed_version: null, state: "queued", log_lines: [], error: null };
+      startUpdatePolling();
+    } catch (error) {
+      updateError = errorText(error) || "Could not start the update.";
+    } finally {
+      updateInstalling = false;
+    }
+  }
+
   function buildButtonConfigs(review: SetupReview | null): ButtonConfig[] {
     return [1, 2, 3, 4, 5].map((id) => {
       const raw = review?.button_modes?.[String(id)] ?? defaultMode(id);
@@ -676,7 +771,7 @@
     if (id === "language" || id === "animals" || id === "music") view = "button-config";
     if (id === "wifi") {
       settingsWifiOpen = true;
-      view = "settings";
+      goToSettings();
     }
   }
 
@@ -1155,6 +1250,7 @@
     stopTimer();
     clearGeneratedSpeechStatusTimer();
     clearMenuLlmStatusTimer();
+    stopUpdatePolling();
     if (recorder && recorder.state !== "inactive") recorder.stop();
     void cleanupRecordingAnalyser();
     if (recordedWav) URL.revokeObjectURL(recordedWav.url);
@@ -1212,7 +1308,7 @@
       }}
       actions={{
         goHome,
-        openSettings: () => (view = "settings"),
+        openSettings: goToSettings,
         setSelectedButtonId: (id: number) => (selectedButtonId = id),
         setContentListTab: (tab: "active" | "draft") => (contentListTab = tab),
         setContentTab,
@@ -1246,7 +1342,7 @@
       state={{ session, message, messageType, inventory, inventoryError, events, filter: inventoryFilter }}
       actions={{
         goHome,
-        openSettings: () => (view = "settings"),
+        openSettings: goToSettings,
         openInventoryButton
       }}
     />
@@ -1265,6 +1361,13 @@
         audioSaving,
         audioMessage,
         audioError,
+        updateStatus,
+        latestVersion,
+        updateAvailable,
+        updateChecking,
+        updateInstalling,
+        updateMessage,
+        updateError,
         message,
         messageType,
         roleLabel,
@@ -1283,7 +1386,7 @@
       }}
       actions={{
         goHome,
-        openSettings: () => (view = "settings"),
+        openSettings: goToSettings,
         setSettingsCubeNameOpen: (open: boolean) => (settingsCubeNameOpen = open),
         setSettingsWifiOpen: (open: boolean) => (settingsWifiOpen = open),
         setSettingsRecoveryOpen: (open: boolean) => (settingsRecoveryOpen = open),
@@ -1304,6 +1407,8 @@
           audioError = null;
         },
         saveAudioVolume: saveMasterVolume,
+        checkForUpdates,
+        installUpdate: startUpdateInstall,
         createRecoveryCode: async () => run(async () => (recoveryCode = await createRecoveryCode()), "Recovery code created."),
         copyText,
         createManagerInvitation: async () => run(createManagerInvitation, "Manager invitation created."),
@@ -1341,7 +1446,7 @@
       actions={{
         goHome,
         openStatDetail,
-        openSettings: () => (view = "settings"),
+        openSettings: goToSettings,
         openButtonConfig,
         selectSetupAction,
         completeSetup: async () => {

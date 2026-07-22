@@ -10,4 +10,7 @@ pub struct AdminConfig {
     pub hostname: String,
     pub usb_address: String,
     pub usb_connected: bool,
+    pub version_file: PathBuf,
+    pub update_dir: PathBuf,
+    pub update_repo: String,
 }

@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Privileged, no-argument updater invoked by tcube-update.service. The release
+# installer owns this topology; the unprivileged admin can create only the
+# requests/install trigger.
+
+update_dir="/var/lib/tcube/update"
+request_dir="${update_dir}/requests"
+request_file="${request_dir}/install"
+installer="/opt/tcube/bin/tcube-install-latest"
+state_file="${update_dir}/state"
+log_file="${update_dir}/log"
+terminal_state_written=0
+log_fd_open=0
+started_at=""
+
+write_state() {
+  local state="$1"
+  local state_tmp
+  state_tmp="$(mktemp "${update_dir}/.state.XXXXXX")"
+  {
+    printf 'state=%s\n' "${state}"
+    printf 'started_at=%s\n' "${started_at}"
+    if [[ "${state}" != "running" ]]; then
+      printf 'finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    fi
+  } > "${state_tmp}"
+  chown root:tcube "${state_tmp}"
+  chmod 0640 "${state_tmp}"
+  mv -f -- "${state_tmp}" "${state_file}"
+}
+
+write_log() {
+  if [[ "${log_fd_open}" -eq 1 ]]; then
+    printf '%s\n' "$*" >&3
+  else
+    printf '%s\n' "$*" >&2
+  fi
+}
+
+finish_failed() {
+  local status="$1"
+  if [[ "${terminal_state_written}" -eq 0 ]]; then
+    write_log "== Update failed (exit ${status}) =="
+    write_state failed || true
+    terminal_state_written=1
+  fi
+}
+
+on_exit() {
+  local status=$?
+  trap - EXIT
+  if [[ "${status}" -ne 0 ]]; then
+    finish_failed "${status}"
+  fi
+  exit "${status}"
+}
+
+run_update() {
+  local log_tmp status
+  if [[ ! -d "${update_dir}" || -L "${update_dir}" || ! -d "${request_dir}" || -L "${request_dir}" ]]; then
+    echo "Updater directory layout is missing or unsafe; reinstall the current release." >&2
+    return 1
+  fi
+  if [[ ! -f "${request_file}" || -L "${request_file}" ]]; then
+    # Consume malformed triggers so PathExists cannot continuously reactivate
+    # a failing service. This exact path is the only tcube-writable input.
+    rm -rf -- "${request_file}"
+    echo "Update request is missing or unsafe: ${request_file}" >&2
+    return 1
+  fi
+  if [[ -e "${state_file}" && ! -f "${state_file}" && ! -L "${state_file}" ]] \
+    || [[ -e "${log_file}" && ! -f "${log_file}" && ! -L "${log_file}" ]]; then
+    echo "Updater state or log path is not a regular file; reinstall the current release." >&2
+    return 1
+  fi
+
+  log_tmp="$(mktemp "${update_dir}/.log.XXXXXX")"
+  chown root:tcube "${log_tmp}"
+  chmod 0640 "${log_tmp}"
+  exec 3>> "${log_tmp}"
+  log_fd_open=1
+  mv -f -- "${log_tmp}" "${log_file}"
+
+  started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  write_state running
+  write_log "== T-Cube update started at ${started_at} =="
+
+  # Publish running before consuming the trigger so status never falls back to
+  # idle between systemd dispatch and installer startup.
+  rm -f -- "${request_file}"
+
+  if [[ ! -x "${installer}" || -L "${installer}" ]]; then
+    write_log "Installer not found, not executable, or unsafe: ${installer}"
+    return 1
+  fi
+
+  if "${installer}" >&3 2>&3; then
+    write_log "== Update finished successfully =="
+    write_state success
+    terminal_state_written=1
+    return 0
+  else
+    status=$?
+    return "${status}"
+  fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  trap on_exit EXIT
+  trap 'exit 1' HUP INT TERM
+  run_update
+fi

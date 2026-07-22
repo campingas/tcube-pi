@@ -27,6 +27,10 @@ impl ApiError {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error)
     }
 
+    pub(crate) fn conflict(error: impl ToString) -> Self {
+        Self::new(StatusCode::CONFLICT, error)
+    }
+
     fn new(status: StatusCode, error: impl ToString) -> Self {
         Self {
             status,

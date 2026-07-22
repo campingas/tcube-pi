@@ -29,6 +29,15 @@ struct Cli {
 
     #[arg(long, default_value_t = true)]
     usb_connected: bool,
+
+    #[arg(long, default_value = "/opt/tcube/VERSION")]
+    version_file: PathBuf,
+
+    #[arg(long, default_value = "/var/lib/tcube/update")]
+    update_dir: PathBuf,
+
+    #[arg(long, default_value = "campingas/tcube-pi")]
+    update_repo: String,
 }
 
 #[tokio::main]
@@ -43,6 +52,9 @@ async fn main() -> anyhow::Result<()> {
         hostname: cli.hostname,
         usb_address: cli.usb_address,
         usb_connected: cli.usb_connected,
+        version_file: cli.version_file,
+        update_dir: cli.update_dir,
+        update_repo: cli.update_repo,
     })
     .await
 }

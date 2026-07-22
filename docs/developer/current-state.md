@@ -1,6 +1,6 @@
 # Current Project State
 
-Last updated: 2026-07-21 (+07)
+Last updated: 2026-07-22 (+07)
 
 This file is the live implementation snapshot for agents. Keep it concise; do not append chronological session history.
 
@@ -27,6 +27,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - Focus routine settings are stored locally in SQLite and exposed under `/api/pi/v1/setup/pomodoro`; managers can view the state, owners can save/validate it, and the runtime skips the Pomodoro shortcut until the saved settings are enabled and validated; a skipped shortcut now plays the cancel chime so a recognized chord is never silent on the device.
 - Device master volume is stored as a singleton SQLite setting (0-100, default 50) and exposed under `/api/pi/v1/setup/audio`; owners can save it from the mobile Settings Sound slider while managers have read-only access, and the Pi runtime applies it linearly to the shared `rodio` player at startup and during the existing two-second configuration reload so current playback updates without a restart.
 - The runtime includes Pomodoro routine orchestration with generated `rodio` focus audio and transition chimes, silent breaks, and a tested recognizer that triggers when any two distinct logical buttons are pressed within 500 ms and remain held for 3 s; the simulator exposes `p` as the manual routine shortcut.
+- Admin software update: the Settings page shows `/opt/tcube/VERSION`, checks GitHub `releases/latest` for a newer stable tag, queues an owner-only install, polls queued/running work every two seconds through admin restarts, and refreshes the installed version on success. The sandboxed admin can create only `/var/lib/tcube/update/requests/install`; `/var/lib/tcube/update` is root-owned mode `0750`, only `requests/` is group-writable mode `0770`, and root writes atomic group-readable mode-`0640` state/log files without following legacy symlinks. The no-argument `tcube-update-run` publishes running state before consuming the request, traps failures, delegates to `install-latest`, and is bounded by a 30-minute systemd timeout; the API reports running markers older than 35 minutes as failed. Installed paths are fixed in the unit, while `/etc/tcube/tcube-update.env` supplies one shared `TCUBE_PI_REPO` to both the admin release check and root bootstrapper.
 - Release workflow builds Linux arm64 bundles with Rust binaries, prebuilt admin UI, content, Caddy/systemd files, installer, and SHA-256 checksums.
 - The release installer exports Caddy's internal root CA to `/opt/tcube/ca/root.crt`; Caddy serves it at `/ca/root.crt` over both HTTPS and a port-80 HTTP listener that otherwise redirects to HTTPS, and the installer prints per-platform certificate trust steps (macOS, Linux, iPhone/iPad, Android).
 - `tcube-mdns-alias.service` runs `/opt/tcube/bin/tcube-mdns-alias` (`avahi-publish` from `avahi-utils`) so `https://tcube.local/` resolves when the Pi hostname is not `tcube`; the installer also injects the LAN IP and `<hostname>.local` into the Caddy site list and reports mDNS status.
@@ -38,6 +39,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - The Pi runtime overlays SQLite admin state onto the shipped content pack via `src/db/runtime.rs`: button mappings, per-button active content items, soundbox selections, and `device_setup.setup_complete` are merged and validated, with per-button and whole-pack fallbacks to `content.json`. A background thread polls `PRAGMA data_version` plus a config fingerprint every 2 s and swaps an `Arc<ContentPack>` snapshot, so admin UI changes apply without restarts and the button path never touches the database. Runtime SQLite connections now set a 5 s busy timeout for WAL coexistence with the admin service.
 - Admin-activated media paths (`data/audio/...`) resolve against the new `--media-root` (`/var/lib/tcube/media` on the Pi); shipped content keeps resolving against `--audio-root`.
 - The release bundle installs and enables `tcube-pi.service` (user `tcube` with `gpio`/`audio` supplementary groups, hardened, `Conflicts=tcube-button-smoke.service`) with `/etc/tcube/tcube-pi.env` using the same env `.dist` preservation and digest-based restart pattern as the admin service. The env pins `ALSA_CARD=MAX98357A` so rodio's default ALSA device is the I2S amplifier instead of HDMI. The installer idempotently appends the MAX98357A I2S overlay to the boot config (same marker as the smoke installer), skips starting the runtime until the required reboot, and disables the temporary `tcube-button-smoke.service` when present.
+- Before application writes, the release installer checks the connected `wlan0` profile through NetworkManager. Persistent profiles backed by `/etc/NetworkManager/system-connections/` are unchanged; temporary profiles are cloned without activation to a validated root-owned mode-`600` `tcube-wifi` keyfile with autoconnect priority `100`. A root-only source/clone UUID marker makes repeat installs idempotent while unrelated `tcube-wifi` name collisions abort safely. The installer also enables persistent journald storage capped at `64M`.
 
 ## Not Complete
 
@@ -46,7 +48,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - MAX98357A I2S audio from the temporary smoke payload works on target hardware; the Rust runtime audio path through `ALSA_CARD=MAX98357A` still needs target validation.
 - Microphone capture with the Seeed reSpeaker XVF3800 USB 4-mic array (selected hardware; capture-only over OTG, playback stays on I2S), plus retention, upload, and privacy rules. The physical mic-active indicator is the board's firmware mute LED.
 - Installed Pi systemd validation and boot-time behavior.
-- USB OTG recovery and Wi-Fi rollback behavior.
+- USB OTG recovery and broader Wi-Fi rollback behavior beyond the clean-install persistence safeguard.
 - Pi resource measurements with `just measure-pi-admin`.
 - Durable SQLite schema versioning beyond current create-if-missing migrations.
 - Full flashable SD-card image artifacts.
@@ -72,6 +74,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - A Focus routine trigger attempt plays the two normal button responses during the 3 s hold before the routine's leading stop cuts them; accepted to keep single-press latency minimal.
 - Existing SQLite content package and failure tables remain after device-sync removal; schema cleanup needs a separate migration decision.
 - Password change and session revocation controls are visually present in settings but disabled because local API contracts are not implemented.
+- The clean-install Wi-Fi persistence safeguard and journald drop-in have fixture coverage but still require the documented target-Pi reboot/reconnect and previous-boot journal acceptance gate.
 
 ## Validation
 
@@ -92,7 +95,7 @@ just test-admin-ui-unit
 just test-admin-ui-mobile
 ```
 
-Latest broad validation recorded on 2026-07-02 included `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo test --workspace --all-features` (67 passed), `just build-admin-ui`, `just check-admin-ui`, `just test-admin-ui-unit` (15 passed), and `just test-admin-ui-mobile` (12 passed).
+Latest broad validation recorded on 2026-07-22 included `just check`, `just test` (143 passed), `just build-admin-ui`, `just check-admin-ui`, `just test-admin-ui-unit` (20 passed), `just test-admin-ui-mobile` (15 passed), `just test-pi-installer` (12 fixture scenarios), Bash syntax checks, and ShellCheck for the changed installer/updater scripts.
 
 Deploy script validation for the installer trust/mDNS work used `bash -n`, `shellcheck` on `deploy/pi-release/install-on-pi` and `deploy/pi-admin-caddy/tcube-mdns-alias`, `caddy validate` on the deployment Caddyfile (including the installer's address injection), and a local Caddy run confirming `/ca/root.crt` serves with `application/x-x509-ca-cert` while other HTTP requests redirect to HTTPS.
 

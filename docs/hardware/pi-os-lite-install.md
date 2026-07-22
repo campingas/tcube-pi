@@ -111,7 +111,9 @@ The same command also updates an existing installation. If the Pi already runs t
 curl -fsSL https://raw.githubusercontent.com/campingas/tcube-pi/main/deploy/pi-release/install-latest | sudo env TCUBE_PI_FORCE=1 bash
 ```
 
-On update, `tcube-pi-admin.service` and `tcube-pi.service` are restarted automatically when their binaries, unit files, env files, or (for the runtime) content pack changed, so the new version is live immediately. Existing `/etc/tcube/tcube-pi-admin.env` and `/etc/tcube/tcube-pi.env` files are preserved and the new release defaults are written to matching `.env.dist` files; data under `/var/lib/tcube` is never touched.
+On update, `tcube-pi-admin.service` and `tcube-pi.service` are restarted automatically when their binaries, unit files, env files, or (for the runtime) content pack changed, so the new version is live immediately. Existing `/etc/tcube/tcube-pi-admin.env`, `/etc/tcube/tcube-pi.env`, and `/etc/tcube/tcube-update.env` files are preserved and the new release defaults are written to matching `.env.dist` files; database and media data under `/var/lib/tcube` are never touched.
+
+After the first install of a build that ships the updater units, later updates can also be triggered from the admin Settings page: it shows the installed version, checks GitHub for a newer stable release, queues the install, and polls its short live log through the admin service restart. The unprivileged admin writes only `/var/lib/tcube/update/requests/install`; the root updater owns the surrounding directory, state, and log, accepts no browser-supplied version/path/repository, and runs the same `install-latest` bootstrapper with a 30-minute timeout. The very first one-click update requires running the curl command once by hand to lay down the units and secure update directory.
 
 The bootstrap script downloads the selected release archive and `SHA256SUMS`, verifies the archive plus bundled installer and binaries, extracts the bundle in a temporary directory, then runs the bundled installer. The installer writes application files under `/opt/tcube`, configuration under `/etc/tcube`, data under `/var/lib/tcube`, and systemd service files under `/etc/systemd/system`. It adds the current detected Pi LAN IP and `<hostname>.local` to `/etc/caddy/Caddyfile` when available, then enables `tcube-pi-admin`, the `tcube-pi` child runtime, and Caddy. When the installer had to add the I2S overlay to the boot config it defers starting `tcube-pi.service` to the next boot and prints a reboot reminder; it also disables the temporary `tcube-button-smoke.service` if the bench payload was installed earlier.
 
@@ -121,7 +123,48 @@ The installer also wires up device trust and naming:
 - It enables `tcube-mdns-alias.service` so `https://tcube.local/` resolves even when the Pi hostname is not `tcube`; this needs the `avahi-utils` base package.
 - It prints per-platform steps for trusting the cube certificate on macOS, Linux, iPhone/iPad, and Android admin devices.
 
+## Wi-Fi Persistence Safeguard
+
+Pi Imager or first-boot cloud-init connectivity proves that the current boot can reach the network, but it does not by itself prove that NetworkManager has a keyfile that survives reboot. A profile can remain active from `/run/NetworkManager/system-connections/`, which is temporary state.
+
+Before any T-Cube application files are written, the installer asks NetworkManager for the connected `wlan0` profile's name, UUID, type, and backing filename. If the filename is already under `/etc/NetworkManager/system-connections/`, the installer leaves the profile untouched. If the filename is temporary, it clones the active UUID through `nmcli` as `tcube-wifi`, enables autoconnect with priority `100`, and verifies the resulting keyfile is under `/etc/NetworkManager/system-connections/`, owned by root, and mode `600`. It does not activate or reconnect the clone during installation, so the working connection remains in place.
+
+If `nmcli` is unavailable or `wlan0` is not connected, the guard skips cleanly. If an unrelated profile named `tcube-wifi` already exists, or cloning and validation fail, the installer aborts before application writes and does not print connection secrets.
+
+For a `tcube-wifi` name collision, keep the current connection active and inspect only non-secret metadata:
+
+```sh
+sudo nmcli -f NAME,UUID,TYPE,FILENAME connection show
+```
+
+If review confirms that profile is unrelated and should be retained, give it a distinct name without activating or disconnecting it, then rerun the installer:
+
+```sh
+sudo nmcli connection modify id tcube-wifi connection.id tcube-wifi-existing
+```
+
+Do not delete a profile until another persistent WLAN profile has passed the reboot/reconnect gate below.
+
 ## Post-Install Checks
+
+Reboot is the acceptance gate for both Wi-Fi persistence and the installed journald policy. After the installer finishes, reboot the Pi, reconnect through the network without re-entering Wi-Fi credentials, and confirm that the active WLAN is now backed by persistent storage:
+
+```sh
+sudo reboot
+nmcli -f NAME,UUID,TYPE,FILENAME connection show --active
+sudo stat -c '%U %a %n' /etc/NetworkManager/system-connections/*.nmconnection
+```
+
+The active WLAN filename must be under `/etc/NetworkManager/system-connections/`, and its keyfile must report owner `root` and mode `600`. A successful install without a successful reboot and reconnect is not accepted as persistent connectivity.
+
+The installer writes `/etc/systemd/journald.conf.d/tcube-persistent.conf` with `Storage=persistent` and `SystemMaxUse=64M`. After reboot, verify that the current and previous boots are available and inspect disk use:
+
+```sh
+journalctl --list-boots
+journalctl -b -u tcube-pi --no-pager
+journalctl -b -u tcube-pi-admin --no-pager
+journalctl --disk-usage
+```
 
 Check the services:
 

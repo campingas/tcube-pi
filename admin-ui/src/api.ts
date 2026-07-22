@@ -208,6 +208,25 @@ export type AudioSettings = {
   updated_at: string;
 };
 
+export type UpdateState = "idle" | "queued" | "running" | "success" | "failed";
+
+export type UpdateStatus = {
+  installed_version: string | null;
+  state: UpdateState;
+  log_lines: string[];
+  error: string | null;
+};
+
+export type UpdateCheck = {
+  installed_version: string | null;
+  latest_version: string | null;
+  update_available: boolean;
+};
+
+export type UpdateInstall = {
+  accepted: boolean;
+};
+
 type RequestOptions = RequestInit & {
   json?: unknown;
 };
@@ -321,6 +340,18 @@ export function saveAudioSettings(volumePercent: number) {
     method: "PUT",
     json: { volume_percent: volumePercent }
   });
+}
+
+export function getUpdateStatus() {
+  return api<UpdateStatus>(`${API_ROOT}/update/status`);
+}
+
+export function checkForUpdate() {
+  return api<UpdateCheck>(`${API_ROOT}/update/check`, { method: "POST" });
+}
+
+export function installUpdate() {
+  return api<UpdateInstall>(`${API_ROOT}/update/install`, { method: "POST" });
 }
 
 export function listRecentEvents() {

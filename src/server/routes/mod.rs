@@ -20,6 +20,7 @@ pub mod error;
 pub mod events;
 pub mod setup;
 pub mod status;
+pub mod update;
 
 type AdminState = Arc<AdminConfig>;
 
@@ -102,6 +103,9 @@ pub(crate) fn router() -> Router<AdminState> {
         ("/content/unused", delete(trash_unused_content)),
         ("/content/items/{item_id}", delete(trash_content_item)),
         ("/events/recent", get(recent_button_events)),
+        ("/update/status", get(update_status)),
+        ("/update/check", post(check_update)),
+        ("/update/install", post(request_update_install)),
         ("/media/{*path}", get(serve_media)),
     ];
     for (path, method_router) in dual_routes {
@@ -554,6 +558,51 @@ async fn recent_button_events(
     .map_err(ApiError::bad_request)
 }
 
+async fn update_status(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+) -> Result<Json<update::UpdateStatusResponse>, ApiError> {
+    blocking(config, move |config| {
+        update::update_status(config, token.as_deref())
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::unauthorized)
+}
+
+async fn check_update(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+) -> Result<Json<update::UpdateCheckResponse>, ApiError> {
+    blocking(config, move |config| {
+        update::check_update(config, token.as_deref())
+    })
+    .await
+    .map(Json)
+    .map_err(ApiError::bad_request)
+}
+
+async fn request_update_install(
+    State(config): State<AdminState>,
+    SessionCookie(token): SessionCookie,
+) -> Result<Json<update::UpdateInstallResponse>, ApiError> {
+    blocking(config, move |config| {
+        update::request_install(config, token.as_deref())
+    })
+    .await
+    .map(Json)
+    .map_err(|error| {
+        if error
+            .downcast_ref::<update::UpdateAlreadyRunning>()
+            .is_some()
+        {
+            ApiError::conflict(error)
+        } else {
+            ApiError::bad_request(error)
+        }
+    })
+}
+
 async fn serve_media(State(config): State<AdminState>, Path(path): Path<String>) -> Response {
     super::pages::serve_file(&config.media_root, &path).await
 }
@@ -623,6 +672,9 @@ mod tests {
             hostname: "tcube.local".to_string(),
             usb_address: "10.55.0.1".to_string(),
             usb_connected: true,
+            version_file: root.path().join("VERSION"),
+            update_dir: root.path().join("update"),
+            update_repo: "campingas/tcube-pi".to_string(),
         }
     }
 
@@ -921,6 +973,85 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn update_install_is_owner_only_idempotent_and_conflicts_while_running() {
+        let root = TempDir::new().unwrap();
+        let config = Arc::new(test_config(&root));
+        std::fs::create_dir_all(config.update_dir.join("requests")).unwrap();
+        std::fs::write(&config.version_file, "v0.0.85\n").unwrap();
+        let app = super::router().with_state(Arc::clone(&config));
+        let owner_cookie = bootstrap_owner_cookie(app.clone()).await;
+        let manager_cookie = create_manager_cookie(&config.database);
+
+        let manager_status = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/pi/v1/update/status")
+                    .header("cookie", &manager_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(manager_status.status(), StatusCode::OK);
+
+        let manager_install = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/pi/v1/update/install")
+                    .header("cookie", &manager_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(manager_install.status(), StatusCode::BAD_REQUEST);
+
+        for _ in 0..2 {
+            let install = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/pi/v1/update/install")
+                        .header("cookie", &owner_cookie)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(install.status(), StatusCode::OK);
+        }
+        assert_eq!(
+            std::fs::read_to_string(config.update_dir.join("requests/install")).unwrap(),
+            "install\n"
+        );
+
+        std::fs::write(
+            config.update_dir.join("state"),
+            format!(
+                "state=running\nstarted_at={}\n",
+                chrono::Utc::now().to_rfc3339()
+            ),
+        )
+        .unwrap();
+        let conflict = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/pi/v1/update/install")
+                    .header("cookie", &owner_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(conflict.status(), StatusCode::CONFLICT);
     }
 
     #[tokio::test]

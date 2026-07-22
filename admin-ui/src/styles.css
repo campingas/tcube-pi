@@ -2283,6 +2283,44 @@ audio {
   color: var(--accent-coral);
 }
 
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 14px 12px;
+}
+
+.update-status {
+  min-height: 16px;
+  padding: 0 14px 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.update-status.error {
+  color: var(--accent-coral);
+}
+
+.update-log {
+  margin: 0 14px 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 0.5px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
+
+.update-log.error {
+  border-color: var(--accent-coral);
+  color: var(--accent-coral);
+}
+
 .focus-routine-card {
   padding-bottom: 14px;
 }
