@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=deploy/pi-release/install-on-pi
+source "${repo_root}/deploy/pi-release/install-on-pi"
+
+FIXTURE_ACTIVE_UUID="11111111-1111-4111-8111-111111111111"
+FIXTURE_CLONE_UUID="22222222-2222-4222-8222-222222222222"
+secret="fixture-password-must-not-appear"
+tests_run=0
+
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+assert_contains() {
+  [[ "$1" == *"$2"* ]] || fail "expected output to contain: $2"
+}
+
+assert_not_contains() {
+  [[ "$1" != *"$2"* ]] || fail "output exposed forbidden text: $2"
+}
+
+run_fixture() {
+  local scenario="$1"
+  local expected_status="$2"
+  local fixture output status
+  fixture="$(mktemp -d "${TMPDIR:-/tmp}/tcube-wifi-test.XXXXXX")"
+  mkdir -p "${fixture}/system-connections" "${fixture}/state"
+  : > "${fixture}/calls"
+  : > "${fixture}/system-connections/tcube-wifi.nmconnection"
+  chmod 0600 "${fixture}/system-connections/tcube-wifi.nmconnection"
+
+  (
+    export TCUBE_NM_SYSTEM_CONNECTIONS_DIR="${fixture}/system-connections"
+    export TCUBE_NM_CLONE_MARKER="${fixture}/state/tcube-wifi-clone"
+    NM_SYSTEM_CONNECTIONS_DIR="${TCUBE_NM_SYSTEM_CONNECTIONS_DIR}"
+    NM_CLONE_MARKER="${TCUBE_NM_CLONE_MARKER}"
+    FIXTURE_SCENARIO="${scenario}"
+    clone_exists=0
+    clone_modified=0
+
+    install() {
+      local target="${*: -1}"
+      if [[ "$1" == "-d" ]]; then
+        mkdir -p "${target}"
+      else
+        command install "$@"
+      fi
+    }
+    chown() { :; }
+    stat() {
+      if [[ "${FIXTURE_SCENARIO}" == "validation_failure" ]]; then
+        printf 'root 644\n'
+      else
+        printf 'root 600\n'
+      fi
+    }
+    nmcli() {
+      printf '%s\n' "$*" >> "${fixture}/calls"
+      if [[ "$1" == "--terse" ]]; then
+        local fields="$5"
+        local active_only=0
+        [[ " $* " == *" --active "* ]] && active_only=1
+        case "${fields}" in
+          UUID,NAME)
+            printf '%s:cloud-init wlan0\n' "${FIXTURE_ACTIVE_UUID}"
+            if [[ "${active_only}" -eq 0 && ("${FIXTURE_SCENARIO}" == "collision" || "${clone_exists}" -eq 1) ]]; then
+              printf '%s:tcube-wifi\n' "${FIXTURE_CLONE_UUID}"
+            fi
+            ;;
+          UUID,TYPE)
+            printf '%s:802-11-wireless\n' "${FIXTURE_ACTIVE_UUID}"
+            if [[ "${active_only}" -eq 0 && "${clone_exists}" -eq 1 ]]; then printf '%s:802-11-wireless\n' "${FIXTURE_CLONE_UUID}"; fi
+            ;;
+          UUID,FILENAME)
+            if [[ "${FIXTURE_SCENARIO}" == "persistent" ]]; then
+              printf '%s:%s/existing.nmconnection\n' "${FIXTURE_ACTIVE_UUID}" "${NM_SYSTEM_CONNECTIONS_DIR}"
+            else
+              printf '%s:/run/NetworkManager/system-connections/netplan-wlan0.nmconnection\n' "${FIXTURE_ACTIVE_UUID}"
+            fi
+            if [[ "${active_only}" -eq 0 && "${clone_exists}" -eq 1 ]]; then
+              printf '%s:%s/tcube-wifi.nmconnection\n' "${FIXTURE_CLONE_UUID}" "${NM_SYSTEM_CONNECTIONS_DIR}"
+            fi
+            ;;
+        esac
+        return 0
+      fi
+      if [[ "$1" == "--get-values" ]]; then
+        local field="$2"
+        shift 2
+        if [[ "$1 $2 $3" == "device show wlan0" ]]; then
+          case "${field}" in
+            GENERAL.STATE)
+              if [[ "${FIXTURE_SCENARIO}" == "no_wlan" ]]; then printf '30 (disconnected)\n'; else printf '100 (connected)\n'; fi
+              ;;
+            GENERAL.CON-UUID) printf '%s\n' "${FIXTURE_ACTIVE_UUID}" ;;
+          esac
+          return 0
+        fi
+        if [[ "$1 $2 $3" == "connection show uuid" ]]; then
+          local requested_uuid="$4"
+          if [[ "${requested_uuid}" == "${FIXTURE_CLONE_UUID}" ]]; then
+            case "${field}" in
+              connection.autoconnect) if [[ "${clone_modified}" -eq 1 ]]; then printf 'yes\n'; else printf 'no\n'; fi ;;
+              connection.autoconnect-priority) if [[ "${clone_modified}" -eq 1 ]]; then printf '100\n'; else printf '0\n'; fi ;;
+            esac
+          fi
+          return 0
+        fi
+      fi
+      if [[ "$1 $2" == "connection clone" ]]; then
+        echo "password=${secret}"
+        if [[ "${FIXTURE_SCENARIO}" == "clone_failure" ]]; then
+          return 1
+        fi
+        clone_exists=1
+        return 0
+      fi
+      if [[ "$1 $2" == "connection modify" ]]; then
+        clone_modified=1
+        return 0
+      fi
+      return 1
+    }
+
+    case "${FIXTURE_SCENARIO}" in
+      unavailable)
+        unset -f nmcli
+        PATH=/nonexistent ensure_active_wifi_persistent
+        ;;
+      repeat)
+        ensure_active_wifi_persistent
+        ensure_active_wifi_persistent
+        ;;
+      *) ensure_active_wifi_persistent ;;
+    esac
+  ) > "${fixture}/output" 2>&1 && status=0 || status=$?
+
+  output="$(<"${fixture}/output")"
+  [[ "${status}" -eq "${expected_status}" ]] || fail "${scenario}: expected status ${expected_status}, got ${status}: ${output}"
+  assert_not_contains "${output}" "${secret}"
+
+  case "${scenario}" in
+    persistent) assert_contains "${output}" "already persistent" ;;
+    no_wlan) assert_contains "${output}" "not connected" ;;
+    unavailable) assert_contains "${output}" "unavailable" ;;
+    temporary)
+      assert_contains "${output}" "Created persistent tcube-wifi"
+      [[ "$(grep -c 'connection clone' "${fixture}/calls")" -eq 1 ]] || fail "temporary: clone count"
+      ! grep -q 'connection up\|device connect' "${fixture}/calls" || fail "temporary: changed live connection"
+      ;;
+    collision) assert_contains "${output}" "already exists and was not replaced" ;;
+    clone_failure|validation_failure) assert_contains "${output}" "No T-Cube application files were installed" ;;
+    repeat)
+      assert_contains "${output}" "already safeguards"
+      [[ "$(grep -c 'connection clone' "${fixture}/calls")" -eq 1 ]] || fail "repeat: cloned more than once"
+      ;;
+  esac
+  rm -rf "${fixture}"
+  tests_run=$((tests_run + 1))
+}
+
+run_fixture persistent 0
+run_fixture temporary 0
+run_fixture no_wlan 0
+run_fixture unavailable 0
+run_fixture collision 1
+run_fixture clone_failure 1
+run_fixture validation_failure 1
+run_fixture repeat 0
+
+echo "PASS: ${tests_run} installer Wi-Fi fixture scenarios"

@@ -1,6 +1,6 @@
 # Current Project State
 
-Last updated: 2026-07-21 (+07)
+Last updated: 2026-07-22 (+07)
 
 This file is the live implementation snapshot for agents. Keep it concise; do not append chronological session history.
 
@@ -38,6 +38,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - The Pi runtime overlays SQLite admin state onto the shipped content pack via `src/db/runtime.rs`: button mappings, per-button active content items, soundbox selections, and `device_setup.setup_complete` are merged and validated, with per-button and whole-pack fallbacks to `content.json`. A background thread polls `PRAGMA data_version` plus a config fingerprint every 2 s and swaps an `Arc<ContentPack>` snapshot, so admin UI changes apply without restarts and the button path never touches the database. Runtime SQLite connections now set a 5 s busy timeout for WAL coexistence with the admin service.
 - Admin-activated media paths (`data/audio/...`) resolve against the new `--media-root` (`/var/lib/tcube/media` on the Pi); shipped content keeps resolving against `--audio-root`.
 - The release bundle installs and enables `tcube-pi.service` (user `tcube` with `gpio`/`audio` supplementary groups, hardened, `Conflicts=tcube-button-smoke.service`) with `/etc/tcube/tcube-pi.env` using the same env `.dist` preservation and digest-based restart pattern as the admin service. The env pins `ALSA_CARD=MAX98357A` so rodio's default ALSA device is the I2S amplifier instead of HDMI. The installer idempotently appends the MAX98357A I2S overlay to the boot config (same marker as the smoke installer), skips starting the runtime until the required reboot, and disables the temporary `tcube-button-smoke.service` when present.
+- Before application writes, the release installer checks the connected `wlan0` profile through NetworkManager. Persistent profiles backed by `/etc/NetworkManager/system-connections/` are unchanged; temporary profiles are cloned without activation to a validated root-owned mode-`600` `tcube-wifi` keyfile with autoconnect priority `100`. A root-only source/clone UUID marker makes repeat installs idempotent while unrelated `tcube-wifi` name collisions abort safely. The installer also enables persistent journald storage capped at `64M`.
 
 ## Not Complete
 
@@ -46,7 +47,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - MAX98357A I2S audio from the temporary smoke payload works on target hardware; the Rust runtime audio path through `ALSA_CARD=MAX98357A` still needs target validation.
 - Microphone capture with the Seeed reSpeaker XVF3800 USB 4-mic array (selected hardware; capture-only over OTG, playback stays on I2S), plus retention, upload, and privacy rules. The physical mic-active indicator is the board's firmware mute LED.
 - Installed Pi systemd validation and boot-time behavior.
-- USB OTG recovery and Wi-Fi rollback behavior.
+- USB OTG recovery and broader Wi-Fi rollback behavior beyond the clean-install persistence safeguard.
 - Pi resource measurements with `just measure-pi-admin`.
 - Durable SQLite schema versioning beyond current create-if-missing migrations.
 - Full flashable SD-card image artifacts.
@@ -72,6 +73,7 @@ This file is the live implementation snapshot for agents. Keep it concise; do no
 - A Focus routine trigger attempt plays the two normal button responses during the 3 s hold before the routine's leading stop cuts them; accepted to keep single-press latency minimal.
 - Existing SQLite content package and failure tables remain after device-sync removal; schema cleanup needs a separate migration decision.
 - Password change and session revocation controls are visually present in settings but disabled because local API contracts are not implemented.
+- The clean-install Wi-Fi persistence safeguard and journald drop-in have fixture coverage but still require the documented target-Pi reboot/reconnect and previous-boot journal acceptance gate.
 
 ## Validation
 

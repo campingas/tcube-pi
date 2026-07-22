@@ -121,7 +121,48 @@ The installer also wires up device trust and naming:
 - It enables `tcube-mdns-alias.service` so `https://tcube.local/` resolves even when the Pi hostname is not `tcube`; this needs the `avahi-utils` base package.
 - It prints per-platform steps for trusting the cube certificate on macOS, Linux, iPhone/iPad, and Android admin devices.
 
+## Wi-Fi Persistence Safeguard
+
+Pi Imager or first-boot cloud-init connectivity proves that the current boot can reach the network, but it does not by itself prove that NetworkManager has a keyfile that survives reboot. A profile can remain active from `/run/NetworkManager/system-connections/`, which is temporary state.
+
+Before any T-Cube application files are written, the installer asks NetworkManager for the connected `wlan0` profile's name, UUID, type, and backing filename. If the filename is already under `/etc/NetworkManager/system-connections/`, the installer leaves the profile untouched. If the filename is temporary, it clones the active UUID through `nmcli` as `tcube-wifi`, enables autoconnect with priority `100`, and verifies the resulting keyfile is under `/etc/NetworkManager/system-connections/`, owned by root, and mode `600`. It does not activate or reconnect the clone during installation, so the working connection remains in place.
+
+If `nmcli` is unavailable or `wlan0` is not connected, the guard skips cleanly. If an unrelated profile named `tcube-wifi` already exists, or cloning and validation fail, the installer aborts before application writes and does not print connection secrets.
+
+For a `tcube-wifi` name collision, keep the current connection active and inspect only non-secret metadata:
+
+```sh
+sudo nmcli -f NAME,UUID,TYPE,FILENAME connection show
+```
+
+If review confirms that profile is unrelated and should be retained, give it a distinct name without activating or disconnecting it, then rerun the installer:
+
+```sh
+sudo nmcli connection modify id tcube-wifi connection.id tcube-wifi-existing
+```
+
+Do not delete a profile until another persistent WLAN profile has passed the reboot/reconnect gate below.
+
 ## Post-Install Checks
+
+Reboot is the acceptance gate for both Wi-Fi persistence and the installed journald policy. After the installer finishes, reboot the Pi, reconnect through the network without re-entering Wi-Fi credentials, and confirm that the active WLAN is now backed by persistent storage:
+
+```sh
+sudo reboot
+nmcli -f NAME,UUID,TYPE,FILENAME connection show --active
+sudo stat -c '%U %a %n' /etc/NetworkManager/system-connections/*.nmconnection
+```
+
+The active WLAN filename must be under `/etc/NetworkManager/system-connections/`, and its keyfile must report owner `root` and mode `600`. A successful install without a successful reboot and reconnect is not accepted as persistent connectivity.
+
+The installer writes `/etc/systemd/journald.conf.d/tcube-persistent.conf` with `Storage=persistent` and `SystemMaxUse=64M`. After reboot, verify that the current and previous boots are available and inspect disk use:
+
+```sh
+journalctl --list-boots
+journalctl -b -u tcube-pi --no-pager
+journalctl -b -u tcube-pi-admin --no-pager
+journalctl --disk-usage
+```
 
 Check the services:
 

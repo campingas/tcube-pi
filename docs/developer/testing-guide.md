@@ -36,6 +36,16 @@ GitHub Actions CI runs the Rust formatting, check, Clippy, and test gates plus t
 
 Before creating a release tag, run `just prepare-release vX.Y.Z`, commit the manifest updates, then create the tag. The release workflow verifies that the tag version matches `Cargo.toml` and `admin-ui/package.json`.
 
+For release-installer changes, run:
+
+```sh
+just test-pi-installer
+bash -n deploy/pi-release/install-on-pi deploy/pi-release/test-install-on-pi-wifi
+shellcheck deploy/pi-release/install-on-pi deploy/pi-release/test-install-on-pi-wifi
+```
+
+The fixture suite covers an already-persistent active WLAN, a temporary active WLAN, no WLAN, unavailable `nmcli`, a conflicting `tcube-wifi` profile, clone and validation failures, repeat-run idempotence, and secret-free output. It never activates a profile or changes live network state. Reboot/reconnect and persistent-journal checks remain target-hardware gates documented in the Pi OS install guide.
+
 ## Device Runtime
 
 Run the keyboard simulator without or with local audio:
@@ -110,4 +120,5 @@ Then generate one short phrase from the authenticated admin UI. Confirm that gen
 * Changes under `src/`: run `just fmt-check`, `just lint`, `just test`, then the relevant simulator or Pi smoke test.
 * Changes under `admin-ui/`: run `just build-admin-ui`, `just check-admin-ui`, and `just test-admin-ui-unit`, then smoke the Rust-served `/` route when practical.
 * Changes under `deploy/pi-admin-caddy/`: run `just validate-pi-admin-caddy` and both direct and HTTPS status checks.
+* Changes under `deploy/pi-release/install-on-pi`: run `just test-pi-installer`, Bash syntax validation, and ShellCheck, then perform the documented target-Pi reboot/reconnect gate when hardware is in scope.
 * Cross-boundary changes: run `just check`, `just test`, and every affected smoke path above.

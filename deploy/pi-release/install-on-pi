@@ -1,6 +1,165 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+NM_SYSTEM_CONNECTIONS_DIR="${TCUBE_NM_SYSTEM_CONNECTIONS_DIR:-/etc/NetworkManager/system-connections}"
+NM_CLONE_MARKER="${TCUBE_NM_CLONE_MARKER:-/var/lib/NetworkManager/tcube-wifi-clone}"
+NM_CLONE_NAME="tcube-wifi"
+
+nm_value() {
+  local field="$1"
+  shift
+  LC_ALL=C nmcli --get-values "${field}" "$@"
+}
+
+nm_table_field_for_uuid() {
+  local field="$1"
+  local profile_uuid="$2"
+  local scope="${3:-all}"
+  local row_uuid row_value
+  local args=(--terse --escape no --fields "UUID,${field}" connection show)
+  if [[ "${scope}" == "active" ]]; then
+    args+=(--active)
+  fi
+  while IFS=: read -r row_uuid row_value; do
+    if [[ "${row_uuid}" == "${profile_uuid}" ]]; then
+      printf '%s\n' "${row_value}"
+      return 0
+    fi
+  done < <(LC_ALL=C nmcli "${args[@]}" 2>/dev/null)
+  return 1
+}
+
+nm_profile_uuids_by_name() {
+  local profile_name="$1"
+  local row_uuid row_name matches=""
+  while IFS=: read -r row_uuid row_name; do
+    if [[ "${row_name}" == "${profile_name}" ]]; then
+      matches+="${row_uuid}"$'\n'
+    fi
+  done < <(LC_ALL=C nmcli --terse --escape no --fields UUID,NAME connection show 2>/dev/null)
+  matches="${matches%$'\n'}"
+  [[ -n "${matches}" ]] || return 1
+  printf '%s\n' "${matches}"
+}
+
+is_uuid() {
+  [[ "$1" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]
+}
+
+is_persistent_nm_filename() {
+  [[ "$1" == "${NM_SYSTEM_CONNECTIONS_DIR}/"* ]]
+}
+
+validate_persistent_wifi_profile() {
+  local profile_uuid="$1"
+  local filename type autoconnect priority ownership mode
+  type="$(nm_table_field_for_uuid TYPE "${profile_uuid}" 2>/dev/null || true)"
+  filename="$(nm_table_field_for_uuid FILENAME "${profile_uuid}" 2>/dev/null || true)"
+  autoconnect="$(nm_value connection.autoconnect connection show uuid "${profile_uuid}" 2>/dev/null || true)"
+  priority="$(nm_value connection.autoconnect-priority connection show uuid "${profile_uuid}" 2>/dev/null || true)"
+  if [[ "${type}" != "802-11-wireless" && "${type}" != "wifi" && "${type}" != "wireless" ]]; then
+    return 1
+  fi
+  if ! is_persistent_nm_filename "${filename}" || [[ ! -f "${filename}" ]]; then
+    return 1
+  fi
+  read -r ownership mode < <(stat -c '%U %a' -- "${filename}" 2>/dev/null || true)
+  [[ "${ownership}" == "root" && "${mode}" == "600" && "${autoconnect}" == "yes" && "${priority}" == "100" ]]
+}
+
+read_wifi_clone_marker() {
+  local marker_source marker_target
+  [[ -f "${NM_CLONE_MARKER}" ]] || return 1
+  marker_source="$(sed -n 's/^source_uuid=//p' "${NM_CLONE_MARKER}")"
+  marker_target="$(sed -n 's/^target_uuid=//p' "${NM_CLONE_MARKER}")"
+  if ! is_uuid "${marker_source}" || ! is_uuid "${marker_target}"; then
+    return 1
+  fi
+  printf '%s %s\n' "${marker_source}" "${marker_target}"
+}
+
+write_wifi_clone_marker() {
+  local source_uuid="$1"
+  local target_uuid="$2"
+  local marker_dir marker_tmp
+  marker_dir="$(dirname -- "${NM_CLONE_MARKER}")"
+  install -d -o root -g root -m 0755 "${marker_dir}"
+  marker_tmp="$(mktemp "${marker_dir}/.tcube-wifi-clone.XXXXXX")"
+  chmod 0600 "${marker_tmp}"
+  printf 'source_uuid=%s\ntarget_uuid=%s\n' "${source_uuid}" "${target_uuid}" > "${marker_tmp}"
+  chown root:root "${marker_tmp}"
+  mv -f -- "${marker_tmp}" "${NM_CLONE_MARKER}"
+}
+
+wifi_guard_failure() {
+  echo "ERROR: could not create and validate a persistent NetworkManager Wi-Fi profile." >&2
+  echo "No T-Cube application files were installed. Keep the current connection active." >&2
+  echo "Review profiles with: sudo nmcli -f NAME,UUID,TYPE,FILENAME connection show" >&2
+  echo "After resolving the profile safely, run the installer again." >&2
+  return 1
+}
+
+ensure_active_wifi_persistent() {
+  local state active_name active_uuid active_type active_filename
+  local existing_uuid marker_source marker_target clone_uuid
+
+  if ! command -v nmcli >/dev/null 2>&1; then
+    echo "NetworkManager is unavailable; skipping the Wi-Fi persistence check."
+    return 0
+  fi
+  state="$(nm_value GENERAL.STATE device show wlan0 2>/dev/null || true)"
+  if [[ "${state}" != 100\ * && "${state}" != "100" ]]; then
+    echo "wlan0 is not connected; skipping the Wi-Fi persistence check."
+    return 0
+  fi
+  active_uuid="$(nm_value GENERAL.CON-UUID device show wlan0 2>/dev/null || true)"
+  if ! is_uuid "${active_uuid}"; then
+    wifi_guard_failure
+    return
+  fi
+  active_name="$(nm_table_field_for_uuid NAME "${active_uuid}" active 2>/dev/null || true)"
+  active_type="$(nm_table_field_for_uuid TYPE "${active_uuid}" active 2>/dev/null || true)"
+  active_filename="$(nm_table_field_for_uuid FILENAME "${active_uuid}" active 2>/dev/null || true)"
+  if [[ -z "${active_name}" ]] || [[ "${active_type}" != "802-11-wireless" && "${active_type}" != "wifi" && "${active_type}" != "wireless" ]]; then
+    wifi_guard_failure
+    return
+  fi
+  if is_persistent_nm_filename "${active_filename}"; then
+    echo "The active wlan0 profile is already persistent; leaving it unchanged."
+    return 0
+  fi
+
+  existing_uuid="$(nm_profile_uuids_by_name "${NM_CLONE_NAME}" 2>/dev/null || true)"
+  if [[ -n "${existing_uuid}" ]]; then
+    if read -r marker_source marker_target < <(read_wifi_clone_marker) \
+      && [[ "${marker_source}" == "${active_uuid}" && "${marker_target}" == "${existing_uuid}" ]] \
+      && validate_persistent_wifi_profile "${existing_uuid}"; then
+      echo "The persistent ${NM_CLONE_NAME} profile already safeguards the active wlan0 connection."
+      return 0
+    fi
+    echo "ERROR: a NetworkManager profile named ${NM_CLONE_NAME} already exists and was not replaced." >&2
+    echo "No T-Cube application files were installed. Review or rename that profile, then run the installer again." >&2
+    echo "Safe inspection: sudo nmcli -f NAME,UUID,TYPE,FILENAME connection show" >&2
+    return 1
+  fi
+
+  echo "The active wlan0 profile is temporary; cloning it to ${NM_CLONE_NAME} without reconnecting."
+  if ! nmcli connection clone uuid "${active_uuid}" "${NM_CLONE_NAME}" >/dev/null 2>&1; then
+    wifi_guard_failure
+    return
+  fi
+  clone_uuid="$(nm_profile_uuids_by_name "${NM_CLONE_NAME}" 2>/dev/null || true)"
+  if ! is_uuid "${clone_uuid}" \
+    || ! nmcli connection modify uuid "${clone_uuid}" connection.autoconnect yes connection.autoconnect-priority 100 >/dev/null 2>&1 \
+    || ! validate_persistent_wifi_profile "${clone_uuid}" \
+    || ! write_wifi_clone_marker "${active_uuid}" "${clone_uuid}"; then
+    wifi_guard_failure
+    return
+  fi
+  echo "Created persistent ${NM_CLONE_NAME}; it will be used automatically after a future reconnect or reboot."
+}
+
+main() {
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run this installer with sudo: sudo ./install.sh" >&2
   exit 1
@@ -28,6 +187,8 @@ require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias"
 require_path "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias.service"
 require_path "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.env"
 require_path "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.service"
+
+ensure_active_wifi_persistent
 
 detect_lan_address() {
   local candidate=""
@@ -190,6 +351,13 @@ install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-pi-admin.service" 
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/tcube-mdns-alias.service" /etc/systemd/system/tcube-mdns-alias.service
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-runtime/tcube-pi.service" /etc/systemd/system/tcube-pi.service
 install -D -m 0644 "${SCRIPT_DIR}/deploy/pi-admin-caddy/Caddyfile" /etc/caddy/Caddyfile
+install -d -o root -g root -m 0755 /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/tcube-persistent.conf <<'JOURNALD'
+[Journal]
+Storage=persistent
+SystemMaxUse=64M
+JOURNALD
+chmod 0644 /etc/systemd/journald.conf.d/tcube-persistent.conf
 
 reboot_needed=0
 if ensure_i2s_boot_config; then
@@ -364,4 +532,9 @@ echo "From an admin device after trusting the certificate:"
 echo "  curl https://tcube.local/api/pi/v1/status"
 if [[ -n "${installed_lan_address}" ]]; then
   echo "  curl https://${installed_lan_address}/api/pi/v1/status"
+fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
 fi

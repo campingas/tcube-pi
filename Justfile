@@ -29,6 +29,9 @@ lint:
 test:
     cargo test --all-features
 
+test-pi-installer:
+    deploy/pi-release/test-install-on-pi-wifi
+
 run-device-sim:
     cargo run --bin tcube-pi -- --backend sim
 
